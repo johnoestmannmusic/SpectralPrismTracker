@@ -111,7 +111,7 @@ export function spectralWasmAvailable(): boolean {
 }
 
 export interface SpectralRenderFn {
-  (a: AudioClip, b: AudioClip | null, settings: SpectralSettings): AudioClip;
+  (a: AudioClip, b: AudioClip | null, settings: SpectralSettings): Promise<AudioClip>;
 }
 
 let renderImpl: SpectralRenderFn | null = null;
@@ -121,13 +121,14 @@ export function registerSpectralRenderer(fn: SpectralRenderFn | null): void {
 
 /**
  * Renders Sample A (required) optionally fused with Sample B through the
- * prism_dsp WASM module, normalised so the loudest sample hits full scale.
+ * prism_dsp WASM module (on the Spectral Worker when available, else the
+ * main thread), normalised so the loudest sample hits full scale.
  */
-export function spectralRender(
+export async function spectralRender(
   a: AudioClip,
   b: AudioClip | null,
   settings: SpectralSettings,
-): AudioClip {
+): Promise<AudioClip> {
   if (clipIsEmpty(a)) throw new Error("Sample A is empty");
   if (spectralModeNeedsB(settings.mode) && (!b || clipIsEmpty(b))) {
     throw new Error("Sample B is required");
@@ -135,7 +136,7 @@ export function spectralRender(
   if (!renderImpl) {
     throw new Error("Spectral engine (prism_dsp WASM) is not available yet");
   }
-  const clip = renderImpl(a, b, settings);
+  const clip = await renderImpl(a, b, settings);
   normalizePeak(clip.channels);
   return clip;
 }

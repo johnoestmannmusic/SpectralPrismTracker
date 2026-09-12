@@ -180,6 +180,9 @@ export class SamplerEngine {
   loops: Array<LoopCache | null> = [];
   scheduler: Scheduler | null = null;
   voices: Voice[] = [];
+  rendering: boolean[] = [];
+  private fusionJustCompleted: boolean[] = [];
+  private renderGeneration: number[] = [];
 
   setSequence(sequence: Sequence): void {
     this.sequence = sequence;
@@ -231,6 +234,7 @@ export class SamplerEngine {
       }
       this.ensureSize(this.settings.length);
       if (spectralWasmAvailable()) {
+        const renders: Promise<void>[] = [];
         for (let i = 0; i < this.settings.length; i++) {
           const s = this.settings[i]!;
           if (
@@ -238,9 +242,10 @@ export class SamplerEngine {
             s.sourceIndex !== null &&
             (!this.spectralNeedsB(i) || s.spectral.sourceIndex2 !== null)
           ) {
-            this.renderSpectral(ctx, i);
+            renders.push(this.renderSpectral(ctx, i));
           }
         }
+        await Promise.allSettled(renders);
       }
       this.ready = true;
     } catch (e) {
@@ -258,18 +263,30 @@ export class SamplerEngine {
       this.fusedClips.push(null);
       this.fusedWaveforms.push([]);
       this.loops.push(null);
+      this.rendering.push(false);
+      this.fusionJustCompleted.push(false);
+      this.renderGeneration.push(0);
     }
   }
 
-  renderSpectral(ctx: AudioContext, instrument: number): void {
+  /** Reads and clears the one-shot "a render just finished" flag for an instrument. */
+  takeFusionCompleted(instrument: number): boolean {
+    const completed = this.fusionJustCompleted[instrument] ?? false;
+    this.fusionJustCompleted[instrument] = false;
+    return completed;
+  }
+
+  async renderSpectral(ctx: AudioContext, instrument: number): Promise<void> {
     const s = this.settings[instrument];
     if (!s) return;
     this.ensureSize(instrument + 1);
+    const generation = ++this.renderGeneration[instrument]!;
     this.fused[instrument] = null;
     this.fusedClips[instrument] = null;
     this.fusedWaveforms[instrument] = [];
     this.loops[instrument] = null;
     if (!s.spectral.enabled) return;
+    this.rendering[instrument] = true;
     try {
       const source = s.sourceIndex;
       if (source === null) throw new Error("Sample A is required");
@@ -277,7 +294,8 @@ export class SamplerEngine {
       if (!a) throw new Error("Sample A is not ready");
       const b =
         s.spectral.sourceIndex2 !== null ? this.clips[s.spectral.sourceIndex2] ?? null : null;
-      const clip = spectralRender(a, b, s.spectral);
+      const clip = await spectralRender(a, b, s.spectral);
+      if (this.renderGeneration[instrument] !== generation) return; // superseded by a newer render
       const buffer = ctx.createBuffer(
         clip.channels.length,
         clip.channels[0]!.length,
@@ -289,8 +307,12 @@ export class SamplerEngine {
       this.fused[instrument] = buffer;
       this.fusedClips[instrument] = clip;
       this.fusedWaveforms[instrument] = waveform(clip.channels[0]!, 600);
+      this.fusionJustCompleted[instrument] = true;
     } catch (e) {
+      if (this.renderGeneration[instrument] !== generation) return; // superseded, ignore its error too
       this.error = `Cannot render Spectral instrument: ${String(e)}`;
+    } finally {
+      if (this.renderGeneration[instrument] === generation) this.rendering[instrument] = false;
     }
   }
 

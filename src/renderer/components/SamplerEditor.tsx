@@ -38,6 +38,7 @@ export function SamplerEditor(props: SamplerEditorProps) {
   const [peaks, setPeaks] = useState<Array<[number, number]>>([]);
   const [markers, setMarkers] = useState<WaveformMarker[]>([]);
   const [previewing, setPreviewing] = useState(false);
+  const [rendering, setRendering] = useState(false);
 
   useAnimationFrame(() => {
     const dur = backend.effectiveDuration(props.index);
@@ -56,6 +57,7 @@ export function SamplerEditor(props: SamplerEditorProps) {
         })),
     );
     setPreviewing(backend.previewPosition()?.instrument === props.index);
+    setRendering(backend.fusionRendering(props.index));
   });
 
   const title = props.spectralTab
@@ -135,7 +137,7 @@ export function SamplerEditor(props: SamplerEditorProps) {
         </div>
 
         {props.spectralTab ? (
-          <SpectralTab {...props} duration={duration} peaks={peaks} markers={markers} />
+          <SpectralTab {...props} duration={duration} peaks={peaks} markers={markers} rendering={rendering} />
         ) : (
           <div className="editor-tab">
             <Waveform
@@ -209,6 +211,7 @@ function SpectralTab(
     duration: number;
     peaks: Array<[number, number]>;
     markers: WaveformMarker[];
+    rendering: boolean;
   },
 ) {
   const { backend, settings } = props;
@@ -244,9 +247,11 @@ function SpectralTab(
       <p className="hint">
         {!props.wasmAvailable
           ? "The prism_dsp WASM engine failed to load — Spectral renders are disabled."
-          : fusionReady
-            ? "Rendered result is ready."
-            : "Choose Sample A (and B where required), then Render."}
+          : props.rendering
+            ? "Rendering…"
+            : fusionReady
+              ? "Rendered result is ready."
+              : "Choose Sample A (and B where required), then Render."}
       </p>
       <div className="row wrap">
         <label>Mode</label>
@@ -257,7 +262,9 @@ function SpectralTab(
             </option>
           ))}
         </select>
-        <button onClick={() => backend.renderFusion(props.index)}>Render</button>
+        <button disabled={props.rendering} onClick={() => backend.renderFusion(props.index)}>
+          {props.rendering ? "Rendering…" : "Render"}
+        </button>
       </div>
 
       <h3>Sample A</h3>

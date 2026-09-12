@@ -101,6 +101,60 @@ export function clearValue(cell: PatternCell, column: EditColumn): PatternCell {
   return writeValue(cell, column, { kind: "fx", value: { effect: null, value: null } });
 }
 
+/**
+ * "Last value entered" per column type (Note/Ins/Vol/Fx), matching Rust's
+ * `last_note`/`last_ins`/`last_vol`/`last_fx` fields: a single global memory
+ * per column type, not per-channel or per-column-index.
+ */
+export interface LastValues {
+  note: number;
+  ins: number;
+  vol: number;
+  fx: { effect: number | null; value: number | null };
+}
+
+/** Defaults matching `lantern_core::pitch::DEFAULT_ENTRY_NOTE` (C-4) and Rust's `PatternState::default`. */
+export function defaultLastValues(): LastValues {
+  return { note: 108, ins: 0, vol: 15, fx: { effect: 0, value: 0 } };
+}
+
+/** Writes the tracked "last value" for this column's type into a copy of the cell (the `Z` keybind). */
+export function applyLastValue(cell: PatternCell, column: EditColumn, last: LastValues): PatternCell {
+  switch (column.kind) {
+    case "note":
+      return writeValue(cell, column, { kind: "note", value: { kind: "note", note: last.note } });
+    case "ins":
+      return writeValue(cell, column, { kind: "ins", value: last.ins });
+    case "vol":
+      return writeValue(cell, column, { kind: "vol", value: last.vol });
+    case "fx":
+      return writeValue(cell, column, { kind: "fx", value: { ...last.fx } });
+  }
+}
+
+/**
+ * Updates the "last value" memory from a just-committed cell, mirroring Rust's
+ * `commit_edit`: only real values update the memory (Off/Release/clear do not).
+ */
+export function recordLastValue(last: LastValues, column: EditColumn, cell: PatternCell): void {
+  switch (column.kind) {
+    case "note":
+      if (cell.note && cell.note.kind === "note") last.note = cell.note.note;
+      break;
+    case "ins":
+      if (cell.instrument !== null) last.ins = cell.instrument;
+      break;
+    case "vol":
+      if (cell.volume !== null) last.vol = cell.volume;
+      break;
+    case "fx": {
+      const slot = cell.effects[column.index];
+      if (slot && slot.effect !== null) last.fx = { ...slot };
+      break;
+    }
+  }
+}
+
 export function adjustNote(cell: PatternCell, delta: number): PatternCell {
   if (!cell.note || cell.note.kind !== "note") return cell;
   const note = Math.min(Math.max(cell.note.note + delta, 0), 179);

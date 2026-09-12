@@ -136,7 +136,7 @@ export class WebAudioBackend implements AudioBackend {
             this.sampler.fused[i] = null;
             this.sampler.fusedClips[i] = null;
             this.sampler.fusedWaveforms[i] = [];
-            if (s.spectral.enabled && s.sourceIndex !== null) this.sampler.renderSpectral(ctx, i);
+            if (s.spectral.enabled && s.sourceIndex !== null) await this.sampler.renderSpectral(ctx, i);
           }
         }
       } catch (e) {
@@ -223,18 +223,18 @@ export class WebAudioBackend implements AudioBackend {
     return this.sampler.fusedReady(instrument);
   }
 
-  fusionRendering(): boolean {
-    return false;
+  fusionRendering(instrument: number): boolean {
+    return this.sampler.rendering[instrument] ?? false;
   }
 
   renderFusion(instrument: number): boolean {
     if (!this.ctx) return false;
-    this.sampler.renderSpectral(this.ctx, instrument);
+    void this.sampler.renderSpectral(this.ctx, instrument);
     return true;
   }
 
-  takeFusionCompleted(): boolean {
-    return false;
+  takeFusionCompleted(instrument: number): boolean {
+    return this.sampler.takeFusionCompleted(instrument);
   }
 
   preview(instrument: number, reference: boolean): void {

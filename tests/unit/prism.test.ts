@@ -51,7 +51,7 @@ describe("prism_dsp WASM adapter", () => {
     expect(Array.from(clip.channels[1]!)).toEqual([0.25, -0.25]);
   });
 
-  it("registers a renderer that peak-normalises its output", () => {
+  it("registers a renderer that peak-normalises its output", async () => {
     const wasm: PrismWasmModule = {
       render_fused() {
         return {
@@ -62,7 +62,7 @@ describe("prism_dsp WASM adapter", () => {
       },
     };
     registerPrismWasm(wasm);
-    const clip = spectralRender(makeClip([[1, 1]], 44_100), null, defaultSpectralSettings());
+    const clip = await spectralRender(makeClip([[1, 1]], 44_100), null, defaultSpectralSettings());
     const peak = Math.max(...Array.from(clip.channels[0]!, (v) => Math.abs(v)));
     expect(Math.abs(peak - 1)).toBeLessThan(1e-4);
   });

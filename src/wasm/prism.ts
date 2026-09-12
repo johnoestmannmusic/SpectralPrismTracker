@@ -48,8 +48,15 @@ function flatten(clip: AudioClip): Float32Array {
   return out;
 }
 
-/** Adapts a prism_dsp WASM module to the core Spectral renderer contract. */
-export function makeSpectralRenderer(wasm: PrismWasmModule): SpectralRenderFn {
+/** A direct, synchronous call into a loaded prism_dsp WASM module. */
+export type SyncSpectralRenderFn = (
+  a: AudioClip,
+  b: AudioClip | null,
+  settings: SpectralSettings,
+) => AudioClip;
+
+/** Adapts a prism_dsp WASM module to a synchronous render function — usable directly in tests, or inside the Spectral Worker where the WASM call itself is on-thread. */
+export function makeSpectralRenderer(wasm: PrismWasmModule): SyncSpectralRenderFn {
   return (a: AudioClip, b: AudioClip | null, settings: SpectralSettings): AudioClip => {
     const aFlat = flatten(a);
     const bFlat = b ? flatten(b) : new Float32Array(0);
@@ -85,8 +92,15 @@ export function makeSpectralRenderer(wasm: PrismWasmModule): SpectralRenderFn {
   };
 }
 
-/** Registers a loaded prism_dsp WASM module with the Spectral engine. */
+/** Registers a loaded prism_dsp WASM module with the Spectral engine, running renders on the main thread — the fallback used when the Spectral Worker is unavailable. */
 export function registerPrismWasm(wasm: PrismWasmModule): void {
-  registerSpectralRenderer(makeSpectralRenderer(wasm));
+  const render = makeSpectralRenderer(wasm);
+  registerSpectralRenderer((a, b, settings) => Promise.resolve(render(a, b, settings)));
+  setSpectralWasmAvailable(true);
+}
+
+/** Registers an async Spectral renderer backed by the prism_dsp Worker. */
+export function registerPrismWasmWorker(client: { render: SpectralRenderFn }): void {
+  registerSpectralRenderer((a, b, settings) => client.render(a, b, settings));
   setSpectralWasmAvailable(true);
 }

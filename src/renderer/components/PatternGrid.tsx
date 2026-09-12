@@ -16,15 +16,18 @@ import {
   FX_CATALOG,
   adjustCell,
   adjustNote,
+  applyLastValue,
   clearPatternsSnapshot,
   clearValue,
   columnInRect,
   columnLabel,
+  defaultLastValues,
   flatColumns,
   globalColumnIndex,
   insertPatternAfter,
   interpolateColumn,
   readValue,
+  recordLastValue,
   removePatternAt,
   selectionRect,
   writeValue,
@@ -32,6 +35,7 @@ import {
   type CellValue,
   type EditColumn,
   type FlatColumn,
+  type LastValues,
 } from "@/core/tracker";
 import { useAnimationFrame } from "../hooks";
 import { useExplainer } from "../explainer";
@@ -156,12 +160,15 @@ export function PatternGrid(props: PatternGridProps) {
     propsRef.current.onViewOrderChange(order);
   }, [order]);
 
+  const lastValues = useRef<LastValues>(defaultLastValues());
+
   const commit = useCallback(
     (pos: CellPos, cell: PatternCell) => {
       mutate(() => {
         applyEdit(songRef.current, { channel: pos.channel, order: pos.order, row: pos.row, cell });
         setSelected(pos);
       });
+      recordLastValue(lastValues.current, pos.column, cell);
       if (!propsRef.current.channelMuted[pos.channel]) {
         propsRef.current.onAudition([pos.channel], pos.order, pos.row);
       }
@@ -323,11 +330,7 @@ export function PatternGrid(props: PatternGridProps) {
       else if (key === "a") next = adjustCell(cell, current.column, -1, model.instruments.length);
       else if (key === "w") next = adjustNote(cell, 12);
       else if (key === "s") next = adjustNote(cell, -12);
-      else if (key === "z") {
-        const previous = readValue(cell, current.column);
-        next = cell;
-        void previous;
-      }
+      else if (key === "z") next = applyLastValue(cell, current.column, lastValues.current);
       if (next) {
         event.preventDefault();
         commit(current, next);

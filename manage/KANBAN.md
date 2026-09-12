@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 18:40 by opencode
+**Board Last Updated:** 2026-09-12 19:15 by Claude
 
 ### Branding (user-confirmed)
 
@@ -62,7 +62,7 @@ is captured as an optional card, not a parity gap.
   | `lantern-core` | `src/core/{songModel,timing,pitch,sampler,spectral,project,export,midi,dsp,tracker}.ts` |
   | `lantern-audio` (web) | `src/audio/{backend,webSampler,webAudioBackend}.ts` |
   | `lantern-app` | `src/renderer/` (React) |
-  | `prism_dsp` | `native/prism-wasm/` -> `src/renderer/vendor/prism/` + `src/wasm/prism.ts` |
+  | `prism_dsp` | `native/prism-wasm/` -> `src/renderer/vendor/prism/` + `src/wasm/{prism,prism.worker,prismWorkerClient,prismWorkerProtocol}.ts` |
   | folder/file I/O | `src/main/` + `src/preload/` |
 - **Dropped by design:** native `rodio` backend, `eframe` storage, `trunk`
   packaging, `System` theme.
@@ -106,8 +106,6 @@ npm run test:all         # typecheck + unit + audit + build + e2e
 - **0007E-IDEA-001** — Spectrogram/FFT inspector panel using prism_dsp frames.
 - **0007E-IDEA-002** — `electron-builder` packaging; compress/generate the
   ~38 MB CHIP mix WAV. (Rust: `0006-PLAN-006` was scrapped; user deploys.)
-- **0007E-IDEA-003** — Web Worker hosting the prism_dsp WASM module if inline
-  rendering ever blocks a frame (documented Rust fallback).
 - **0007E-IDEA-004** — Additional Furnace chip-system support beyond Game Boy.
   (Rust `0006-IDEA-001`; out of current parity scope.)
 - **0007E-IDEA-005** — Persistent Fusion render cache keyed by source + settings
@@ -117,7 +115,7 @@ npm run test:all         # typecheck + unit + audit + build + e2e
 
 ## Bugs
 
-_(none open — see 0007E-BUG-001…006 in Completed)_
+_(none open — see 0007E-BUG-001…007 in Completed)_
 
 ## Planned Features — Remaining Rust parity backlog
 
@@ -235,6 +233,36 @@ _(none currently)_
 - **0007E-PLAN-049 — Export filename parity.** *(2026-09-12 18:40)* Package
   Samples, sampler WAV and Project JSON filenames now match the Rust fallbacks
   (`project.songTitle`, else the Rust default string) exactly.
+- **0007E-BUG-007 — `Z` key ("enter last value") was dead code.** *(2026-09-12
+  19:15)* Found during a fresh parity pass: `PatternGrid.tsx`'s `z` handler
+  read the current cell's value and discarded it, writing back an unchanged
+  cell, even though the Keyboard Help modal advertised "enter last value /
+  repeat." Fixed by porting Rust's per-column-type memory
+  (`lantern-app/src/pattern.rs`'s `last_note`/`last_ins`/`last_vol`/`last_fx`,
+  defaulting to C-4/0/15/`{0,0}`) into `src/core/tracker.ts` as
+  `defaultLastValues`/`recordLastValue`/`applyLastValue`, hooked into
+  `PatternGrid.tsx`'s shared `commit()` (used by both keybind edits and the
+  right-click menu, matching Rust's `commit_edit`) so paste/interpolate still
+  do not affect it. Covered by new cases in `tests/unit/tracker.test.ts`.
+- **0007E-PLAN-052 — Sidebar width parity.** *(2026-09-12 19:15)* `.sidebar`
+  was 320px; the Rust/original spec is 300px. One-line CSS fix.
+- **0007E-PLAN-053 — Spectral Worker (was 0007E-IDEA-003).** *(2026-09-12
+  19:15)* `prism_dsp` Spectral renders now run in a dedicated Web Worker
+  (`src/wasm/prism.worker.ts` + `prismWorkerClient.ts`, request/response
+  protocol in `prismWorkerProtocol.ts`) instead of blocking the main thread;
+  `initPrismWasm` tries the Worker first and falls back to the previous
+  main-thread WASM path if the Worker can't start. This finally gives real
+  meaning to `AudioBackend`'s `fusionRendering`/`takeFusionCompleted`, which
+  every implementation (Rust and TS) had hardcoded to `false`/no-op since
+  rendering was always synchronous — `SamplerEngine.renderSpectral` now
+  tracks per-instrument in-flight/completed state and discards stale results
+  when a newer render supersedes an older one for the same instrument.
+  `SamplerEditor`'s Spectral tab shows "Rendering…" and disables Render while
+  a render is in flight. Verified end-to-end in the built app (Playwright):
+  Render correctly shows "Rendering…" then "Rendered result is ready.", no
+  console errors, no Worker-init fallback warning logged. New tests:
+  `tests/unit/prism-worker-client.test.ts` (protocol, injected fake
+  transport), `tests/unit/webSampler.test.ts` (stale-render discard).
 
 ---
 
