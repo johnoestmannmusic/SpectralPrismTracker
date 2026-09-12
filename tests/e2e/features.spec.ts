@@ -13,7 +13,7 @@ test("comments, Base Tempo, and no spurious audition error", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
       timeout: 30_000,
     });
 
@@ -54,7 +54,7 @@ test("Project JSON Load auto-applies and closes the modal", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
       timeout: 30_000,
     });
 
@@ -85,7 +85,7 @@ test("Project JSON Load rejects non-.lampjson files", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
       timeout: 30_000,
     });
 

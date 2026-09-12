@@ -1,4 +1,3 @@
-import { parse, startsWithMagic } from "@/core/fur/parse";
 import type { AudioFileChoice, LoadedSong, SongFolderFile } from "../shared/types";
 
 /** True when running inside the Electron shell (preload bridge present). */
@@ -19,36 +18,20 @@ async function fetchBytes(path: string): Promise<Uint8Array | null> {
   }
 }
 
-/** zlib-inflate a `.fur` file in the browser (Furnace wraps the whole file). */
-async function inflateFur(bytes: Uint8Array): Promise<Uint8Array> {
-  if (startsWithMagic(bytes)) return bytes;
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error("This browser cannot decompress Furnace modules (no DecompressionStream)");
-  }
-  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
-  const inflated = await new Response(stream).arrayBuffer();
-  return new Uint8Array(inflated);
-}
-
 /** Loads the bundled song either from Electron main or from the served assets. */
 export async function loadDefaultSong(): Promise<LoadedSong | { error: string }> {
   if (isDesktop) return window.lantern.loadDefaultSong();
 
-  const furBytes = await fetchBytes("flight_school_night_shift.fur");
-  if (!furBytes) {
-    return { error: "Missing assets/flight_school_night_shift.fur" };
-  }
   const projectResponse = await fetch(assetUrl("lmp-default-proj.lampjson")).catch(() => null);
   const project = projectResponse && projectResponse.ok ? await projectResponse.text() : "";
-  const stems = await Promise.all([0, 1, 2, 3].map((i) => fetchBytes(`${i}.ogg`)));
+  if (!project) {
+    return { error: "Missing assets/lmp-default-proj.lampjson" };
+  }
   const samples = await Promise.all([0, 1, 2].map((i) => fetchBytes(`SourceSamples/${i}.ogg`)));
 
-  try {
-    const raw = parse(await inflateFur(furBytes));
-    return { raw, furBytes, project, stems, samples, chipMix: null };
-  } catch (e) {
-    return { error: `Cannot parse bundled .fur: ${String(e)}` };
-  }
+  // The bundled song is project-only (no Furnace .fur / CHIP stems), so no
+  // CHIP assets are requested — a missing file would otherwise log a 404.
+  return { project, stems: [null, null, null, null], samples, chipMix: null };
 }
 
 /** Saves bytes: native dialog on desktop, Blob download on the web. */

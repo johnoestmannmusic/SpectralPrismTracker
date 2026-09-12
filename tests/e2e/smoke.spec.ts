@@ -18,8 +18,10 @@ test("loads the bundled song and renders the player shell", async () => {
     await window.waitForSelector(".app-header h1");
 
     await expect(window.locator(".app-header h1")).toContainText("Lantern Music Player");
+    // The heading carries a build-stamped date: vYYYYMMDD.
+    await expect(window.locator(".app-header h1")).toHaveText(/Lantern Music Player v\d{8}$/);
     // The status line is set only after the .fur parses and the project loads.
-    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
       timeout: 30_000,
     });
 

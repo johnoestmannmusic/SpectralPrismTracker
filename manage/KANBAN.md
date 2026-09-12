@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 23:35 by opencode
+**Board Last Updated:** 2026-09-13 00:35 by opencode
 
 ### Branding (user-confirmed)
 
@@ -481,6 +481,29 @@ _(none currently)_
   default asset was renamed to `lmp-default-proj.lampjson`. Regression test:
   loading a `.json` file shows ".lampjson" in the error banner and keeps the
   modal open.
+
+- **0007E-PLAN-108 — New cover art: laboratory plant vat.** *(2026-09-12 23:55)*
+  Same 240×240 / 32×32 / 4×4 Bayer pipeline, new scene: a glass vat with a
+  translucent green nutrient liquid and a vibrant green stem that grows in and
+  sways, jiggling on note triggers, with instrument-coloured auras and rim
+  flashes, set against dull-blue humming monitor screens. Export PNG unchanged.
+
+- **0007E-PLAN-109 — Build number stamped at build time.** *(2026-09-13 00:10)*
+  The title's `vYYYYMMDD` is now injected by Vite (`__BUILD_DATE__`, local
+  date) at build time rather than computed when the app runs, so each build
+  regenerates it. Applies to both the Electron and web builds; the smoke test
+  asserts the `v\d{8}` format.
+
+- **0007E-PLAN-110 — Project-only songs (no `.fur` / CHIP MODE).**
+  *(2026-09-13 00:35)* The bundled song now ships as just
+  `lmp-default-proj.lampjson` + `SourceSamples/`. The loader no longer requires
+  a `.fur`: when absent, `buildSongModelFromProject` rebuilds the `SongModel`
+  from the project's pattern snapshot (channels/orders/rows), timing overrides,
+  and instrument count, so the app loads and plays in SAMPLER mode with CHIP
+  MODE disabled. `LoadedSong.raw`/`furBytes` are now optional and "Save .FUR"
+  is disabled for project-only songs. Both Electron and web loaders updated;
+  E2E fixtures switched from the old 10-instrument song to "Aquavats" (1
+  instrument).
 
 ---
 

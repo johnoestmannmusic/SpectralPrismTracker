@@ -74,7 +74,7 @@ describe("ZIP export", () => {
 
 describe("MIDI export", () => {
   it("writes a format-1 SMF with one tempo track and one track per channel", () => {
-    const song = buildSongModel(parseFurFile(fixtureBytes("assets/flight_school_night_shift.fur")));
+    const song = buildSongModel(parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur")));
     const bytes = writeMidi(song);
     const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 

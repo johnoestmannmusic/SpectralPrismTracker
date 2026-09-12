@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "reac
 import {
   applySnapshot,
   buildSongModel,
+  buildSongModelFromProject,
   cellAt,
   instrumentColor,
   patternSnapshot,
@@ -87,7 +88,12 @@ function findInstrumentSpot(
   return null;
 }
 
-const BUILD_NUMBER = `v${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+declare const __BUILD_DATE__: string | undefined;
+const BUILD_NUMBER = `v${
+  typeof __BUILD_DATE__ === "string"
+    ? __BUILD_DATE__
+    : new Date().toISOString().slice(0, 10).replace(/-/g, "")
+}`;
 
 const NEW_PROJECT_TITLE = "New Song";
 const NEW_PROJECT_ARTIST = "Unknown Artist";
@@ -212,13 +218,19 @@ export function App() {
       setStatus("");
       return;
     }
-    if (!("raw" in result)) return;
-
-    const model = buildSongModel(result.raw);
+    if (!("project" in result)) return;
     const loadedProject = projectFromJson(result.project);
+    let model: SongModel;
+    if (result.raw) {
+      model = buildSongModel(result.raw);
+      if (loadedProject.patternSnapshot) applySnapshot(model, loadedProject.patternSnapshot);
+      applyTimingOverrides(loadedProject, model);
+    } else {
+      // Project-only song (no Furnace .fur / CHIP MODE): rebuild the model
+      // from the project's pattern snapshot and timing overrides.
+      model = buildSongModelFromProject(loadedProject);
+    }
     validateProject(loadedProject, model.instruments.length);
-    if (loadedProject.patternSnapshot) applySnapshot(model, loadedProject.patternSnapshot);
-    applyTimingOverrides(loadedProject, model);
 
     const loadedSettings = model.instruments.map(
       (_, i) => loadedProject.instruments[i] ?? defaultSamplerSettings(),
@@ -272,7 +284,7 @@ export function App() {
     setReference(saved ? saved.reference : loadedProject.refPitchEnabled);
     setMode(initialMode);
     setStemsAvailable(haveStems);
-    setCurrentFur(result.furBytes);
+    setCurrentFur(result.furBytes ?? null);
     setChipMix(result.chipMix ?? null);
     setEditor(null);
     setStatus(`${model.meta.name} — ${model.instruments.length} instruments`);
@@ -898,6 +910,7 @@ export function App() {
               onOpenProjectJson={openProjectJson}
               onSaveWav={saveWav}
               wavReady={mode === "sampler" || chipMix !== null}
+              furReady={currentFur !== null}
               status={status}
             />
             <SongMetaCard

@@ -23,22 +23,27 @@ function readTextIfPresent(filePath: string): string | null {
 
 export function loadDefaultSong(): LoadedSong | { error: string } {
   const dir = assetsDir();
-  const furBytes = readIfPresent(path.join(dir, "flight_school_night_shift.fur"));
-  if (!furBytes) {
-    return { error: `Cannot find bundled song assets in ${dir}` };
+  const project = readTextIfPresent(path.join(dir, "lmp-default-proj.lampjson"));
+  if (!project) {
+    return { error: `Cannot find the bundled project assets in ${dir}` };
   }
-  const project = readTextIfPresent(path.join(dir, "lmp-default-proj.lampjson")) ?? "";
   const stems = [0, 1, 2, 3].map((i) => readIfPresent(path.join(dir, `${i}.ogg`)));
   const samples = [0, 1, 2].map((i) =>
     readIfPresent(path.join(dir, "SourceSamples", `${i}.ogg`)),
   );
   const chipMix = readIfPresent(path.join(dir, "flight_school_night_shift.wav"));
-  try {
-    const raw = parseFurFile(furBytes);
-    return { raw, furBytes, project, stems, samples, chipMix };
-  } catch (e) {
-    return { error: `Cannot parse bundled .fur: ${String(e)}` };
+  // The .fur (and its stems) are optional: a project-only song loads without
+  // CHIP MODE, reconstructing its model from the project's pattern snapshot.
+  const furBytes = readIfPresent(path.join(dir, "flight_school_night_shift.fur"));
+  let raw;
+  if (furBytes) {
+    try {
+      raw = parseFurFile(furBytes);
+    } catch (e) {
+      return { error: `Cannot parse bundled .fur: ${String(e)}` };
+    }
   }
+  return { raw, furBytes: furBytes ?? undefined, project, stems, samples, chipMix };
 }
 
 function collectFiles(root: string, current: string, out: SongFolderFile[]): void {

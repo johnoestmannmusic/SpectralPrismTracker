@@ -12,10 +12,13 @@ test("web build loads the bundled song in a browser", async ({ page }) => {
 
   await page.goto("/");
   await expect(page.locator(".app-header h1")).toContainText("Lantern Music Player");
-  await expect(page.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+  await expect(page.locator(".toolbar .status")).toContainText("Aquavats", {
     timeout: 30_000,
   });
   await expect(page.locator(".tracker tbody tr").first()).toBeVisible();
-  expect(notFound).toEqual([]);
+  // CHIP-mode assets (stems / .fur / mix WAV) are optional and absent for
+  // this project-only song, so their 404s are expected.
+  const optional = /\/assets\/([0-3]\.ogg|flight_school_night_shift\.(fur|wav))$/;
+  expect(notFound.filter((url) => !optional.test(url))).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });

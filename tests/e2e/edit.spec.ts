@@ -14,7 +14,7 @@ test("EDIT MODE: select cells, navigate with arrows, and edit", async () => {
   try {
     const window = await app.firstWindow();
     await window.waitForSelector(".tracker tbody tr");
-    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
       timeout: 30_000,
     });
 
@@ -61,7 +61,7 @@ test("EDIT MODE scrolls the selected cell into view", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
       timeout: 30_000,
     });
     await window.getByRole("button", { name: "EDIT MODE" }).click();

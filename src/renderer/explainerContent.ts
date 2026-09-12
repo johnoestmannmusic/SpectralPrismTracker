@@ -208,7 +208,7 @@ export function pianoRollExplain(): ExplainerText {
 export function coverArtExplain(): ExplainerText {
   return {
     title: "Cover Art — animated, driven by the same triggers as everything else",
-    body: "A 240×240 canvas, dithered from a 32×32 buffer with a 4×4 Bayer matrix. A CD spins over flashing Matrix-style code.\n\nEvery note trigger fires a scan-flash around the disc's rim, coloured and sized by its instrument and volume — all four channels, including Noise. Click to save a crisp 1600×1600 PNG.",
+    body: "A 240×240 canvas, dithered from a 32×32 buffer with a 4×4 Bayer matrix. A glass laboratory vat holds a green plant stem that grows in and sways, surrounded by a wall of dull-blue monitoring screens that hum and scroll.\n\nEvery note trigger makes the stem jiggle and flashes an instrument-coloured aura around the vat — all four channels, including Noise. Click to save a crisp 1600×1600 PNG.",
   };
 }
 
