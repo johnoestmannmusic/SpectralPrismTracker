@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-13 07:45 by opencode
+**Board Last Updated:** 2026-09-13 08:42 by opencode
 
 ### Branding (user-confirmed)
 
@@ -119,7 +119,7 @@ npm run test:all         # typecheck + unit + audit + build + web + e2e
 
 ## Bugs
 
-_(none open — see 0007E-BUG-001…008 in Completed)_
+_(none open — see 0007E-BUG-001…014 in Completed)_
 
 ## Planned Features — Remaining Rust parity backlog
 
@@ -517,6 +517,44 @@ _(none currently)_
   left-of-centre specular band with darkened rim edges, depth-shaded liquid
   with a lit meniscus, a front-glass highlight and right-edge sheen, a back rim
   seen through the liquid, and a base plate. Same 32×32/Bayer pipeline.
+
+- **0007E-BUG-010 — Q/A/W/S retuned non-note columns in an all-columns
+  selection.** *(2026-09-13 08:20)* When a selection spans multiple columns
+  (e.g. Ctrl+A "all columns"), semitone/octave keys now only adjust note
+  columns; a single selected column still adjusts its own value (INS index,
+  VOL, FX value).
+- **0007E-BUG-011 — Beat/bar row markers invisible.** *(2026-09-13 08:20)* The
+  markers were cell backgrounds (hidden by instrument tint) and used a
+  dark-only colour. Now theme-aware `--beat-bg`/`--bar-bg` applied to the row
+  so the translucent instrument tint composites over them.
+- **0007E-BUG-012 — Only 3 of 6 Source Samples loaded.** *(2026-09-13 08:20)*
+  Both loaders hardcoded slots 0–2; now read all six
+  (`SourceSamples/0..5.ogg`), matching the new bundled folder.
+- **0007E-BUG-013 — Z always inserted C4.** *(2026-09-13 08:20)* The Q/A/W/S
+  selection refactor bypassed `recordLastValue`, so the "last entered value"
+  never updated. Those edits now record the focus value (and the adjusted note
+  on an all-columns selection), so Z repeats the last note/value as designed.
+  New E2E assertions: Z-repeat and a `6 / 6` Source Samples count.
+
+- **0007E-PLAN-113 — Preview when editing a cell's note or volume.**
+  *(2026-09-13 08:30)* Changing a cell with Q/A/W/S now auditions it the same
+  way clicking the cell does — fired for note (semitone/octave) and volume
+  columns, on the focused channel/row, after the edit is applied.
+
+- **0007E-BUG-014 — Notes after a note-off played silently.** *(2026-09-13 08:40)*
+  `buildInstrumentTimeline` cleared the channel's held instrument on a Note Off
+  (copied from the original JS/Rust), so any note after an OFF with a blank
+  instrument column (e.g. the staccato runs in Aquavats) resolved to no
+  instrument and never sounded. Furnace keeps the instrument across note-offs,
+  so the clearing was removed; only a new instrument value changes it. A note
+  after an OFF now plays with the held instrument, while the held *note*
+  timeline is still cleared by the OFF. Unit-tested; deliberate divergence from
+  the reference implementation, justified by real Furnace semantics and the
+  composer's song.
+  *Follow-up (2026-09-13):* the tracker's instrument colour-coding now keys off
+  a **held note** (`noteTimeline`) rather than the persistent instrument, so a
+  note-off clears the row tint (and mute dimming) as it should, while playback
+  still resolves the held instrument for later notes.
 
 ---
 

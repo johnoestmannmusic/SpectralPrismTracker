@@ -27,7 +27,7 @@ export function loadDefaultSong(): LoadedSong | { error: string } {
     return { error: `Cannot find the bundled project assets in ${dir}` };
   }
   const stems = [0, 1, 2, 3].map((i) => readIfPresent(path.join(dir, `${i}.ogg`)));
-  const samples = [0, 1, 2].map((i) =>
+  const samples = [0, 1, 2, 3, 4, 5].map((i) =>
     readIfPresent(path.join(dir, "SourceSamples", `${i}.ogg`)),
   );
   const chipMix = readIfPresent(path.join(dir, "flight_school_night_shift.wav"));

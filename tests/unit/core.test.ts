@@ -59,6 +59,38 @@ describe("song model", () => {
     expect(pos2.row).toBe(0);
   });
 
+  it("keeps the channel instrument across a note-off", () => {
+    const song = fixture();
+    const empty = () => ({
+      note: null,
+      instrument: null,
+      volume: null,
+      effects: Array.from({ length: 8 }, () => ({ effect: null, value: null })),
+    });
+    applyEdit(song, {
+      channel: 0,
+      order: 0,
+      row: 0,
+      cell: { ...empty(), note: { kind: "note", note: 129 }, instrument: 0 },
+    });
+    applyEdit(song, {
+      channel: 0,
+      order: 0,
+      row: 1,
+      cell: { ...empty(), note: { kind: "off" } },
+    });
+    applyEdit(song, {
+      channel: 0,
+      order: 0,
+      row: 2,
+      cell: { ...empty(), note: { kind: "note", note: 127 } },
+    });
+    // A note after a note-off must still resolve to the held instrument.
+    expect(song.channels[0]!.insTimeline[0]![2]).toBe(0);
+    // The held note is still cleared by the OFF.
+    expect(song.channels[0]!.noteTimeline[0]![1]).toBeNull();
+  });
+
   it("applyEdit mutates the cell and regenerates timelines", () => {
     const song = fixture();
     applyEdit(song, {

@@ -378,7 +378,12 @@ export function PatternGrid(props: PatternGridProps) {
         event.preventDefault();
         const rect = selectionRect(model, current, stateRef.current.anchor);
         const flat = flatColumns(model);
+        const singleColumn = !!rect && rect.colLo === rect.colHi;
         const adjust = (cell: PatternCell, column: EditColumn): PatternCell => {
+          // When the selection spans multiple columns (e.g. "select all
+          // columns"), semitone/octave changes only retune notes; a single
+          // selected column adjusts that column's own value.
+          if (!singleColumn && column.kind !== "note") return cell;
           if (key === "q") return adjustCell(cell, column, 1, model.instruments.length);
           if (key === "a") return adjustCell(cell, column, -1, model.instruments.length);
           if (key === "w") return adjustNote(cell, 12);
@@ -399,6 +404,33 @@ export function PatternGrid(props: PatternGridProps) {
               }
             }
           });
+          // Remember the focus cell's new value so Z can repeat it.
+          recordLastValue(
+            lastValues.current,
+            current.column,
+            adjust(cellAt(model, current.channel, current.order, current.row), current.column),
+          );
+          // In an all-columns selection the focus may not be a note column, so
+          // also remember the adjusted note on the focus row.
+          if (!singleColumn) {
+            const noteColumn = flat
+              .slice(rect.colLo, rect.colHi + 1)
+              .find((fc) => fc.column.kind === "note");
+            if (noteColumn) {
+              recordLastValue(
+                lastValues.current,
+                noteColumn.column,
+                adjust(cellAt(model, noteColumn.channel, rect.order, current.row), noteColumn.column),
+              );
+            }
+          }
+          // Preview the changed cell (note pitch or volume), same as clicking it.
+          if (
+            !propsRef.current.channelMuted[current.channel] &&
+            (current.column.kind === "note" || current.column.kind === "vol")
+          ) {
+            propsRef.current.onAudition([current.channel], current.order, current.row);
+          }
         }
         return;
       }
@@ -698,7 +730,11 @@ export function PatternGrid(props: PatternGridProps) {
                     const pattern =
                       patternIndex === undefined ? undefined : channel.patterns.get(patternIndex);
                     const cell = pattern?.rows[r];
-                    const instrument = channel.insTimeline[order]?.[r] ?? null;
+                    // Colour by the instrument only while a note is held; a
+                    // note-off clears the colour even though the channel keeps
+                    // its instrument for later notes.
+                    const heldNote = channel.noteTimeline[order]?.[r] ?? null;
+                    const instrument = heldNote ? channel.insTimeline[order]?.[r] ?? null : null;
                     const muted =
                       props.channelMuted[c] ||
                       (instrument !== null && (props.instrumentMuted[instrument] ?? false));

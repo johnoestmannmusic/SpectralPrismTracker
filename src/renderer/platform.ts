@@ -27,7 +27,9 @@ export async function loadDefaultSong(): Promise<LoadedSong | { error: string }>
   if (!project) {
     return { error: "Missing assets/lmp-default-proj.lampjson" };
   }
-  const samples = await Promise.all([0, 1, 2].map((i) => fetchBytes(`SourceSamples/${i}.ogg`)));
+  const samples = await Promise.all(
+    [0, 1, 2, 3, 4, 5].map((i) => fetchBytes(`SourceSamples/${i}.ogg`)),
+  );
 
   // The bundled song is project-only (no Furnace .fur / CHIP stems), so no
   // CHIP assets are requested — a missing file would otherwise log a 404.

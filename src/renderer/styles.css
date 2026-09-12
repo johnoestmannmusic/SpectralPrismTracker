@@ -20,6 +20,8 @@
   --sampler: #3f9e0e;
   --wave: #3f9e0e;
   --tracker-alt: rgba(0, 0, 0, 0.03);
+  --beat-bg: #e9f1e2;
+  --bar-bg: #d3e7c6;
   --tracker-header: #f2f4ef;
   --playhead-bg: #d9f3c8;
   --playhead-text: #1d3a10;
@@ -41,6 +43,8 @@
   --sampler: #6cd73c;
   --wave: #8fd0a0;
   --tracker-alt: rgba(255, 255, 255, 0.02);
+  --beat-bg: rgba(255, 255, 255, 0.05);
+  --bar-bg: rgba(255, 255, 255, 0.1);
   --tracker-header: #1c1c20;
   --playhead-bg: #4c4022;
   --playhead-text: #fff6dd;
@@ -427,12 +431,15 @@ select {
   background: var(--deep);
 }
 
-.tracker tr.beat td {
-  background: var(--tracker-alt);
+.tracker tr.beat {
+  background: var(--beat-bg);
+}
+
+.tracker tr.playhead {
+  background: var(--playhead-bg);
 }
 
 .tracker tr.playhead td {
-  background: var(--playhead-bg);
   color: var(--playhead-text);
 }
 
@@ -897,8 +904,8 @@ select {
   padding: 2px 8px;
 }
 
-.tracker tr.bar td {
-  background: var(--tracker-alt);
+.tracker tr.bar {
+  background: var(--bar-bg);
 }
 
 .pattern-swatch {

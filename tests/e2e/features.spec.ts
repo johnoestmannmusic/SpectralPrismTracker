@@ -106,3 +106,21 @@ test("Project JSON Load rejects non-.lampjson files", async () => {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
+
+test("all six Source Samples load", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-samples-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(
+      window.locator(".panel", { hasText: "SOURCE SAMPLES" }).getByText("6 / 6"),
+    ).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});

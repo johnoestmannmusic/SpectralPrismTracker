@@ -87,3 +87,35 @@ test("EDIT MODE scrolls the selected cell into view", async () => {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
+
+test("EDIT MODE: Z repeats the last entered note", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-z-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await window.getByRole("button", { name: "EDIT MODE" }).click();
+
+    // Enter a note via the right-click menu on row 0, channel 0.
+    const firstNote = window.locator(".tracker tbody tr").first().locator("td").nth(1);
+    await firstNote.click({ button: "right" });
+    await window
+      .locator(".context-menu")
+      .getByRole("button", { name: "D-4", exact: true })
+      .click();
+
+    // Move to another cell and press Z: it should repeat D-4.
+    const secondNote = window.locator(".tracker tbody tr").nth(2).locator("td").nth(1);
+    await secondNote.click();
+    await window.keyboard.press("z");
+    await expect(
+      window.locator(".tracker tbody tr").nth(2).locator("td").nth(1),
+    ).toHaveText("D-4");
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});

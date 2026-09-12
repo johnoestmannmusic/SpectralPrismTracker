@@ -114,9 +114,11 @@ function buildInstrumentTimeline(ch: Channel, patternLength: number): (number | 
     const row: (number | null)[] = [];
     for (let r = 0; r < patternLength; r++) {
       const cell = pat?.rows[r];
-      if (cell) {
-        if (cell.instrument !== null) current = cell.instrument;
-        if (cell.note && cell.note.kind === "off") current = null;
+      if (cell && cell.instrument !== null) {
+        // Furnace keeps the channel's instrument across note-offs; only a new
+        // instrument value changes it. (Clearing it on OFF made notes after an
+        // OFF play with no instrument, i.e. silently.)
+        current = cell.instrument;
       }
       row.push(current);
     }
