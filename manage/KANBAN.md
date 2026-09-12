@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 20:35 by opencode
+**Board Last Updated:** 2026-09-12 21:10 by opencode
 
 ### Branding (user-confirmed)
 
@@ -334,6 +334,36 @@ _(none currently)_
 - **0007E-PLAN-068 — Ctrl+Space plays from the selected EDIT cell.**
   *(2026-09-12 20:35)* `PatternGrid` reports the selection to App; in EDIT MODE
   Ctrl+Space seeks/plays from that cell's row instead of the current time.
+
+- **0007E-PLAN-069 — Instrument volume dB entry fixed (0 dB max).**
+  *(2026-09-12 21:10)* New shared `DbInput` keeps a local text buffer and
+  commits on Enter/blur, so typing "-2" is no longer reformatted mid-edit; the
+  instrument rack caps at 0 dB (1.0 linear).
+- **0007E-PLAN-070 — Base Tempo field typing fixed.** *(2026-09-12 21:10)* The
+  BPM box now buffers its text and commits on Enter/blur, so large values like
+  150 are not clamped to 2.5 while typing.
+- **0007E-PLAN-071 — ADSR ranges up to 5s.** *(2026-09-12 21:10)* Attack/decay/
+  release sliders, graph drag clamps, `envelopeAt`, `buildVoice`, voice release
+  and offline mixdown clamps all raised to 5 s; graph x-domain widened to 15.3 s.
+- **0007E-PLAN-072 — ADSR graph zero-origin fixed.** *(2026-09-12 21:10)* The
+  first vertex used raw `0` (top of the inverted y axis) instead of `py(0)`, so
+  the attack looked flat at max volume. Now it starts at the bottom and ramps to
+  max, with the zero baseline and minimum display ramp.
+- **0007E-PLAN-073 — Error banner dismiss button.** *(2026-09-12 21:10)* The
+  red error strip now has an explicit ✕ close button (e.g. after a bad JSON
+  load); previously only the whole strip was clickable.
+- **0007E-PLAN-074 — Sticky right-hand sidebar.** *(2026-09-12 21:10)* Matches
+  the original (`position: sticky; top: 12px`) on wide screens, reverting to
+  static in the narrow breakpoint.
+- **0007E-PLAN-075 — Richer hover explainer text.** *(2026-09-12 21:10)* Ported
+  the descriptive copy from the original HTML's `EXPLAIN` registry into
+  `src/renderer/explainerContent.ts` and wired it to the tracker (rows, cells,
+  channels, patterns), mixer, instruments (name/transpose/dB), source samples,
+  cover art, piano, timing, chips, comments, toolbar and the Spectral tab.
+- **0007E-PLAN-076 — Reduced sample popping.** *(2026-09-12 21:10)* One-shot
+  voices get a 5 ms end fade (an envelope-accurate ramp to 0) and raw source
+  previews fade out before stopping, removing end-of-sample clicks. Should be
+  re-confirmed by ear; loop seams already had 5 ms fades.
 
 ---
 

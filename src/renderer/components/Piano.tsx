@@ -4,6 +4,8 @@ import { noteToName, A_REF_NOTE } from "@/core/pitch";
 import { songPositionAt } from "@/core/timing";
 import type { AudioBackend } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
+import { useExplainer } from "../explainer";
+import { pianoRollExplain } from "../explainerContent";
 
 const BLACK = new Set([1, 3, 6, 8, 10]);
 const WHITE_WIDTH = 22;
@@ -17,6 +19,7 @@ interface PianoProps {
 }
 
 export function Piano({ song, backend }: PianoProps) {
+  const explain = useExplainer();
   const [, force] = useState(0);
   const lastPosition = useRef<string | null>(null);
   const flashes = useRef<Array<{ note: number; color: string; until: number }>>([]);
@@ -101,7 +104,7 @@ export function Piano({ song, backend }: PianoProps) {
   const sustainedNoise = heldNoise(song, pos.orderPos, pos.row);
 
   return (
-    <section className="panel">
+    <section className="panel" onMouseEnter={() => explain(pianoRollExplain())}>
       <h2>PIANO</h2>
       <div className="piano-row">
         <div className="piano-scroll">

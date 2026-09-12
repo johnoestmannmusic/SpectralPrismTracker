@@ -44,8 +44,13 @@ export class WebAudioBackend implements AudioBackend {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   private instrumentPreview: InstrumentPreview | null = null;
-  private sourcePreview: { node: AudioBufferSourceNode; source: number; start: number; duration: number } | null =
-    null;
+  private sourcePreview: {
+    node: AudioBufferSourceNode;
+    gain: GainNode;
+    source: number;
+    start: number;
+    duration: number;
+  } | null = null;
   private patternStemPreview: AudioBufferSourceNode[] = [];
   private patternSamplerPreview: Voice[] = [];
 
@@ -152,11 +157,14 @@ export class WebAudioBackend implements AudioBackend {
     const buffer = this.sampler.samples[source];
     if (!buffer || !this.masterGain) return;
     const node = ctx.createBufferSource();
+    const gain = ctx.createGain();
     node.buffer = buffer;
-    node.connect(this.masterGain);
+    node.connect(gain);
+    gain.connect(this.masterGain);
     node.start();
     this.sourcePreview = {
       node,
+      gain,
       source,
       start: ctx.currentTime,
       duration: buffer.duration,
@@ -164,14 +172,36 @@ export class WebAudioBackend implements AudioBackend {
   }
 
   stopSamplePreview(): void {
-    if (!this.sourcePreview) return;
-    try {
-      this.sourcePreview.node.stop();
-      this.sourcePreview.node.disconnect();
-    } catch {
-      /* already stopped */
-    }
+    const preview = this.sourcePreview;
+    if (!preview) return;
     this.sourcePreview = null;
+    const ctx = this.ctx;
+    if (ctx) {
+      const now = ctx.currentTime;
+      try {
+        preview.gain.gain.cancelScheduledValues(now);
+        preview.gain.gain.setValueAtTime(preview.gain.gain.value, now);
+        preview.gain.gain.linearRampToValueAtTime(0, now + 0.005);
+      } catch {
+        /* ignore */
+      }
+      setTimeout(() => {
+        try {
+          preview.node.stop();
+          preview.node.disconnect();
+          preview.gain.disconnect();
+        } catch {
+          /* already stopped */
+        }
+      }, 12);
+    } else {
+      try {
+        preview.node.stop();
+        preview.node.disconnect();
+      } catch {
+        /* already stopped */
+      }
+    }
   }
 
   samplePlayheads(): SamplePlayhead[] {
@@ -269,7 +299,7 @@ export class WebAudioBackend implements AudioBackend {
       return;
     }
     if (settings.looping) {
-      voice.release(voice.start + 1.5, Math.min(Math.max(settings.release, 0), 2));
+      voice.release(voice.start + 1.5, Math.min(Math.max(settings.release, 0), 5));
     }
 
     let tone: OscillatorNode | null = null;
@@ -360,7 +390,7 @@ export class WebAudioBackend implements AudioBackend {
           when,
           ctx.destination,
         );
-        voice.release(when + duration, Math.min(Math.max(settings.release, 0), 2));
+        voice.release(when + duration, Math.min(Math.max(settings.release, 0), 5));
         this.patternSamplerPreview.push(voice);
       } catch {
         // Audition is best-effort: a not-yet-ready sample/fusion render is not

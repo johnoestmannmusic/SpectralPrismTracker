@@ -62,8 +62,8 @@ export function setSpectralEnabled(settings: SamplerSettings, enabled: boolean):
 }
 
 export function envelopeAt(settings: SamplerSettings, time: number): number {
-  const attack = Math.min(Math.max(settings.attack, 0.003), 1);
-  const decay = Math.min(Math.max(settings.decay, 0), 1);
+  const attack = Math.min(Math.max(settings.attack, 0.003), 5);
+  const decay = Math.min(Math.max(settings.decay, 0), 5);
   if (time <= 0) return 0;
   if (time < attack) return time / attack;
   if (time < attack + decay) return 1 + (clamp01(settings.sustain) - 1) * ((time - attack) / decay);

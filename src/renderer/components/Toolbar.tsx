@@ -1,3 +1,6 @@
+import { useExplainer } from "../explainer";
+import { downloadWavExplain, projectJsonExplain } from "../explainerContent";
+
 interface ToolbarProps {
   onLoadFolder: () => void;
   onNewProject: () => void;
@@ -11,6 +14,7 @@ interface ToolbarProps {
 }
 
 export function Toolbar(props: ToolbarProps) {
+  const explain = useExplainer();
   return (
     <section className="panel toolbar">
       <div className="row wrap">
@@ -20,9 +24,13 @@ export function Toolbar(props: ToolbarProps) {
         </button>
         <button onClick={props.onSaveFur}>Save .FUR</button>
         <button onClick={props.onSaveMidi}>Save .MIDI</button>
-        <button onClick={props.onOpenProjectJson}>Project JSON</button>
+        <button onClick={props.onOpenProjectJson} onMouseEnter={() => explain(projectJsonExplain())}>Project JSON</button>
         <button onClick={props.onPackageSamples}>Package Samples</button>
-        <button onClick={props.onSaveWav} disabled={!props.wavReady}>
+        <button
+          onClick={props.onSaveWav}
+          onMouseEnter={() => explain(downloadWavExplain())}
+          disabled={!props.wavReady}
+        >
           Save .WAV
         </button>
         <span className="spacer" />

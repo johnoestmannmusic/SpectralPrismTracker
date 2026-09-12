@@ -119,8 +119,8 @@ export function buildVoice(
 
   const rate = baseRate * Math.pow(2, Math.min(Math.max(settings.transpose, -48), 48) / 12);
   const level = volume * Math.min(Math.max(settings.volume, 0), 1.5);
-  const attack = Math.min(Math.max(settings.attack, 0.003), 1);
-  const decay = Math.min(Math.max(settings.decay, 0), 1);
+  const attack = Math.min(Math.max(settings.attack, 0.003), 5);
+  const decay = Math.min(Math.max(settings.decay, 0), 5);
 
   source.buffer = buffer;
   source.playbackRate.value = rate;
@@ -151,7 +151,16 @@ export function buildVoice(
     if (!reg) throw new Error("Empty trim");
     const [offset, length] = reg;
     source.start(when, offset, length);
-    end = when + length / rate;
+    const playDuration = length / rate;
+    end = when + playDuration;
+    // Short fade at the end so a one-shot that ends on a non-zero sample
+    // doesn't click/pop.
+    const fade = Math.min(0.005, playDuration / 2);
+    if (fade > 0) {
+      const envEnd = envelopeAt(settings, Math.max(playDuration - fade, 0));
+      gain.gain.setValueAtTime(level * envEnd, end - fade);
+      gain.gain.linearRampToValueAtTime(0, end);
+    }
   }
 
   return new Voice(source, gain, pan, channel, instrument, settings, level, when, end, rate);
@@ -406,7 +415,7 @@ export class SamplerEngine {
   ): void {
     if (event.type === "off") {
       const voice = this.findLastVoice(event.channel, when);
-      if (voice) voice.release(when, Math.min(Math.max(voice.settings.release, 0), 2));
+      if (voice) voice.release(when, Math.min(Math.max(voice.settings.release, 0), 5));
       return;
     }
     if (event.type === "pitchRamp") {

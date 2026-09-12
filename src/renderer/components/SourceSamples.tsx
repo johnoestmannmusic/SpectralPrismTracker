@@ -3,6 +3,15 @@ import type { SongModel } from "@/core/songModel";
 import type { ProjectFile } from "@/core/project";
 import type { AudioBackend, SamplePlayhead } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
+import { useExplainer } from "../explainer";
+import {
+  clearSamplesExplain,
+  packageSamplesExplain,
+  sampleInfoExplain,
+  sampleLoadExplain,
+  samplePreviewExplain,
+  sourceSamplesExplain,
+} from "../explainerContent";
 import { Waveform, type WaveformMarker } from "./Waveform";
 
 interface SourceSamplesProps {
@@ -19,6 +28,7 @@ interface SourceSamplesProps {
 }
 
 export function SourceSamples(props: SourceSamplesProps) {
+  const explain = useExplainer();
   const [durations, setDurations] = useState<number[]>([]);
   const [playheads, setPlayheads] = useState<SamplePlayhead[]>([]);
 
@@ -37,11 +47,11 @@ export function SourceSamples(props: SourceSamplesProps) {
   return (
     <section className="panel">
       <div className="row">
-        <h2 style={{ margin: 0 }}>SOURCE SAMPLES</h2>
+        <h2 style={{ margin: 0, cursor: "help" }} onMouseEnter={() => explain(sourceSamplesExplain())}>SOURCE SAMPLES</h2>
         <span className="spacer" />
         <span className="muted small">{populated} / 6</span>
-        <button onClick={props.onPackage}>Package Samples</button>
-        <button onClick={props.onClear}>Clear Samples</button>
+        <button onClick={props.onPackage} onMouseEnter={() => explain(packageSamplesExplain())}>Package Samples</button>
+        <button onClick={props.onClear} onMouseEnter={() => explain(clearSamplesExplain())}>Clear Samples</button>
       </div>
       <p className="hint">
         Six fixed slots · package session imports as numbered WAV files for hosting.
@@ -79,12 +89,12 @@ export function SourceSamples(props: SourceSamplesProps) {
                 <span className="spacer" />
                 {duration > 0 && (
                   <>
-                    <button onClick={() => props.onPlay(slot)}>▶</button>
+                    <button onClick={() => props.onPlay(slot)} onMouseEnter={() => explain(samplePreviewExplain())}>▶</button>
                     <button onClick={props.onStop}>■</button>
-                    <button onClick={() => props.onInfo(slot)}>Info</button>
+                    <button onClick={() => props.onInfo(slot)} onMouseEnter={() => explain(sampleInfoExplain())}>Info</button>
                   </>
                 )}
-                <button onClick={() => props.onLoad(slot)}>Load</button>
+                <button onClick={() => props.onLoad(slot)} onMouseEnter={() => explain(sampleLoadExplain())}>Load</button>
               </div>
               {duration > 0 && (
                 <Waveform peaks={peaks} markers={markers} height={48} emptyLabel="(decoding…)" />

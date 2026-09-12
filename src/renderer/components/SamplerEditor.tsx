@@ -12,6 +12,8 @@ import type { AudioBackend } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
 import { Waveform, type WaveformMarker } from "./Waveform";
 import { AdsrGraph } from "./AdsrGraph";
+import { useExplainer } from "../explainer";
+import { spectralFusionExplain } from "../explainerContent";
 import { formatDb } from "../util";
 
 interface SamplerEditorProps {
@@ -32,6 +34,7 @@ interface SamplerEditorProps {
 
 export function SamplerEditor(props: SamplerEditorProps) {
   const { backend, settings } = props;
+  const explain = useExplainer();
   const [position, setPosition] = useState({ x: 360, y: 90 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const [duration, setDuration] = useState(0);
@@ -101,7 +104,12 @@ export function SamplerEditor(props: SamplerEditorProps) {
       </div>
       <div className="floating-body">
         <div className="row wrap">
-          <strong>{props.spectralTab ? "SPECTRAL" : "SAMPLER"}</strong>
+          <strong
+            style={{ cursor: "help" }}
+            onMouseEnter={() => props.spectralTab && explain(spectralFusionExplain())}
+          >
+            {props.spectralTab ? "SPECTRAL" : "SAMPLER"}
+          </strong>
           <label>
             <input
               type="checkbox"
@@ -370,10 +378,10 @@ function EnvelopeControls(props: {
       <h3>ENVELOPE · drag the points or adjust the values</h3>
       <AdsrGraph settings={settings} onChange={props.onUpdate} />
       <div className="row wrap">
-        <Slider label="Attack (s)" value={settings.attack} min={0} max={1} step={0.001} onChange={(v) => props.onUpdate({ attack: v })} />
-        <Slider label="Decay (s)" value={settings.decay} min={0} max={1} step={0.001} onChange={(v) => props.onUpdate({ decay: v })} />
+        <Slider label="Attack (s)" value={settings.attack} min={0} max={5} step={0.001} onChange={(v) => props.onUpdate({ attack: v })} />
+        <Slider label="Decay (s)" value={settings.decay} min={0} max={5} step={0.001} onChange={(v) => props.onUpdate({ decay: v })} />
         <Slider label="Sustain" value={settings.sustain} min={0} max={1} step={0.01} onChange={(v) => props.onUpdate({ sustain: v })} />
-        <Slider label="Release (s)" value={settings.release} min={0} max={2} step={0.001} onChange={(v) => props.onUpdate({ release: v })} />
+        <Slider label="Release (s)" value={settings.release} min={0} max={5} step={0.001} onChange={(v) => props.onUpdate({ release: v })} />
         <Slider label="Volume" value={settings.volume} min={0} max={1.5} step={0.01} onChange={(v) => props.onUpdate({ volume: v })} />
         <span className="mono muted">{formatDb(settings.volume)} dB</span>
       </div>

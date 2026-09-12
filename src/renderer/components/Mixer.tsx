@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import type { AudioBackend } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
 import { useExplainer } from "../explainer";
+import { mixerChannelExplain, mixerExplain, mixerMasterExplain } from "../explainerContent";
 import { dbToLinear, formatDb } from "../util";
 
 const CHANNEL_NAMES = ["Pulse 1", "Pulse 2", "Wave", "Noise"];
@@ -96,17 +97,12 @@ export function Mixer(props: MixerProps) {
 
   return (
     <section className="panel">
-      <h2>MIXER</h2>
+      <h2 style={{ cursor: "help" }} onMouseEnter={() => explain(mixerExplain())}>MIXER</h2>
       {[0, 1, 2, 3].map((c) => (
         <div
           className="row mixer-row"
           key={c}
-          onMouseEnter={() =>
-            explain({
-              title: `CHANNEL ${c}`,
-              body: `${CHANNEL_NAMES[c]} — gain, mute and live peak. Type a value in the dB field, including -∞ for silence.`,
-            })
-          }
+          onMouseEnter={() => explain(mixerChannelExplain(c))}
         >
           <label className="mute" title={CHANNEL_NAMES[c]}>
             <input
@@ -132,7 +128,10 @@ export function Mixer(props: MixerProps) {
           <Meter level={meters[c] ?? 0} />
         </div>
       ))}
-      <div className="row mixer-row master-row">
+      <div
+        className="row mixer-row master-row"
+        onMouseEnter={() => explain(mixerMasterExplain())}
+      >
         <span className="mute">MASTER</span>
         <input
           type="range"

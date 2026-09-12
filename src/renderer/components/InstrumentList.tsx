@@ -2,7 +2,14 @@ import { useState } from "react";
 import type { SongModel, InstrumentInfo } from "@/core/songModel";
 import type { SamplerSettings } from "@/core/sampler";
 import { useExplainer } from "../explainer";
-import { dbToLinear, formatDb, hexToRgb, rgbToHex } from "../util";
+import { hexToRgb, rgbToHex } from "../util";
+import { DbInput } from "./DbInput";
+import {
+  instrumentExplain,
+  instrumentsExplain,
+  instrumentVolumeExplain,
+  transposeExplain,
+} from "../explainerContent";
 
 interface InstrumentListProps {
   song: SongModel;
@@ -23,7 +30,7 @@ export function InstrumentList(props: InstrumentListProps) {
   const [menuIndex, setMenuIndex] = useState<number | null>(null);
   return (
     <section className="panel">
-      <h2>INSTRUMENTS</h2>
+      <h2 style={{ cursor: "help" }} onMouseEnter={() => explain(instrumentsExplain(song))}>INSTRUMENTS</h2>
       <p className="hint">Quick edits stay synchronized with the movable Sampler/Spectral windows.</p>
       <div className="instruments">
         {song.instruments.map((instrument, i) => {
@@ -51,30 +58,34 @@ export function InstrumentList(props: InstrumentListProps) {
                 className="ins-name-input"
                 value={instrument.name}
                 onChange={(e) => props.onUpdateInstrument(i, { name: e.target.value })}
-                onMouseEnter={() =>
-                  explain({
-                    title: `INSTRUMENT ${i.toString().padStart(2, "0")}`,
-                    body: `${instrument.name || "Unnamed"} is a Furnace instrument. Its colour follows held notes through the tracker, piano and cover scans; the quick controls share state with its movable Sampler and Spectral window.`,
-                  })
-                }
+                onMouseEnter={() => explain(instrumentExplain(song, i))}
               />
 
-              <button onClick={() => props.onTranspose(i, -1)} title="Transpose down and preview">
+              <button
+                onClick={() => props.onTranspose(i, -1)}
+                onMouseEnter={() => explain(transposeExplain())}
+                title="Transpose down and preview"
+              >
                 −
               </button>
               <span className="mono transpose">{setting.transpose.toFixed(0)} st</span>
-              <button onClick={() => props.onTranspose(i, 1)} title="Transpose up and preview">
+              <button
+                onClick={() => props.onTranspose(i, 1)}
+                onMouseEnter={() => explain(transposeExplain())}
+                title="Transpose up and preview"
+              >
                 +
               </button>
 
-              <label className="db-field" title="Instrument level">
-                <input
-                  type="number"
-                  step={0.1}
-                  value={Number(formatDb(setting.volume))}
-                  onChange={(e) =>
-                    props.onUpdate(i, { volume: Math.min(Math.max(dbToLinear(Number(e.target.value)), 0), 1.5) })
-                  }
+              <label
+                className="db-field"
+                title="Instrument level (0 dB max)"
+                onMouseEnter={() => explain(instrumentVolumeExplain())}
+              >
+                <DbInput
+                  value={setting.volume}
+                  maxDb={0}
+                  onChange={(linear) => props.onUpdate(i, { volume: linear })}
                 />
                 dB
               </label>

@@ -244,7 +244,7 @@ export function renderSamplerMix(
     for (const event of sequence.rows[row] ?? []) {
       if (event.type === "off") {
         const voice = lastByChannel[event.channel];
-        if (voice) releaseVoice(voice, time, clamp(voice.settings.release, 0, 2), false);
+        if (voice) releaseVoice(voice, time, clamp(voice.settings.release, 0, 5), false);
         continue;
       }
       if (event.type === "pitchRamp") {

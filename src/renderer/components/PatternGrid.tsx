@@ -39,6 +39,7 @@ import {
 } from "@/core/tracker";
 import { useAnimationFrame } from "../hooks";
 import { useExplainer } from "../explainer";
+import { cellExplain, channelExplain, patternsExplain, rowExplain } from "../explainerContent";
 
 const CHANNEL_NAMES = ["PULSE 1", "PULSE 2", "WAVE", "NOISE"];
 const UNDO_CAP = 20;
@@ -481,7 +482,12 @@ export function PatternGrid(props: PatternGridProps) {
   return (
     <section className="panel">
       <div className="row wrap">
-        <h2 style={{ margin: 0 }}>PATTERNS</h2>
+        <h2
+          style={{ margin: 0, cursor: "help" }}
+          onMouseEnter={() => explain(patternsExplain(song))}
+        >
+          PATTERNS
+        </h2>
         <span className="muted small">
           {song.meta.orderLength} patterns × {patternLength} rows
         </span>
@@ -556,14 +562,7 @@ export function PatternGrid(props: PatternGridProps) {
                   <span
                     className="channel-head"
                     onClick={() => props.onToggleChannel(c)}
-                    onMouseEnter={() =>
-                      explain({
-                        title: `CHANNEL ${c}`,
-                        body: `${CHANNEL_NAMES[c]} — click to ${
-                          props.channelMuted[c] ? "unmute" : "mute"
-                        } this channel.`,
-                      })
-                    }
+                    onMouseEnter={() => explain(channelExplain(song, c, !!props.channelMuted[c]))}
                     title="Mute or unmute this channel"
                   >
                     CH{c} · {CHANNEL_NAMES[c]}
@@ -598,12 +597,7 @@ export function PatternGrid(props: PatternGridProps) {
                 >
                   <td
                     className="row-col mono"
-                    onMouseEnter={() =>
-                      explain({
-                        title: `ROW ${r.toString(16).toUpperCase().padStart(2, "0")}`,
-                        body: "Click to seek transport to this row and audition every unmuted channel.",
-                      })
-                    }
+                    onMouseEnter={() => explain(rowExplain(song, order, r))}
                     onClick={() => {
                       props.onSeek(rowTime(song, order, r));
                       props.onAudition(
@@ -646,11 +640,8 @@ export function PatternGrid(props: PatternGridProps) {
                         channel={c}
                         row={r}
                         onSelect={(column, shift) => selectCell(c, r, column, shift)}
-                        onExplain={(column, value) =>
-                          explain({
-                            title: `CH${c} · ${columnLabel(column)}`,
-                            body: value,
-                          })
+                        onExplain={(column, cell) =>
+                          explain(cellExplain(song, c, order, r, column, cell))
                         }
                         onContext={(x, y, column) => setMenu({ x, y, pos: { channel: c, order, row: r, column } })}
                       />
@@ -856,7 +847,7 @@ interface ChannelCellsProps {
   row: number;
   onSelect: (column: EditColumn, shift: boolean) => void;
   onContext: (x: number, y: number, column: EditColumn) => void;
-  onExplain: (column: EditColumn, body: string) => void;
+  onExplain: (column: EditColumn, cell: PatternCell | undefined) => void;
 }
 
 function effectsFor(cell: PatternCell | undefined, column: EditColumn): string {
@@ -905,8 +896,7 @@ function ChannelCells(props: ChannelCellsProps) {
       e.preventDefault();
       props.onContext(e.clientX, e.clientY, column);
     },
-    onMouseEnter: () =>
-      props.onExplain(column, `${describe(column, cell, effectsFor(cell, column))}`),
+    onMouseEnter: () => props.onExplain(column, cell),
   });
 
   return (

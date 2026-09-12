@@ -1,7 +1,7 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type { SamplerSettings } from "@/core/sampler";
 
-const X_DOMAIN = 4.3;
+const X_DOMAIN = 15.3; // max total: attack 5 + decay 5 + hold 0.3 + release 5
 
 interface AdsrGraphProps {
   settings: SamplerSettings;
@@ -31,7 +31,7 @@ export function AdsrGraph({ settings, onChange }: AdsrGraphProps) {
   const attackX = Math.max(rawAttackX, MIN_ATTACK_WIDTH);
   const shift = attackX - rawAttackX;
   const points: Array<[number, number]> = [
-    [0, 0],
+    [0, py(0)],
     [attackX, py(1)],
     [Math.min(px(decayEnd) + shift, 1), py(sustain)],
     [Math.min(px(holdEnd) + shift, 1), py(sustain)],
@@ -50,11 +50,11 @@ export function AdsrGraph({ settings, onChange }: AdsrGraphProps) {
         const rect = wrap.getBoundingClientRect();
         const t = Math.min(Math.max((clientX - rect.left) / Math.max(rect.width, 1), 0), 1) * X_DOMAIN;
         const value = Math.min(Math.max(1 - (clientY - rect.top) / Math.max(rect.height, 1), 0), 1);
-        if (which === 0) onChange({ attack: Math.min(Math.max(t, 0), 1) });
+        if (which === 0) onChange({ attack: Math.min(Math.max(t, 0), 5) });
         else if (which === 1) {
-          onChange({ decay: Math.min(Math.max(t - attack, 0), 1), sustain: value });
+          onChange({ decay: Math.min(Math.max(t - attack, 0), 5), sustain: value });
         } else {
-          onChange({ release: Math.min(Math.max(t - holdEnd, 0), 2) });
+          onChange({ release: Math.min(Math.max(t - holdEnd, 0), 5) });
         }
       };
 

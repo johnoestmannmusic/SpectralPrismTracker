@@ -827,8 +827,11 @@ export function App() {
       </header>
 
       {error && (
-        <div className="error-banner" onClick={() => setError(null)} title="Dismiss">
-          {error}
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button className="error-dismiss" onClick={() => setError(null)} title="Dismiss error">
+            ✕
+          </button>
         </div>
       )}
 

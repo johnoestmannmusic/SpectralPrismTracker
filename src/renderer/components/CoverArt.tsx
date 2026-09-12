@@ -3,6 +3,8 @@ import type { SongModel } from "@/core/songModel";
 import { songPositionAt } from "@/core/timing";
 import type { AudioBackend } from "@/audio/backend";
 import { safeFilename } from "../util";
+import { useExplainer } from "../explainer";
+import { coverArtExplain } from "../explainerContent";
 
 const GRID = 32;
 const DISC_R = 13;
@@ -234,6 +236,7 @@ interface CoverArtProps {
 }
 
 export function CoverArt({ song, backend, title }: CoverArtProps) {
+  const explain = useExplainer();
   const displayRef = useRef<HTMLCanvasElement | null>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef<CoverState>({
@@ -304,7 +307,7 @@ export function CoverArt({ song, backend, title }: CoverArtProps) {
   };
 
   return (
-    <section className="panel">
+    <section className="panel" onMouseEnter={() => explain(coverArtExplain())}>
       <h2>COVER ART</h2>
       <canvas
         ref={displayRef}

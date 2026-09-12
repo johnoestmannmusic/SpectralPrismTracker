@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { SongModel } from "@/core/songModel";
 import type { ProjectFile } from "@/core/project";
 import { rowDurationSec } from "@/core/timing";
 import { DEFAULT_EXPLAINER, useExplainer, type ExplainerContent } from "../explainer";
+import { chipsExplain, commentsExplain, timingExplain } from "../explainerContent";
 
 export function ExplainerCard({ content }: { content: ExplainerContent }) {
   return (
@@ -30,9 +31,10 @@ export function SongComments({
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const explain = useExplainer();
   const display = comments.trim() ? comments : fallback;
   return (
-    <section className="panel">
+    <section className="panel" onMouseEnter={() => explain(commentsExplain())}>
       <button className="collapse-header" onClick={() => setOpen((o) => !o)}>
         {open ? "▾" : "▸"} SONG COMMENTS
       </button>
@@ -71,10 +73,25 @@ export function TimingCard({
   const rowDuration = rowDurationSec(song.meta);
   const bpm = 60 / (Math.max(song.meta.highlightA, 1) * rowDuration);
   const [open, setOpen] = useState(false);
-  const onHover = useHoverExplain({
-    title: "TIMING",
-    body: "Furnace stores tick rate and row speed rather than BPM. This card derives BPM from the first highlight interval, which marks the song's beat spacing.",
-  });
+  const [bpmText, setBpmText] = useState(() => bpm.toFixed(2));
+  const bpmFocused = useRef(false);
+  useEffect(() => {
+    if (!bpmFocused.current) setBpmText(bpm.toFixed(2));
+  }, [bpm]);
+  const commitBpm = () => {
+    const parsed = Number(bpmText);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setBpmText(bpm.toFixed(2));
+      return;
+    }
+    const speed = meta.speedPattern[0] ?? 6;
+    const tickRate = Math.min(
+      Math.max((parsed * Math.max(meta.highlightA, 1) * speed) / 60, 1),
+      1000,
+    );
+    onEdit({ tickRate });
+  };
+  const onHover = useHoverExplain(timingExplain(song));
   const meta = song.meta;
 
   const number = (
@@ -113,20 +130,19 @@ export function TimingCard({
             <span className="muted small">base tempo (BPM)</span>
             {editMode ? (
               <input
-                type="number"
-                min={1}
-                max={1000}
-                step={0.01}
-                value={Number(bpm.toFixed(2))}
-                onChange={(e) => {
-                  const nextBpm = Number(e.target.value);
-                  if (!Number.isFinite(nextBpm) || nextBpm <= 0) return;
-                  const speed = meta.speedPattern[0] ?? 6;
-                  const tickRate = Math.min(
-                    Math.max((nextBpm * Math.max(meta.highlightA, 1) * speed) / 60, 1),
-                    1000,
-                  );
-                  onEdit({ tickRate });
+                type="text"
+                inputMode="decimal"
+                value={bpmText}
+                onFocus={() => {
+                  bpmFocused.current = true;
+                }}
+                onBlur={() => {
+                  bpmFocused.current = false;
+                  commitBpm();
+                }}
+                onChange={(e) => setBpmText(e.target.value)}
+                onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
                 }}
               />
             ) : (
@@ -226,10 +242,7 @@ function chipName(id: number): string {
 
 export function ChipsCard({ song }: { song: SongModel }) {
   const [open, setOpen] = useState(false);
-  const onHover = useHoverExplain({
-    title: "CHIPS",
-    body: "The sound hardware declared by the Furnace module. This port accepts Game Boy chip songs and plays their rendered stems or sampler replacements.",
-  });
+  const onHover = useHoverExplain(chipsExplain(song));
   if (song.chips.length === 0) return null;
   return (
     <section className="panel" onMouseEnter={onHover}>
