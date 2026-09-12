@@ -404,11 +404,13 @@ export function PatternGrid(props: PatternGridProps) {
               }
             }
           });
-          // Remember the focus cell's new value so Z can repeat it.
+          // Remember the focus cell's new value so Z can repeat it. The cell is
+          // already adjusted by `mutate`, so record it as-is (adjusting again
+          // would store a value one step off).
           recordLastValue(
             lastValues.current,
             current.column,
-            adjust(cellAt(model, current.channel, current.order, current.row), current.column),
+            cellAt(model, current.channel, current.order, current.row),
           );
           // In an all-columns selection the focus may not be a note column, so
           // also remember the adjusted note on the focus row.
@@ -420,7 +422,7 @@ export function PatternGrid(props: PatternGridProps) {
               recordLastValue(
                 lastValues.current,
                 noteColumn.column,
-                adjust(cellAt(model, noteColumn.channel, rect.order, current.row), noteColumn.column),
+                cellAt(model, noteColumn.channel, rect.order, current.row),
               );
             }
           }
@@ -559,13 +561,27 @@ export function PatternGrid(props: PatternGridProps) {
 
   const draggingRef = useRef(false);
   const didDragRef = useRef(false);
+  const dragTimerRef = useRef<number | null>(null);
+  const clearDragTimer = useCallback(() => {
+    if (dragTimerRef.current !== null) {
+      window.clearTimeout(dragTimerRef.current);
+      dragTimerRef.current = null;
+    }
+  }, []);
   const beginDrag = (channel: number, r: number, column: EditColumn) => {
     if (!editMode) return;
-    draggingRef.current = true;
+    clearDragTimer();
+    draggingRef.current = false;
     didDragRef.current = false;
     const pos: CellPos = { channel, order, row: r, column };
-    setAnchor(pos);
-    setSelected(pos);
+    // Range selection only starts once the pointer has been held briefly, so a
+    // quick click (which may drift a pixel or two) stays a single-cell select.
+    dragTimerRef.current = window.setTimeout(() => {
+      dragTimerRef.current = null;
+      draggingRef.current = true;
+      setAnchor(pos);
+      setSelected(pos);
+    }, 250);
   };
   const extendDrag = (channel: number, r: number, column: EditColumn) => {
     if (!draggingRef.current) return;
@@ -574,11 +590,15 @@ export function PatternGrid(props: PatternGridProps) {
   };
   useEffect(() => {
     const up = () => {
+      clearDragTimer();
       draggingRef.current = false;
     };
     window.addEventListener("mouseup", up);
-    return () => window.removeEventListener("mouseup", up);
-  }, []);
+    return () => {
+      window.removeEventListener("mouseup", up);
+      clearDragTimer();
+    };
+  }, [clearDragTimer]);
 
   const selectCell = (channel: number, r: number, column: EditColumn, shift: boolean) => {
     if (!editMode) return;

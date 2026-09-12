@@ -270,6 +270,13 @@ describe("project json", () => {
     expect(project.instruments[0]!.transpose).toBe(12);
   });
 
+  it("round-trips instrument display names", () => {
+    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    project.instrumentNames = ["Bass 1", "Lead", "Perc"];
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.instrumentNames).toEqual(["Bass 1", "Lead", "Perc"]);
+  });
+
   it("round-trips the instrument pan centre and random width", () => {
     const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
     project.instruments[0]!.pan = -0.5;

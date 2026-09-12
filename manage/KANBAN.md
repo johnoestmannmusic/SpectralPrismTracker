@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-13 08:42 by opencode
+**Board Last Updated:** 2026-09-13 09:00 by opencode
 
 ### Branding (user-confirmed)
 
@@ -535,6 +535,11 @@ _(none currently)_
   never updated. Those edits now record the focus value (and the adjusted note
   on an all-columns selection), so Z repeats the last note/value as designed.
   New E2E assertions: Z-repeat and a `6 / 6` Source Samples count.
+  *Follow-up (2026-09-13):* the Q/A/W/S branch recorded the last value by
+  re-applying the adjustment after `mutate` had already applied it, storing a
+  value one step off (Z then inserted one note above/below). It now records the
+  resulting cell directly; the Z E2E asserts D-4 then Q -> Z yields D#4, not
+  E-4.
 
 - **0007E-PLAN-113 — Preview when editing a cell's note or volume.**
   *(2026-09-13 08:30)* Changing a cell with Q/A/W/S now auditions it the same
@@ -555,6 +560,15 @@ _(none currently)_
   a **held note** (`noteTimeline`) rather than the persistent instrument, so a
   note-off clears the row tint (and mute dimming) as it should, while playback
   still resolves the held instrument for later notes.
+
+- **0007E-PLAN-114 — Instrument names persist in the project JSON.**
+  *(2026-09-13 09:00)* Added `instrumentNames` to the Project schema; export
+  writes the current names and load (bundled or via Load) applies them, so
+  edited instrument names round-trip. Unit-tested.
+- **0007E-PLAN-115 — Hold-to-drag cell selection (250 ms).** *(2026-09-13 09:00)*
+  Range selection now only begins after the pointer has been held on a cell for
+  250 ms; a quick click (which may drift across a cell or two) stays a
+  single-cell selection. E2E covers both the quick-click and hold-drag cases.
 
 ---
 

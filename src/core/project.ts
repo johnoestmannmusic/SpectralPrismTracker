@@ -24,6 +24,8 @@ export interface ProjectFile {
   refPitchEnabled: boolean;
   sourceSamples: Array<SourceSampleRef | null>;
   instruments: SamplerSettings[];
+  /** Display names for the instruments (not part of the .fur). */
+  instrumentNames: string[];
   songTitle: string;
   artist: string;
   album: string;
@@ -52,6 +54,7 @@ export function defaultProject(): ProjectFile {
     refPitchEnabled: false,
     sourceSamples: Array.from({ length: 6 }, () => null),
     instruments: [],
+    instrumentNames: [],
     songTitle: "",
     artist: "",
     album: "",
@@ -352,6 +355,7 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     refPitchEnabled: typeof value.refPitchEnabled === "boolean" ? value.refPitchEnabled : false,
     sourceSamples,
     instruments,
+    instrumentNames: arr<unknown>(value.instrumentNames, []).map((n) => String(n)),
     songTitle: str("songTitle", ""),
     artist: str("artist", ""),
     album: str("album", ""),
@@ -387,6 +391,7 @@ export function projectToValue(project: ProjectFile): Record<string, unknown> {
     instruments: project.instruments.map((s) => samplerToJson(s, false)),
     theme: project.theme,
   };
+  if (project.instrumentNames.some((n) => n)) value.instrumentNames = project.instrumentNames;
   if (project.mutedChannels.some(Boolean)) value.mutedChannels = project.mutedChannels;
   if (project.mutedInstruments.some(Boolean)) value.mutedInstruments = project.mutedInstruments;
   if (project.sourceSamples.some((s) => s !== null)) value.sourceSamples = project.sourceSamples;

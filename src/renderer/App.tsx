@@ -231,6 +231,9 @@ export function App() {
       model = buildSongModelFromProject(loadedProject);
     }
     validateProject(loadedProject, model.instruments.length);
+    loadedProject.instrumentNames.forEach((name, i) => {
+      if (model.instruments[i]) model.instruments[i]!.name = name;
+    });
 
     const loadedSettings = model.instruments.map(
       (_, i) => loadedProject.instruments[i] ?? defaultSamplerSettings(),
