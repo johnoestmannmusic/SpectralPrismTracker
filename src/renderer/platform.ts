@@ -1,4 +1,4 @@
-import type { AudioFileChoice, LoadedSong, SongFolderFile } from "../shared/types";
+import type { AudioFileChoice, LoadedSong } from "../shared/types";
 
 /** True when running inside the Electron shell (preload bridge present). */
 export const isDesktop =
@@ -70,10 +70,4 @@ export function chooseAudioFile(): Promise<AudioFileChoice | { error: string }> 
   });
 }
 
-/** Folder loading is an Electron-only convenience; unsupported on the web. */
-export function loadSongFolder(): Promise<LoadedSong | { error: string }> {
-  if (isDesktop) return window.lantern.loadSongFolder();
-  return Promise.resolve({ error: "Folder loading is not supported in the browser build" });
-}
-
-export type { LoadedSong, AudioFileChoice, SongFolderFile };
+export type { LoadedSong, AudioFileChoice };

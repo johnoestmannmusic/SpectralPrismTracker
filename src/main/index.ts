@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
-import { chooseAudioFile, loadDefaultSong, loadSongFolder, saveFile } from "./assetLoader";
+import { chooseAudioFile, loadDefaultSong, saveFile } from "./assetLoader";
 import { IPC, type SaveFileRequest } from "../shared/types";
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -29,7 +29,6 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ipcMain.handle(IPC.loadDefaultSong, () => loadDefaultSong());
-  ipcMain.handle(IPC.loadSongFolder, () => loadSongFolder());
   ipcMain.handle(IPC.chooseAudioFile, () => chooseAudioFile());
   ipcMain.handle(IPC.saveFile, (_event, request: SaveFileRequest) =>
     saveFile(request.suggestedName, request.bytes),

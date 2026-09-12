@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-13 00:35 by opencode
+**Board Last Updated:** 2026-09-13 07:45 by opencode
 
 ### Branding (user-confirmed)
 
@@ -63,7 +63,7 @@ is captured as an optional card, not a parity gap.
   | `lantern-audio` (web) | `src/audio/{backend,webSampler,webAudioBackend}.ts` |
   | `lantern-app` | `src/renderer/` (React) |
   | `prism_dsp` | `native/prism-wasm/` -> `src/renderer/vendor/prism/` + `src/wasm/{prism,prism.worker,prismWorkerClient,prismWorkerProtocol}.ts` |
-  | folder/file I/O | `src/main/` + `src/preload/` |
+  | bundled-asset I/O | `src/main/` + `src/preload/` (folder hot-loading removed; see `0007E-PLAN-111`) |
 - **Dropped by design:** native `rodio` backend, `eframe` storage, `trunk`
   packaging, `System` theme.
 - **Byte-format contracts:** WAV PCM16 (LE asymmetric scaling), ZIP STORE
@@ -504,6 +504,19 @@ _(none currently)_
   is disabled for project-only songs. Both Electron and web loaders updated;
   E2E fixtures switched from the old 10-instrument song to "Aquavats" (1
   instrument).
+
+- **0007E-PLAN-111 — Folder hot-loading removed.** *(2026-09-13 07:45)*
+  Deleted `src/main/folder.ts` and all `loadSongFolder`/`assembleSongFolder`/
+  `SongFolderFile` plumbing across main, preload, shared IPC types, the
+  renderer platform layer and App. A Furnace `.fur` + matching files are now
+  bundled with the program rather than chosen at runtime. Supersedes the
+  folder-assembly parts of `0007E-PLAN-015`/`0007E-PLAN-107`; the removed
+  "Load Song Folder" button is gone for good.
+- **0007E-PLAN-112 — 3D vat in the cover art.** *(2026-09-13 07:45)* The glass
+  tube now reads as a cylinder: rounded top/bottom caps (row insets), a
+  left-of-centre specular band with darkened rim edges, depth-shaded liquid
+  with a lit meniscus, a front-glass highlight and right-edge sheen, a back rim
+  seen through the liquid, and a base plate. Same 32×32/Bayer pipeline.
 
 ---
 

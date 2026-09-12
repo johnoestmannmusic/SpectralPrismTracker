@@ -189,26 +189,51 @@ function drawScreens(buffer: Float32Array, state: CoverState): void {
   }
 }
 
-/** Glass vat with a translucent green nutrient liquid. */
+/** Glass vat with a translucent green liquid, shaded to read as a cylinder. */
 function drawVat(buffer: Float32Array, state: CoverState): void {
+  const width = VAT_RIGHT - VAT_LEFT;
+  const liquidTop = VAT_TOP + 3;
   for (let y = VAT_TOP; y <= VAT_BOTTOM; y++) {
+    // Rounded top/bottom caps: narrow the tube by an inset on the cap rows.
+    const capDist = Math.min(y - VAT_TOP, VAT_BOTTOM - y);
+    const inset = capDist <= 0 ? 2 : capDist === 1 ? 1 : 0;
     for (let x = VAT_LEFT; x <= VAT_RIGHT; x++) {
-      const edge = x === VAT_LEFT || x === VAT_RIGHT || y === VAT_TOP || y === VAT_BOTTOM;
-      if (edge) {
-        blend(buffer, x, y, [112, 152, 176], 0.85);
+      const ux = (x - VAT_LEFT + 0.5) / (width + 1); // 0 = left, 1 = right
+      const specular = Math.exp(-Math.pow((ux - 0.3) / 0.16, 2)); // bright band, left of centre
+      const rimDark = Math.pow(Math.abs(ux - 0.5) * 2, 2);
+      const glassWall =
+        x <= VAT_LEFT + inset ||
+        x >= VAT_RIGHT - inset ||
+        y <= VAT_TOP + inset ||
+        y >= VAT_BOTTOM - inset;
+      if (glassWall) {
+        const shade = 0.7 + 0.5 * specular - 0.3 * rimDark;
+        blend(buffer, x, y, [98 * shade + 34, 138 * shade + 44, 168 * shade + 54], 0.9);
         continue;
       }
-      const depth = (y - VAT_TOP) / (VAT_BOTTOM - VAT_TOP);
-      const liquid = [18 + 34 * (1 - depth), 58 + 78 * (1 - depth), 30 + 34 * (1 - depth)];
-      blend(buffer, x, y, liquid, 0.5);
+      // Interior liquid: darker with depth and away from the light band.
+      const depth = Math.max(0, Math.min(1, (y - liquidTop) / Math.max(VAT_BOTTOM - liquidTop, 1)));
+      const lit = 0.62 + 0.6 * specular - 0.4 * rimDark;
+      const base = [16 + 30 * (1 - depth), 52 + 86 * (1 - depth), 28 + 42 * (1 - depth)];
+      blend(buffer, x, y, [base[0]! * lit, base[1]! * lit, base[2]! * lit], 0.64);
     }
   }
-  // Glass highlight + base.
-  for (let y = VAT_TOP + 2; y <= VAT_BOTTOM - 2; y++) {
-    blend(buffer, VAT_LEFT + 1, y, [190, 220, 235], 0.22);
+  // Liquid surface meniscus catching light.
+  for (let x = VAT_LEFT + 2; x <= VAT_RIGHT - 2; x++) {
+    blend(buffer, x, liquidTop, [150, 232, 165], 0.38);
   }
+  // Front-glass specular highlight + soft right-edge sheen (glass in front of liquid).
+  for (let y = VAT_TOP + 3; y <= VAT_BOTTOM - 2; y++) {
+    blend(buffer, VAT_LEFT + 2, y, [215, 238, 248], 0.3);
+    blend(buffer, VAT_RIGHT - 1, y, [170, 200, 220], 0.12);
+  }
+  // Back rim seen through the liquid near the top.
+  for (let x = VAT_LEFT + 3; x <= VAT_RIGHT - 3; x++) {
+    blend(buffer, x, VAT_TOP + 1, [120, 160, 185], 0.18);
+  }
+  // Base plate.
   for (let x = VAT_LEFT - 1; x <= VAT_RIGHT + 1; x++) {
-    blend(buffer, x, VAT_BOTTOM + 1, [70, 96, 116], 0.8);
+    blend(buffer, x, VAT_BOTTOM + 1, [66, 90, 110], 0.85);
   }
   // Rising nutrient bubbles.
   for (let i = 0; i < 5; i++) {

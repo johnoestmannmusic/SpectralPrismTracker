@@ -61,7 +61,7 @@ import {
 } from "./explainer";
 import { loadLocalState, saveLocalState } from "./localState";
 import { initPrismWasm } from "./vendor/prism/loader";
-import { chooseAudioFile, loadDefaultSong, loadSongFolder, saveFile } from "./platform";
+import { chooseAudioFile, loadDefaultSong, saveFile } from "./platform";
 
 interface EditorState {
   index: number;
@@ -845,18 +845,6 @@ export function App() {
     const title = project ? project.songTitle : "source-samples";
     void saveBytes(`${safeFilename(title)}-source-samples.zip`, zipStore(entries));
   }, [project, song, saveBytes]);
-
-  const loadFolder = useCallback(async () => {
-    const result = await loadSongFolder();
-    if ("error" in result) {
-      if (result.error !== "cancelled") setError(result.error || "Failed to load folder");
-      return;
-    }
-    backendRef.current?.dispose();
-    setStatus("Loading selected song folder…");
-    setError(null);
-    applyLoaded(result);
-  }, [applyLoaded]);
 
   const openEditor = useCallback(
     (index: number, spectral: boolean) => {

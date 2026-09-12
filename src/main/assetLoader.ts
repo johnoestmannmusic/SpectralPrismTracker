@@ -1,9 +1,8 @@
 import { app, dialog } from "electron";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseFurFile } from "../core/fur/node";
-import { assembleSongFolder } from "./folder";
-import type { LoadedSong, SongFolderFile } from "../shared/types";
+import type { LoadedSong } from "../shared/types";
 
 function assetsDir(): string {
   return app.isPackaged
@@ -44,31 +43,6 @@ export function loadDefaultSong(): LoadedSong | { error: string } {
     }
   }
   return { raw, furBytes: furBytes ?? undefined, project, stems, samples, chipMix };
-}
-
-function collectFiles(root: string, current: string, out: SongFolderFile[]): void {
-  for (const entry of readdirSync(current)) {
-    const full = path.join(current, entry);
-    const stats = statSync(full);
-    if (stats.isDirectory()) {
-      collectFiles(root, full, out);
-    } else {
-      const rel = path.relative(root, full).split(path.sep).join("/");
-      out.push({ name: rel, bytes: new Uint8Array(readFileSync(full)) });
-    }
-  }
-}
-
-export async function loadSongFolder(): Promise<LoadedSong | { error: string }> {
-  const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
-  if (result.canceled || result.filePaths.length === 0) return { error: "cancelled" };
-  try {
-    const out: SongFolderFile[] = [];
-    collectFiles(result.filePaths[0]!, result.filePaths[0]!, out);
-    return assembleSongFolder(out);
-  } catch (e) {
-    return { error: `Cannot read folder: ${String(e)}` };
-  }
 }
 
 export async function chooseAudioFile(): Promise<
