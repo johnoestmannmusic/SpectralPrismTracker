@@ -18,128 +18,97 @@ Dates include a time (HH:MM).
 
 **Project Title:** 0007-Electron — Lantern Music Player (TypeScript / Electron)
 **Project Description:** Reimplement the Rust egui/eframe Lantern Music Player
-as a TypeScript + Electron desktop app. The original Rust web build is the
-functional and aesthetic reference. Electron's renderer is Chromium, so the
-Rust `web.rs`/`web_sampler.rs` Web Audio backend maps almost 1:1 to TypeScript
-and the native `rodio` backend is unnecessary. The Spectral Fusion engine is a
-3.5k-line Rust `prism_dsp` phase vocoder with no JS equivalent; it is compiled
-to WebAssembly and called from TypeScript so its numerical output is preserved.
+as a TypeScript + Electron desktop app. Web Audio (Chromium) replaces the Rust
+web audio backend; the Spectral engine's `prism_dsp` phase vocoder is compiled
+to WebAssembly and called from TypeScript. Full player, sampler/spectral
+editors, tracker EDIT MODE, cover art, piano, folder swapping and exports are
+ported.
 **Source of Truth (Rust):** `../SourceRepo/1000-shrines-of-spirit/src/0007/`
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 17:20 by opencode
-**Stack decision (user-confirmed):** React + Vite + TypeScript; `prism_dsp`
-compiled to WASM; vertical slice first; Vitest unit tests + Playwright Electron
-E2E + dependency-provenance (slopsquatting) audit.
+**Board Last Updated:** 2026-09-12 17:50 by opencode
+
+### Branding (user-confirmed)
+
+- **Font:** the bundled Medodica Regular (`MedodicaRegular.otf`), exposed as the
+  `"Medodica"` CSS family. (User wrote "Melodica"; the asset/upstream family is
+  Medodica — flag if the file should be renamed.)
+- **Light theme is the default** (the `System` option is removed). Light uses
+  the brand green `#6cd73c` on `#ffffff` panels.
+- Dark theme remains available via the header toggle; choice persists in
+  `localStorage`.
 
 ### Technical Handoff Notes
 
 - **Porting map (Rust -> TS):**
-  | Rust crate | TS location | Notes |
-  | --- | --- | --- |
-  | `lantern-fur` | `src/core/fur/` | zlib unwrap, header/block framing, INF2/SNG2/ADIR/INS2/WAVE/PATN/old-INFO parsers |
-  | `lantern-core` | `src/core/` | `songModel`, `timing`, `pitch`, `sampler`, `spectral`, `project`, `export`, `dsp` |
-  | `lantern-audio` web half | `src/audio/` | `WebAudioBackend` + `webSampler` look-ahead engine |
-  | `lantern-app` | `src/renderer/` | React panels replacing egui `app.rs`/`pattern.rs`/`editor.rs`/`cover.rs`/`theme.rs` |
-  | `prism_dsp` | `native/prism-wasm/` + `src/wasm/prism.ts` | Rust -> wasm32 for the Spectral engine |
-  | folder/file pickers + save | `src/main/` + `src/preload/` | Electron main `fs`/dialogs over IPC |
-- **Dropped by the port:** native `rodio` audio backend, `eframe` storage
-  persistence (to be replaced by an Electron `userData` JSON file), and the
-  wasm/JS `trunk` packaging.
-- **Byte-format contracts that must not drift:** WAV PCM16 (little-endian
-  asymmetric scaling), ZIP STORE (fixed DOS date `0x0021`, CRC-32), MIDI
-  (big-endian, `TICKS_PER_ROW = 24`, no running status), Project JSON schema
-  (camelCase, version 1, legacy `rootNote` -> `transpose` migration, Rust serde
-  enum encoding for `NoteValue`), cover-art PRNG seed `9001` and offline-render
+  | Rust | TS location |
+  | --- | --- |
+  | `lantern-fur` | `src/core/fur/` |
+  | `lantern-core` | `src/core/{songModel,timing,pitch,sampler,spectral,project,export,midi,dsp,tracker}.ts` |
+  | `lantern-audio` (web) | `src/audio/{backend,webSampler,webAudioBackend}.ts` |
+  | `lantern-app` | `src/renderer/` (React) |
+  | `prism_dsp` | `native/prism-wasm/` -> `src/renderer/vendor/prism/` + `src/wasm/prism.ts` |
+  | folder/file I/O | `src/main/` + `src/preload/` |
+- **Dropped:** native `rodio` backend, `eframe` storage, `trunk` packaging.
+- **Byte-format contracts:** WAV PCM16 (LE asymmetric scaling), ZIP STORE
+  (DOS date `0x0021`, CRC-32), MIDI (`TICKS_PER_ROW = 24`, big-endian, no
+  running status), Project JSON v1 (camelCase, legacy `rootNote` migration,
+  Rust serde `NoteValue` encoding), cover PRNG seed `9001`, offline mixdown
   PRNG seed `"LANTERN\x01"`.
-- **Reference fixtures (in `assets/` and `tests/fixtures/`):**
-  `flight_school_night_shift.fur` (v251, 4ch, 10 instruments, 52 patterns),
-  `06-golden_battletrain.fur` (v181, effects/F0 tempo lane, 94.416 s),
-  `lmp-default-proj.json`, 4 chip stems, 3 source samples, the full chip mix WAV.
-- **Key files:** `src/core/fur/*`, `src/core/{songModel,timing,pitch,sampler,project,spectral,dsp,export}.ts`,
-  `src/audio/{backend,webSampler,webAudioBackend}.ts`,
-  `src/renderer/{App.tsx,components/*}`, `src/main/*`, `src/preload/*`,
-  `scripts/{build,dev,audit-dependencies,build-prism-wasm}.mjs`.
+- **WASM build:** `npm run build:prism-wasm` uses `wasm-bindgen-cli` (installed
+  to `~/.cargo/bin`) after `cargo build --target wasm32-unknown-unknown`. Output
+  is committed under `native/prism-wasm/pkg/` and copied to
+  `src/renderer/vendor/prism/`; Vite emits the `.wasm` as a hashed asset.
 
 ### Commands
 
 ```
-npm run dev            # Vite renderer + Electron (hot reload for renderer)
-npm run build          # esbuild main/preload + vite renderer build -> dist/
-npm run typecheck      # renderer + node tsconfigs
-npm test               # Vitest unit tests
-npm run test:e2e       # Playwright Electron smoke test (needs dist/ built)
-npm run audit:deps     # dependency-provenance / slopsquatting audit
-npm run test:all       # typecheck + unit + audit + build + e2e
+npm run dev              # Vite renderer + Electron (renderer hot reload)
+npm run build            # esbuild main/preload + vite renderer -> dist/
+npm run typecheck        # renderer + node tsconfigs
+npm test                 # Vitest unit tests
+npm run test:e2e         # Playwright Electron smoke test (needs dist/)
+npm run audit:deps       # dependency-provenance / slopsquatting audit
+npm run build:prism-wasm # rebuild prism_dsp WASM (needs wasm-bindgen-cli)
+npm run test:all         # typecheck + unit + audit + build + e2e
 ```
 
-### Milestone status (2026-09-12 17:20)
+### Verification (2026-09-12 17:50)
 
-**Milestone 1 (vertical slice) is complete and verified.** The app builds,
-launches under Electron, parses the bundled `.fur`, loads the project/mixer,
-decodes the source samples, renders the transport, mixer, instrument list and a
-read-only tracker, and supports CHIP + SAMPLER playback through the ported Web
-Audio backend. Spectral, EDIT MODE, editors, cover art and folder-swap remain
-as later cards.
-
-**Verification evidence (all run from this repository):**
-- `npm run typecheck` — clean (both tsconfigs).
-- `npx vitest run` — 4 files, 24 tests passing.
-- `npm run audit:deps` — 40 checks passed, 0 warnings, 0 failures; 172 locked
-  packages inspected, all registry-resolved with sha512 integrity.
-- `npm run build` — succeeds; renderer bundle 262 kB (81 kB gzip) + hashed font.
-- `npx playwright test` — 1 passed: Electron launches, loads
-  `flight_school_night_shift`, renders transport/mixer/tracker.
+- `npm run typecheck` — clean.
+- `npx vitest run` — **6 files, 35 tests passing**, including the real
+  `prism_dsp` WASM engine (freeze + cross-synth) instantiated in-process.
+- `npm run audit:deps` — 40 checks passed, 0 failures; every direct dep
+  verified against npm + expected repo + lock integrity; 172 transitive
+  lockfile packages registry-resolved with sha512.
+- `npm run build` — renderer 326 kB JS + 326 kB WASM (102 kB gzip) + hashed font.
+- `npx playwright test` — Electron launches, loads
+  `flight_school_night_shift`, renders transport/mixer/tracker, toggles
+  Light→Dark theme, and opens the Project JSON window.
 
 ---
 
 ## Ideas
 
-- **0007E-IDEA-001** — Spectrogram/FFT inspector panel beyond the original's
-  scope, using the prism_dsp WASM frames.
-- **0007E-IDEA-002** — Persist window layout and editor positions via Electron
-  `userData`, mirroring the Rust `SavedEditor` eframe storage.
-- **0007E-IDEA-003** — Bundle with `electron-builder`; ship the ~38 MB CHIP mix
-  WAV compressed or generated to shrink the installer.
+- **0007E-IDEA-001** — Spectrogram/FFT inspector panel using prism_dsp frames.
+- **0007E-IDEA-002** — Draggable ADSR graph points and freeze-point waveform
+  drag (currently sliders + trim drag).
+- **0007E-IDEA-003** — `electron-builder` packaging; compress/generate the
+  ~38 MB CHIP mix WAV.
+- **0007E-IDEA-004** — Web Worker hosting the prism_dsp WASM module if inline
+  rendering ever blocks a frame on long samples.
 
 ## Bugs
 
-- **0007E-BUG-001** — `.fur` parser failed on every real file: 2-byte INS2
-  feature codes (`NA`/`GB`/`EN`) never matched because `tagEquals` was
-  hardcoded to `tag.length === 4`.
-  *Root cause:* the shared tag comparator assumed 4-byte block tags, but INS2
-  features use the same helper with 2-byte codes.
-  *Fix:* compare `tag.length === text.length` element-by-element.
-  *Status:* fixed and covered by `tests/unit/fur.test.ts` (parses both v251 and
-  v181 fixtures). Moved to Completed.
+_(none open — see 0007E-BUG-001 in Completed)_
 
 ## Planned Features
 
-- **0007E-PLAN-011b** — Build the `prism_dsp` WASM module (`npm run
-  build:prism-wasm`) and wire `src/wasm/prism.ts` into app startup, then
-  implement/verify the Spectral editor tab. Scaffold exists; build environment
-  currently lacks `wasm-pack`/`wasm-bindgen-cli`.
-- **0007E-PLAN-012** — Visual-chrome parity: 32×32 Bayer-dithered animated
-  cover art + Matrix background + 1600×1600 PNG export; piano visualiser;
-  hover explainer card; full theming (System/Light/Dark) and persistence.
-- **0007E-PLAN-013** — Tracker EDIT MODE: cell selection/keyboard entry,
-  copy/paste/flood-paste, interpolate, Pattern Manager, Clear Patterns,
-  20-step undo/redo, pattern-snapshot persistence.
-- **0007E-PLAN-014** — Sampler + Spectral movable editor windows: trim drag
-  handles, ADSR graph, loop/ping-pong, transpose, pan, polyphony, preview and
-  reference pitch.
-- **0007E-PLAN-015** — Folder-load / song-swap flow: recursive folder read,
-  `assemble_song_folder` rules (one `.fur`, stems optional 0- or 1-based,
-  source samples optional, synthesized default project), atomic backend reset.
-- **0007E-PLAN-016** — Exports not yet ported: Standard MIDI File writer,
-  offline `render_sampler_mix` WAV mixdown, "Package Samples" ZIP, Save .FUR,
-  Project JSON copy/apply/download wiring.
-- **0007E-PLAN-017** — Transport/audition extras: row/cell click seek +
-  pattern audition, Space / Ctrl+Space shortcuts, follow-playhead and
-  instrument tint toggles, sample playheads and waveforms in the UI.
-- **0007E-PLAN-018** — Source Sample windows: per-slot load/info/comments,
-  Clear Samples confirm, six-slot management and playhead overlays.
+- **0007E-PLAN-019** — Hover explainer sidebar card (contextual title/body for
+  instrument, cell, channel, cover art), the last remaining Rust-chrome piece.
+- **0007E-PLAN-020** — Cross-channel range selection in the tracker (current
+  selection is per-channel); Ctrl/Cmd+A "all columns" spans one channel.
 
 ## Assigned
 
@@ -147,79 +116,71 @@ _(none currently)_
 
 ## Completed
 
-- **0007E-PLAN-000** — Requirements gathering and architecture analysis.
-  *Process (2026-09-12 17:10):* Read all four Rust crates (13,163 lines) and
-  the external `prism_dsp` crate (3,487 lines); dispatched structural maps of
-  the large UI/audio/parser files. Confirmed Electron renderer = Chromium, so
-  the Rust web backend is the port target and `rodio` is dropped. Stack
-  decisions confirmed with the user.
+- **0007E-PLAN-000** — Architecture analysis. *(2026-09-12 17:10)* Mapped all
+  four Rust crates + `prism_dsp`; confirmed Electron/Chromium → port the web
+  backend, drop `rodio`.
 
-- **0007E-PLAN-001** — Scaffold. *Process:* Created `package.json`,
-  `tsconfig.json`/`tsconfig.node.json` (TS 7 removed `baseUrl`; paths are
-  `./src/*`), `vite.config.mts`, `vitest.config.mts`, `playwright.config.ts`,
-  React entry, Node/esbuild build + dev scripts, and the Electron main/preload
-  bootstrap. Dependencies pinned after checking each name/repo on npm.
+- **0007E-PLAN-001** — Scaffold. *TS 7 removed `baseUrl`; paths are `./src/*`.*
+  Electron + Vite + React + Vitest + Playwright + esbuild build/dev scripts.
 
-- **0007E-PLAN-002** — `.fur` parser ported to `src/core/fur/`.
-  *Process:* `reader.ts`, `blocks.ts` (INF2/SNG2/ADIR/INS2/WAVE/PATN/old-INFO),
-  `parse.ts`, `node.ts`. Verified against the v251 bundled fixture (4 channels,
-  10 instruments, 3 wavetables, 52 patterns, order list and first-row
-  note/ins/vol) and the v181 golden-battletrain fixture (effects incl. `F0`).
+- **0007E-PLAN-002/003/004** — Core ports: `.fur` parser (INF2/SNG2/ADIR/INS2/
+  WAVE/PATN/legacy INFO), song model + timelines, timing (speed/`F0xx`/`Cxxx`/
+  virtual tempo), pitch, sampler settings + look-ahead `Scheduler`, project v1
+  schema, WAV/ZIP, MIDI writer, offline `renderSamplerMix`. Verified against the
+  v251 and v181 fixtures (incl. golden-battletrain 94.416 s).
 
-- **0007E-PLAN-003** — Song model/timelines/timing/pitch in
-  `src/core/{songModel,timing,pitch}.ts`. *Process:* Ported
-  `build_song_model`, held instrument/note timelines, golden-angle instrument
-  colours, `build_row_timing` (speed/`F0xx`/`Cxxx`/virtual-tempo effects),
-  `song_position_at`, and note/frequency/playback-rate maths. Golden-battletrain
-  duration reproduces at 94.416 s.
+- **0007E-PLAN-005** — Unit tests: parser, model, scheduler, envelopes,
+  ping-pong, project round-trip, WAV/ZIP, MIDI, offline mixdown, tracker edit
+  helpers, WASM adapter, real prism_dsp WASM.
 
-- **0007E-PLAN-004** — Sampler settings/scheduler, project schema, DSP and
-  WAV/ZIP export in `src/core/{sampler,spectral,project,dsp,export}.ts`.
-  *Process:* Ported `SamplerSettings`/`envelope_at`/`sample_position`/`region`,
-  `Sequence::from_song` (incl. `01xx`/`02xx` pitch ramps), the look-ahead
-  `Scheduler`, `loop_channel` (5 ms fades + ping-pong), `waveform`, the
-  version-1 Project JSON schema with `rootNote`->`transpose` migration, Rust
-  serde `NoteValue` encoding, WAV PCM16 and ZIP STORE writers. MIDI and offline
-  sampler mixdown deferred to `0007E-PLAN-016`.
+- **0007E-PLAN-006/007/008** — Web Audio backend + React vertical slice +
+  Electron main/preload; verified by E2E.
 
-- **0007E-PLAN-005** — Vitest unit tests. *Process:* `tests/unit/fur.test.ts`,
-  `core.test.ts`, `export.test.ts`, `prism.test.ts` — 24 tests covering parser
-  counts/spot-checks, model/timeline edits, snapshot round-trips, golden
-  timing, scheduler pre-roll/looping/seek, envelopes, ping-pong, project
-  round-trip and legacy migration, WAV/ZIP byte layouts and the WASM adapter.
+- **0007E-PLAN-009/010** — Slopsquatting dependency audit + Playwright E2E.
+  *(Audit now retries transient registry failures.)*
 
-- **0007E-PLAN-006** — Web Audio backend ported to
-  `src/audio/{backend,webSampler,webAudioBackend}.ts`. *Process:* Ported the
-  master/channel gain+analyser graph, native-looping stem playback with
-  AudioContext-clock anchoring, the 25 ms sampler look-ahead engine
-  (ADSR gain automation, pitch ramps, voice stealing, random pan, baked
-  loop/ping-pong buffers), previews/reference tone/auditions, meters and
-  playheads. `spectralRender` is guarded until the WASM build lands.
+- **0007E-PLAN-011b — prism_dsp WASM build + Spectral wiring.** *(2026-09-12
+  17:45)* Installed `wasm-bindgen-cli 0.2.128`, added the `render_fused`
+  binding, built to wasm32 (326 KB), emitted it as a Vite asset, and lazily
+  initialise/register it in the renderer. The Spectral editor tab exposes all
+  eight modes, A/B freeze/tune/volume/formant, per-mode amount, stereo width
+  and loop length, and a Render button.
 
-- **0007E-PLAN-007** — React vertical slice. *Process:* `App.tsx` loads the
-  bundled song via IPC, builds the model/project, pushes mixer + instrument
-  settings into the backend and selects the initial mode. Components:
-  `Transport`, `Mixer` (peak-hold meters), `InstrumentList`, read-only
-  `PatternGrid` following the playhead. Dark Lantern palette + Medodica font.
+- **0007E-PLAN-012 — Chrome + theming.** Cover art: animated 32×32
+  Bayer-dithered Matrix background + spinning disc with note-trigger pulses and
+  1600×1600 PNG export. Piano visualiser with held-note colours and noise
+  readout. Light-default/dark theme toggle + `localStorage` persistence, brand
+  `#6cd73c`. *(Hover explainer card remains as 0007E-PLAN-019.)*
 
-- **0007E-PLAN-008** — Electron main/preload. *Process:* `BrowserWindow`
-  bootstrap, `assets:load-default-song` (main-process zlib + parse), folder
-  picker and save-dialog IPC, `contextBridge` preload API, typed
-  `window.lantern`. Folder *assembly* rules remain for `0007E-PLAN-015`.
+- **0007E-PLAN-013 — Tracker EDIT MODE.** Cell selection, arrow / Ctrl+arrow /
+  Shift-extend navigation, Z/X/C/Q/A/W/S entry, Ctrl+C/V + Shift+V flood paste
+  (tagged clipboard JSON), right-click note/instrument/volume/FX menus,
+  interpolate, Pattern Manager (move/add/duplicate/remove), Clear Patterns,
+  Keyboard Help, and 20-step snapshot undo/redo.
 
-- **0007E-PLAN-009** — Dependency-provenance / slopsquatting audit.
-  *Process:* `scripts/audit-dependencies.mjs` enforces a reviewed direct-dep
-  allowlist, verifies registry existence, expected upstream repository,
-  published version + lock-integrity match, package age and weekly downloads,
-  and audits every transitive lockfile entry for registry resolution and
-  sha512 integrity. Current result: 40 checks passed, 0 failures, 172 packages.
+- **0007E-PLAN-014 — Sampler + Spectral editor windows.** Draggable window with
+  Sampler/Spectral tabs, trim waveform drag, Start/End, source, transpose,
+  loop/ping-pong, ADSR sliders, volume/dB, random pan, polyphony/cap, preview +
+  Ref Pitch. Spectral tab gated on the WASM engine.
 
-- **0007E-PLAN-010** — Playwright Electron E2E. *Process:*
-  `tests/e2e/smoke.spec.ts` launches the built app, waits for the header and
-  status line, and asserts transport/mixer/tracker render. Passing.
+- **0007E-PLAN-015 — Folder-load / song-swap.** Electron folder dialog →
+  recursive read → `assembleSongFolder` (exactly one `.fur`, optional 0/1-based
+  stems, optional source samples, optional/synthesized project, chip mix), then
+  atomic backend dispose + reload.
 
-- **0007E-BUG-001** — 2-byte `tagEquals` bug (see Bugs above). Fixed and
-  verified.
+- **0007E-PLAN-016 — Exports/IO.** Save `.FUR`, Save `.MIDI`, Project JSON
+  copy/apply/download, Package Samples ZIP, Save `.WAV` in CHIP (embedded mix)
+  and SAMPLER (offline mixdown) modes, over Electron save dialogs.
+
+- **0007E-PLAN-017 — Transport/audition.** Row/cell click seek + sampler
+  audition, Space (play/pause) and Ctrl+Space (resume) shortcuts,
+  follow-playhead / instrument-tint / beat-line toggles, sample waveforms with
+  instrument-coloured playheads.
+
+- **0007E-PLAN-018 — Source Sample windows.** Six-slot load/play/stop/info,
+  editable name/comments, Clear Samples confirmation, decoded-duration display.
+
+- **0007E-BUG-001 — 2-byte `tagEquals` bug.** Fixed; regression-tested.
 
 ---
 

@@ -9,10 +9,20 @@ interface TransportProps {
   song: SongModel;
   mode: PlaybackMode;
   stemsAvailable: boolean;
+  editMode: boolean;
   onModeChange: (mode: PlaybackMode) => void;
+  onToggleEdit: () => void;
 }
 
-export function Transport({ backend, song, mode, stemsAvailable, onModeChange }: TransportProps) {
+export function Transport({
+  backend,
+  song,
+  mode,
+  stemsAvailable,
+  editMode,
+  onModeChange,
+  onToggleEdit,
+}: TransportProps) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -47,10 +57,17 @@ export function Transport({ backend, song, mode, stemsAvailable, onModeChange }:
         </button>
         <button
           className="mode-btn sampler"
-          data-active={mode === "sampler"}
+          data-active={mode === "sampler" && !editMode}
           onClick={() => onModeChange("sampler")}
         >
           SAMPLER MODE
+        </button>
+        <button
+          className="mode-btn edit"
+          data-active={editMode}
+          onClick={onToggleEdit}
+        >
+          EDIT MODE
         </button>
         <span className="spacer" />
         <span className="status">

@@ -19,9 +19,15 @@ export interface SongFolderFile {
 
 export const IPC = {
   loadDefaultSong: "assets:load-default-song",
-  chooseSongFolder: "assets:choose-song-folder",
+  loadSongFolder: "assets:load-song-folder",
+  chooseAudioFile: "assets:choose-audio-file",
   saveFile: "file:save",
 } as const;
+
+export interface AudioFileChoice {
+  name: string;
+  bytes: Uint8Array;
+}
 
 export interface SaveFileRequest {
   suggestedName: string;
@@ -30,6 +36,7 @@ export interface SaveFileRequest {
 
 export interface LanternApi {
   loadDefaultSong(): Promise<LoadedSong | { error: string }>;
-  chooseSongFolder(): Promise<SongFolderFile[] | { error: string }>;
+  loadSongFolder(): Promise<LoadedSong | { error: string }>;
+  chooseAudioFile(): Promise<AudioFileChoice | { error: string }>;
   saveFile(suggestedName: string, bytes: Uint8Array): Promise<boolean>;
 }

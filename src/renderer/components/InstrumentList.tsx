@@ -7,6 +7,7 @@ interface InstrumentListProps {
   sampleNames: string[];
   onUpdate: (index: number, patch: Partial<SamplerSettings>) => void;
   onPreview: (index: number) => void;
+  onOpenEditor: (index: number, spectral: boolean) => void;
 }
 
 function linearToDb(value: number): string {
@@ -66,6 +67,21 @@ export function InstrumentList(props: InstrumentListProps) {
               </select>
 
               <button onClick={() => props.onPreview(i)}>▶ Preview</button>
+
+              <span className="pill-switch">
+                <button
+                  className={!setting.spectral.enabled ? "active" : ""}
+                  onClick={() => props.onOpenEditor(i, false)}
+                >
+                  Sampler
+                </button>
+                <button
+                  className={setting.spectral.enabled ? "active" : ""}
+                  onClick={() => props.onOpenEditor(i, true)}
+                >
+                  Spectral
+                </button>
+              </span>
             </div>
           );
         })}

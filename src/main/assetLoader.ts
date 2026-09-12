@@ -2,6 +2,7 @@ import { app, dialog } from "electron";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseFurFile } from "../core/fur/node";
+import { assembleSongFolder } from "./folder";
 import type { LoadedSong, SongFolderFile } from "../shared/types";
 
 function assetsDir(): string {
@@ -53,15 +54,33 @@ function collectFiles(root: string, current: string, out: SongFolderFile[]): voi
   }
 }
 
-export async function chooseSongFolder(): Promise<SongFolderFile[] | { error: string }> {
+export async function loadSongFolder(): Promise<LoadedSong | { error: string }> {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
   if (result.canceled || result.filePaths.length === 0) return { error: "cancelled" };
   try {
     const out: SongFolderFile[] = [];
     collectFiles(result.filePaths[0]!, result.filePaths[0]!, out);
-    return out;
+    return assembleSongFolder(out);
   } catch (e) {
     return { error: `Cannot read folder: ${String(e)}` };
+  }
+}
+
+export async function chooseAudioFile(): Promise<
+  { name: string; bytes: Uint8Array } | { error: string }
+> {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile"],
+    filters: [{ name: "Audio", extensions: ["wav", "ogg", "mp3"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return { error: "cancelled" };
+  const filePath = result.filePaths[0]!;
+  try {
+    const bytes = new Uint8Array(readFileSync(filePath));
+    const base = path.basename(filePath).replace(/\.[^.]+$/, "");
+    return { name: base, bytes };
+  } catch (e) {
+    return { error: `Cannot read ${filePath}: ${String(e)}` };
   }
 }
 

@@ -1,19 +1,52 @@
+/* Brand typeface. The bundled font file is Medodica Regular (the family name
+   the project's own assets use); exposed as "Medodica". */
 @font-face {
   font-family: "Medodica";
   src: url("./assets/MedodicaRegular.otf") format("opentype");
 }
 
-:root {
+/* Light is the default brand theme: #6cd73c green on #ffffff white. */
+:root,
+:root[data-theme="light"] {
+  --bg: #f4f6f2;
+  --panel: #ffffff;
+  --edge: #dcdde0;
+  --text: #2e3440;
+  --secondary: #5e6470;
+  --deep: #eef0e9;
+  --accent: #6cd73c;
+  --amber: #6cd73c;
+  --chip: #2b8fd6;
+  --sampler: #3f9e0e;
+  --wave: #3f9e0e;
+  --tracker-alt: rgba(0, 0, 0, 0.03);
+  --tracker-header: #f2f4ef;
+  --playhead-bg: #d9f3c8;
+  --playhead-text: #1d3a10;
+  --input-bg: #ffffff;
+  --button-bg: #f2f4ef;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="dark"] {
   --bg: #101012;
   --panel: #17171a;
   --edge: #2a2a2e;
   --text: #e9e6db;
   --secondary: #8a877c;
   --deep: #0a0a0b;
+  --accent: #c9973a;
   --amber: #c9973a;
   --chip: #38bdf8;
   --sampler: #6cd73c;
   --wave: #8fd0a0;
+  --tracker-alt: rgba(255, 255, 255, 0.02);
+  --tracker-header: #1c1c20;
+  --playhead-bg: #4c4022;
+  --playhead-text: #fff6dd;
+  --input-bg: #202024;
+  --button-bg: #202024;
+  --shadow: none;
 }
 
 * {
@@ -151,7 +184,7 @@ body {
 }
 
 button {
-  background: #202024;
+  background: var(--button-bg);
   color: var(--text);
   border: 2px solid var(--edge);
   border-radius: 3px;
@@ -175,7 +208,7 @@ input[type="range"] {
 }
 
 select {
-  background: #202024;
+  background: var(--input-bg);
   color: var(--text);
   border: 2px solid var(--edge);
   border-radius: 3px;
@@ -286,7 +319,7 @@ select {
 }
 
 .instrument-row:nth-child(odd) {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tracker-alt);
 }
 
 .instrument-row button {
@@ -337,7 +370,7 @@ select {
 .tracker th {
   position: sticky;
   top: 0;
-  background: #1c1c20;
+  background: var(--tracker-header);
   color: var(--secondary);
   font-weight: normal;
   font-size: 11px;
@@ -354,22 +387,22 @@ select {
 
 .tracker td {
   padding: 1px 8px;
-  color: #cfcbbf;
+  color: var(--text);
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
 .tracker .row-col {
   color: var(--secondary);
-  background: #141416;
+  background: var(--deep);
 }
 
 .tracker tr.beat td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tracker-alt);
 }
 
 .tracker tr.playhead td {
-  background: #4c4022;
-  color: #fff6dd;
+  background: var(--playhead-bg);
+  color: var(--playhead-text);
 }
 
 .tracker td.note.on {
@@ -387,4 +420,316 @@ select {
   .sidebar {
     width: 100%;
   }
+}
+
+/* ---- Toolbar / header extras ---- */
+.theme-toggle {
+  font-size: 13px;
+}
+
+.ref-toggle {
+  font-size: 13px;
+  color: var(--secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- Source samples ---- */
+.sample-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sample-slot {
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: var(--panel);
+}
+
+.waveform {
+  width: 100%;
+  margin-top: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* ---- Instrument pill switch ---- */
+.pill-switch {
+  display: inline-flex;
+  gap: 0;
+}
+
+.pill-switch button {
+  border-radius: 0;
+}
+
+.pill-switch button:first-child {
+  border-top-left-radius: 3px;
+  border-bottom-left-radius: 3px;
+}
+
+.pill-switch button:last-child {
+  border-top-right-radius: 3px;
+  border-bottom-right-radius: 3px;
+}
+
+.pill-switch button.active,
+.tabs button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tabs {
+  margin: 8px 0;
+  gap: 0;
+}
+
+/* ---- Floating editor window ---- */
+.floating-window {
+  position: fixed;
+  width: min(680px, 92vw);
+  max-height: 84vh;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+
+.floating-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--deep);
+  border-bottom: 2px solid var(--edge);
+  cursor: move;
+  font-size: 13px;
+}
+
+.floating-body {
+  padding: 12px;
+  overflow: auto;
+}
+
+.editor-tab h3 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--secondary);
+  text-transform: uppercase;
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--secondary);
+}
+
+.slider input[type="range"] {
+  width: 130px;
+}
+
+.slider .mono {
+  min-width: 46px;
+  color: var(--text);
+}
+
+.floating-body input[type="number"] {
+  width: 72px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-family: inherit;
+}
+
+/* ---- Modals ---- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal {
+  width: min(720px, 92vw);
+  max-height: 86vh;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.project-json {
+  width: 100%;
+  height: 320px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--deep);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.modal textarea,
+.modal input {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 6px;
+  font-family: inherit;
+}
+
+/* ---- Piano ---- */
+.piano-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.piano-scroll {
+  overflow-x: auto;
+  max-width: calc(100% - 128px);
+}
+
+.noise-box {
+  width: 110px;
+  min-height: 58px;
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: var(--deep);
+}
+
+.noise-note {
+  font-size: 21px;
+}
+
+/* ---- Cover art ---- */
+.cover-canvas {
+  width: 240px;
+  height: 240px;
+  image-rendering: pixelated;
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  cursor: pointer;
+  background: var(--deep);
+}
+
+/* ---- Tracker edit mode ---- */
+.mode-btn.edit[data-active="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.channel-head {
+  cursor: pointer;
+}
+
+.muted-col {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.tracker td {
+  cursor: default;
+}
+
+.tracker-cell.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tracker-cell.in-range {
+  box-shadow: inset 0 0 0 1px rgba(108, 215, 60, 0.4);
+}
+
+.muted-cell {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 4px;
+  min-width: 190px;
+  max-height: 360px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.menu-item:hover {
+  background: var(--deep);
+  border: none;
+}
+
+.menu-label {
+  color: var(--secondary);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 8px 2px;
+}
+
+.manager-list {
+  max-height: 380px;
+  overflow: auto;
+}
+
+.manager-row {
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.manager-row button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 18px;
 }

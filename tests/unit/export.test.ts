@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { crc32, wavPcm16, zipStore } from "@/core/export";
 import { makeClip } from "@/core/spectral";
+import { clipDuration } from "@/core/dsp";
+import { buildSongModel } from "@/core/songModel";
+import { parseFurFile } from "@/core/fur/node";
+import { writeMidi } from "@/core/midi";
+import { defaultSamplerSettings } from "@/core/sampler";
+import { renderSamplerMix } from "@/core/export";
+import { fixtureBytes } from "./fixtures";
 
 function ascii(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.subarray(start, start + length));
@@ -62,5 +69,55 @@ describe("ZIP export", () => {
 
     expect(ascii(bytes, bytes.length - 22, 4)).toBe("PK\u0005\u0006");
     expect(data.getUint16(bytes.length - 22 + 10, true)).toBe(1); // total entries
+  });
+});
+
+describe("MIDI export", () => {
+  it("writes a format-1 SMF with one tempo track and one track per channel", () => {
+    const song = buildSongModel(parseFurFile(fixtureBytes("assets/flight_school_night_shift.fur")));
+    const bytes = writeMidi(song);
+    const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+    expect(ascii(bytes, 0, 4)).toBe("MThd");
+    expect(data.getUint32(4, false)).toBe(6);
+    expect(data.getUint16(8, false)).toBe(1); // format 1
+    expect(data.getUint16(10, false)).toBe(1 + Math.min(song.channels.length, 4));
+    expect(data.getUint16(12, false)).toBe(24); // TICKS_PER_ROW
+    expect(ascii(bytes, 14, 4)).toBe("MTrk");
+    // Each track ends with an End of Track meta event.
+    expect(ascii(bytes, bytes.length - 3, 3)).toBe("\u00ff\u002f\u0000");
+  });
+});
+
+describe("offline sampler mixdown", () => {
+  it("renders a stereo clip from a simple note", () => {
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.endSec = 1;
+    settings.attack = 0.003;
+    settings.decay = 0;
+    settings.sustain = 1;
+    settings.volume = 1;
+
+    const sequence = {
+      tuning: 440,
+      rows: [[{ type: "note" as const, channel: 0, instrument: 0, rate: 1, volume: 1 }]],
+      rowTimes: [0, 1],
+    };
+    const samples = new Float32Array(44_100).fill(0.5);
+    const clip = makeClip([Array.from(samples)], 44_100);
+
+    const mix = renderSamplerMix(
+      sequence,
+      [settings],
+      [clip],
+      [1, 1, 1, 1],
+      [false, false, false, false],
+      1,
+    );
+    expect(mix.channels).toHaveLength(2);
+    expect(clipDuration(mix)).toBeGreaterThan(0.9);
+    const peak = Math.max(...Array.from(mix.channels[0]!, (v) => Math.abs(v)));
+    expect(peak).toBeGreaterThan(0);
   });
 });
