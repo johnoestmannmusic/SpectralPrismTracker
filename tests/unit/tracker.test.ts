@@ -6,6 +6,7 @@ import {
   adjustNote,
   clearPatternsSnapshot,
   clearValue,
+  columnInRect,
   flatColumnsForChannel,
   insertPatternAfter,
   interpolateColumn,
@@ -67,7 +68,21 @@ describe("tracker helpers", () => {
       { channel: 0, order: 0, row: 4, column: { kind: "vol" } },
       { channel: 0, order: 0, row: 1, column: { kind: "note" } },
     );
-    expect(rect).toEqual({ order: 0, channel: 0, rowLo: 1, rowHi: 4, colLo: 0, colHi: 2 });
+    expect(rect).toEqual({ order: 0, rowLo: 1, rowHi: 4, colLo: 0, colHi: 2 });
+  });
+
+  it("spans channels in a single selection rectangle", () => {
+    const song = fixture();
+    const rect = selectionRect(
+      song,
+      { channel: 1, order: 0, row: 3, column: { kind: "note" } },
+      { channel: 0, order: 0, row: 1, column: { kind: "note" } },
+    );
+    // Channel 0's NOTE is global column 0; channel 1's NOTE is global column 4.
+    expect(rect).toEqual({ order: 0, rowLo: 1, rowHi: 3, colLo: 0, colHi: 4 });
+    expect(columnInRect(song, rect!, 0, { kind: "vol" })).toBe(true);
+    expect(columnInRect(song, rect!, 1, { kind: "note" })).toBe(true);
+    expect(columnInRect(song, rect!, 2, { kind: "note" })).toBe(false);
   });
 
   it("interpolates a note range and keeps the FX effect code", () => {

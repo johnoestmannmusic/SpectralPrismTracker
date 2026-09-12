@@ -39,6 +39,7 @@ import { SourceSamples } from "./components/SourceSamples";
 import { Piano } from "./components/Piano";
 import { CoverArt } from "./components/CoverArt";
 import { SamplerEditor } from "./components/SamplerEditor";
+import { AudioError } from "./components/AudioError";
 import {
   ChipsCard,
   ExplainerCard,
@@ -607,7 +608,8 @@ export function App() {
       channelMuted,
       masterVolume,
     );
-    void saveBytes(`${safeFilename(project?.songTitle || song.meta.name)}-sampler-mix.wav`, wavPcm16(mix));
+    const title = project ? project.songTitle : song.meta.name;
+    void saveBytes(`${safeFilename(title)}-sampler-mix.wav`, wavPcm16(mix));
   }, [song, mode, chipMix, settings, channelVolume, channelMuted, masterVolume, project, saveBytes]);
 
   const packageSamples = useCallback(() => {
@@ -623,7 +625,7 @@ export function App() {
       setError("No decoded Source Samples are available to package");
       return;
     }
-    const title = project?.songTitle || song?.meta.name || "lantern";
+    const title = project ? project.songTitle : "source-samples";
     void saveBytes(`${safeFilename(title)}-source-samples.zip`, zipStore(entries));
   }, [project, song, saveBytes]);
 
@@ -714,6 +716,7 @@ export function App() {
               onModeChange={changeMode}
               onToggleEdit={toggleEdit}
             />
+            <AudioError backend={backend} />
             <PatternGrid
               song={song}
               backend={backend}
@@ -816,7 +819,7 @@ export function App() {
               <button
                 onClick={() =>
                   void saveBytes(
-                    `${safeFilename(project?.songTitle || song?.meta.name || "project")}.json`,
+                    `${safeFilename(project ? project.songTitle : "project")}.json`,
                     new TextEncoder().encode(projectIoText),
                   )
                 }

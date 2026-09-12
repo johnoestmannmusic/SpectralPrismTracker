@@ -238,6 +238,29 @@ describe("project json", () => {
     expect(project.instruments[0]!.transpose).toBe(12);
   });
 
+  it("gracefully imports the legacy Fusion schema and unknown modes", () => {
+    const value = JSON.parse(fixtureText("assets/lmp-default-proj.json")) as {
+      instruments: Array<Record<string, unknown>>;
+    };
+    const first = value.instruments[0]!;
+    delete first.spectral;
+    first.spectralFusion = {
+      enabled: true,
+      mode: "spectral-blend",
+      algorithm: "spectral-blend",
+      freezePoint: 30,
+    };
+    delete first.transpose;
+    first.rootNote = 117;
+    value.instruments[1]!.spectral = { mode: "totally-unknown" };
+
+    const project = projectFromJson(JSON.stringify(value));
+    expect(project.instruments[0]!.transpose).toBe(12); // rootNote migration
+    expect(project.instruments[0]!.spectral.enabled).toBe(true);
+    expect(project.instruments[0]!.spectral.mode).toBe("cross-synth");
+    expect(project.instruments[1]!.spectral.mode).toBe("off");
+  });
+
   it("applyTimingOverrides only touches fields that are set", () => {
     const song = fixture();
     const originalSecondRow = song.rowTimes[1]!;

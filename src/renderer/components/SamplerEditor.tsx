@@ -11,6 +11,7 @@ import {
 import type { AudioBackend } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
 import { Waveform, type WaveformMarker } from "./Waveform";
+import { AdsrGraph } from "./AdsrGraph";
 import { formatDb } from "../util";
 
 interface SamplerEditorProps {
@@ -362,7 +363,8 @@ function EnvelopeControls(props: {
   const { settings } = props;
   return (
     <>
-      <h3>ENVELOPE · shared with the Sampler tab</h3>
+      <h3>ENVELOPE · drag the points or adjust the values</h3>
+      <AdsrGraph settings={settings} onChange={props.onUpdate} />
       <div className="row wrap">
         <Slider label="Attack (s)" value={settings.attack} min={0} max={1} step={0.001} onChange={(v) => props.onUpdate({ attack: v })} />
         <Slider label="Decay (s)" value={settings.decay} min={0} max={1} step={0.001} onChange={(v) => props.onUpdate({ decay: v })} />

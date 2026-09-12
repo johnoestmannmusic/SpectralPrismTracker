@@ -18,8 +18,10 @@ import {
   adjustNote,
   clearPatternsSnapshot,
   clearValue,
+  columnInRect,
   columnLabel,
-  flatColumnsForChannel,
+  flatColumns,
+  globalColumnIndex,
   insertPatternAfter,
   interpolateColumn,
   readValue,
@@ -29,6 +31,7 @@ import {
   type CellPos,
   type CellValue,
   type EditColumn,
+  type FlatColumn,
 } from "@/core/tracker";
 import { useAnimationFrame } from "../hooks";
 import { useExplainer } from "../explainer";
@@ -208,21 +211,27 @@ export function PatternGrid(props: PatternGridProps) {
       }
       if (!current) return;
 
-      const flat = flatColumnsForChannel(model, current.channel);
-      const columnIdx = flat.findIndex(
-        (c) => c.kind === current.column.kind && (c.kind !== "fx" || c.index === (current.column as { index: number }).index),
-      );
+      const flat = flatColumns(model);
+      const columnIdx = globalColumnIndex(model, current.channel, current.column);
       const patternLength = model.meta.patternLength;
 
       if (command && event.key.toLowerCase() === "a") {
         event.preventDefault();
         const rect = selectionRect(model, current, stateRef.current.anchor);
-        const allSelected = rect && rect.rowLo === 0 && rect.rowHi === patternLength - 1;
-        if (allSelected && rect.colLo === 0 && rect.colHi === flat.length - 1) {
-          setAnchor({ ...current, column: flat[flat.length - 1]! });
+        const wholeColumn =
+          rect &&
+          rect.rowLo === 0 &&
+          rect.rowHi === patternLength - 1 &&
+          rect.colLo === columnIdx &&
+          rect.colHi === columnIdx;
+        if (wholeColumn) {
+          const first = flat[0]!;
+          const last = flat[flat.length - 1]!;
+          setAnchor({ ...current, row: 0, channel: first.channel, column: first.column });
+          setSelected({ ...current, row: patternLength - 1, channel: last.channel, column: last.column });
         } else {
-          setAnchor({ ...current, row: 0, column: flat[0]! });
-          setSelected({ ...current, row: patternLength - 1, column: flat[flat.length - 1]! });
+          setAnchor({ ...current, row: 0 });
+          setSelected({ ...current, row: patternLength - 1 });
         }
         return;
       }
@@ -271,10 +280,12 @@ export function PatternGrid(props: PatternGridProps) {
           } else if (event.shiftKey) {
             const next = Math.min(Math.max(columnIdx + dx, 0), flat.length - 1);
             setAnchor(stateRef.current.anchor ?? current);
-            setSelected({ ...current, column: flat[next]! });
+            const fc = flat[next]!;
+            setSelected({ ...current, channel: fc.channel, column: fc.column });
           } else {
             const next = ((columnIdx + dx) % flat.length + flat.length) % flat.length;
-            setSelected({ ...current, column: flat[next]! });
+            const fc = flat[next]!;
+            setSelected({ ...current, channel: fc.channel, column: fc.column });
             setAnchor(null);
           }
         }
@@ -289,11 +300,16 @@ export function PatternGrid(props: PatternGridProps) {
           event.preventDefault();
           mutate(() => {
             for (let r = rect.rowLo; r <= rect.rowHi; r++) {
-              let rowCell = cellAt(model, rect.channel, rect.order, r);
+              const byChannel = new Map<number, PatternCell>();
               for (let ci = rect.colLo; ci <= rect.colHi; ci++) {
-                rowCell = clearValue(rowCell, flat[ci]!);
+                const fc = flat[ci]!;
+                const cell =
+                  byChannel.get(fc.channel) ?? cellAt(model, fc.channel, rect.order, r);
+                byChannel.set(fc.channel, clearValue(cell, fc.column));
               }
-              applyEdit(model, { channel: rect.channel, order: rect.order, row: r, cell: rowCell });
+              for (const [ch, cell] of byChannel) {
+                applyEdit(model, { channel: ch, order: rect.order, row: r, cell });
+              }
             }
           });
           return;
@@ -327,16 +343,17 @@ export function PatternGrid(props: PatternGridProps) {
     if (!current) return;
     const rect = selectionRect(model, current, stateRef.current.anchor);
     if (!rect) return;
-    const flat = flatColumnsForChannel(model, rect.channel);
+    const flat = flatColumns(model);
     const columns = flat.slice(rect.colLo, rect.colHi + 1);
     const cells: CellValue[][] = [];
     for (let r = rect.rowLo; r <= rect.rowHi; r++) {
       const rowValues: CellValue[] = [];
-      const cell = cellAt(model, rect.channel, rect.order, r);
-      for (const column of columns) rowValues.push(readValue(cell, column));
+      for (const fc of columns) {
+        rowValues.push(readValue(cellAt(model, fc.channel, rect.order, r), fc.column));
+      }
       cells.push(rowValues);
     }
-    const payload = JSON.stringify({ columns, cells });
+    const payload = JSON.stringify({ columns: columns.map((fc) => fc.column), cells });
     await navigator.clipboard.writeText(`${CLIPBOARD_TAG}${payload}`).catch(() => undefined);
   }, []);
 
@@ -356,20 +373,23 @@ export function PatternGrid(props: PatternGridProps) {
         columns: EditColumn[];
         cells: CellValue[][];
       };
-      const flat = flatColumnsForChannel(model, current.channel);
-      const startIdx = flat.findIndex(
-        (c) => c.kind === current.column.kind && (c.kind !== "fx" || c.index === (current.column as { index: number }).index),
-      );
+      const flat = flatColumns(model);
+      const startIdx = globalColumnIndex(model, current.channel, current.column);
       mutate(() => {
         const end = flood ? model.meta.patternLength : Math.min(current.row + block.cells.length, model.meta.patternLength);
         for (let r = current.row; r < end; r++) {
           const values = block.cells[(r - current.row) % block.cells.length]!;
-          let cell = cellAt(model, current.channel, current.order, r);
+          const byChannel = new Map<number, PatternCell>();
           values.forEach((value, offset) => {
             const target = flat[startIdx + offset];
-            if (target) cell = writeValue(cell, target, value);
+            if (!target) return;
+            const cell =
+              byChannel.get(target.channel) ?? cellAt(model, target.channel, current.order, r);
+            byChannel.set(target.channel, writeValue(cell, target.column, value));
           });
-          applyEdit(model, { channel: current.channel, order: current.order, row: r, cell });
+          for (const [ch, cell] of byChannel) {
+            applyEdit(model, { channel: ch, order: current.order, row: r, cell });
+          }
         }
       });
     },
@@ -388,11 +408,9 @@ export function PatternGrid(props: PatternGridProps) {
   const rect = editMode ? selectionRect(song, selected, anchor) : null;
 
   const isInRange = (channel: number, r: number, column: EditColumn): boolean => {
-    if (!rect || rect.channel !== channel || rect.order !== order) return false;
+    if (!rect || rect.order !== order) return false;
     if (r < rect.rowLo || r > rect.rowHi) return false;
-    const flat = flatColumnsForChannel(song, channel);
-    const idx = flat.findIndex((c) => c.kind === column.kind && (c.kind !== "fx" || c.index === (column as { index: number }).index));
-    return idx >= rect.colLo && idx <= rect.colHi;
+    return columnInRect(song, rect, channel, column);
   };
 
   const isSelected = (channel: number, r: number, column: EditColumn): boolean =>
@@ -485,7 +503,11 @@ export function PatternGrid(props: PatternGridProps) {
             <tr>
               <th className="row-col">ROW</th>
               {channels.map((_, c) => (
-                <th key={c} colSpan={4} className={props.channelMuted[c] ? "muted-col" : ""}>
+                <th
+                  key={c}
+                  colSpan={3 + Math.max(song.channels[c]?.effectColumns ?? 1, 1)}
+                  className={props.channelMuted[c] ? "muted-col" : ""}
+                >
                   <span
                     className="channel-head"
                     onClick={() => props.onToggleChannel(c)}
@@ -599,11 +621,11 @@ export function PatternGrid(props: PatternGridProps) {
             const cell = cellAt(song, menu.pos.channel, menu.pos.order, menu.pos.row);
             applyMenuEdit(writeValue(cell, column, value));
           }}
-          onInterpolate={(column) => {
+          onInterpolate={(fc) => {
             if (!rect) return;
             const model = song;
             mutate(() => {
-              interpolateColumn(model, rect.channel, column, rect.order, rect.rowLo, rect.rowHi);
+              interpolateColumn(model, fc.channel, fc.column, rect.order, rect.rowLo, rect.rowHi);
             });
             setMenu(null);
           }}
@@ -885,21 +907,21 @@ interface ContextMenuProps {
   rect: ReturnType<typeof selectionRect>;
   onClose: () => void;
   onApply: (column: EditColumn, value: CellValue) => void;
-  onInterpolate: (column: EditColumn) => void;
+  onInterpolate: (fc: FlatColumn) => void;
 }
 
 function ContextMenu({ song, menu, rect, onClose, onApply, onInterpolate }: ContextMenuProps) {
   const column = menu.pos.column;
-  const showInterpolate = rect && rect.rowHi > rect.rowLo && rect.channel === menu.pos.channel;
+  const showInterpolate = !!rect && rect.rowHi > rect.rowLo;
   return (
     <div className="context-menu" style={{ left: menu.x, top: menu.y }} onMouseLeave={onClose}>
       {showInterpolate &&
         rect &&
-        flatColumnsForChannel(song, rect.channel)
+        flatColumns(song)
           .slice(rect.colLo, rect.colHi + 1)
-          .map((col, i) => (
-            <button key={i} className="menu-item" onClick={() => onInterpolate(col)}>
-              Interpolate {columnLabel(col)}
+          .map((fc, i) => (
+            <button key={i} className="menu-item" onClick={() => onInterpolate(fc)}>
+              Interpolate CH{fc.channel} {columnLabel(fc.column)}
             </button>
           ))}
       {column.kind === "note" && (

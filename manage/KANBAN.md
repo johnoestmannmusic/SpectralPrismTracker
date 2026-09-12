@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 18:25 by opencode
+**Board Last Updated:** 2026-09-12 18:40 by opencode
 
 ### Branding (user-confirmed)
 
@@ -88,10 +88,10 @@ npm run build:prism-wasm # rebuild prism_dsp WASM (needs wasm-bindgen-cli)
 npm run test:all         # typecheck + unit + audit + build + e2e
 ```
 
-### Verification baseline (2026-09-12 18:15)
+### Verification baseline (2026-09-12 18:40)
 
 - `npm run typecheck` — clean.
-- `npx vitest run` — **6 files, 35 tests passing**, including the real
+- `npx vitest run` — **6 files, 37 tests passing**, including the real
   `prism_dsp` WASM engine (freeze + cross-synth) instantiated in-process.
 - `npm run audit:deps` — 40 checks passed, 0 failures; 172 transitive lockfile
   packages registry-resolved with sha512.
@@ -117,37 +117,18 @@ npm run test:all         # typecheck + unit + audit + build + e2e
 
 ## Bugs
 
-- **0007E-BUG-006** — **SpectralPrism: cannot choose Sample A's Source Sample.**
-  *Symptom:* the Spectral tab only exposed a Sample B source picker.
-  *Fix:* added a Sample A source selector bound to the instrument's
-  `sourceIndex`, rebuilding the render on change. *Status:* fixed (see
-  Completed).
-
-_(Resolved bugs are moved to Completed, keeping their IDs.)_
+_(none open — see 0007E-BUG-001…006 in Completed)_
 
 ## Planned Features — Remaining Rust parity backlog
 
-Backlog after the 2026-09-12 third pass.
+All tracked Rust-parity cards except the optional Rust-deferred `.FUR` writer
+have now landed.
 
-- **0007E-PLAN-020** — **Cross-channel range selection.** Extend the tracker's
-  flat-column space so Shift selection, copy/paste/flood-paste, X-clear-range,
-  interpolate and Ctrl/Cmd+A operate across channels. *Rust:* `pattern.rs`
-  `flat_columns` is global; `selection_rect` stores flat `col_lo/col_hi`.
-- **0007E-PLAN-038** — **Frozen multi-row grid headers.** Verify/fix both
-  sticky header rows during body scroll (Rust `TableBuilder` pinned header).
-- **0007E-PLAN-040** — **Draggable ADSR graph.** Draw the envelope with
-  draggable attack/decay/sustain/release handles (keeping the sliders).
-  *Rust:* `editor.rs` `adsr()`.
-- **0007E-PLAN-047** — **Per-panel audio errors.** Surface decode/render errors
-  in the relevant player/editor panel, not only the global banner.
-- **0007E-PLAN-048** — **Legacy Project JSON compatibility audit** for the
-  pre-`prism_dsp` Fusion schema and `rootNote`.
-- **0007E-PLAN-049** — **Export parity details** (runtime CHIP mix naming,
-  `.FUR` passthrough, Package Samples numbered WAV names).
 - **0007E-PLAN-051** — *Optional (mirrors Rust's own open item):* **Save .FUR
-  writer from live editor state** (splice SNG2/PATN, recompute block pointers,
-  zlib re-wrap). Rust deliberately deferred this; both apps currently pass
-  through the loaded bytes.
+  writer from live editor state** (splice SNG2/PATN, recompute the block-pointer
+  table, re-wrap in zlib). Rust deliberately deferred this because it could not
+  validate against a real Furnace install; both apps currently pass through the
+  loaded bytes. Verify against a real Furnace build before trusting it.
 
 ## Assigned
 
@@ -231,6 +212,29 @@ _(none currently)_
   Also resets ADSR to the defaults.
 - **0007E-PLAN-050 — Theme-following waveform colours.** *(2026-09-12 18:25)*
   Waveforms read the `--wave` theme variable.
+- **0007E-PLAN-020 — Cross-channel range selection.** *(2026-09-12 18:40)*
+  `tracker.ts` now exposes a global flat-column space (`flatColumns`,
+  `globalColumnIndex`, `columnInRect`) and `selectionRect` spans channels.
+  Shift-select, Ctrl+C/V + flood paste, X-range-clear, interpolate and Ctrl/Cmd+A
+  all operate across channels; unit test asserts a CH0→CH1 rectangle and
+  `inSelection` membership.
+- **0007E-PLAN-038 — Frozen multi-row tracker headers.** *(2026-09-12 18:40)*
+  Both header rows use explicit non-overlapping sticky offsets (0 / 28px) and
+  the channel header `colSpan` now tracks the real effect-column count.
+- **0007E-PLAN-040 — Draggable ADSR graph.** *(2026-09-12 18:40)* New
+  `AdsrGraph` renders the envelope with three draggable handles (attack,
+  decay/sustain, release), alongside the numeric sliders; E2E asserts the
+  handles render.
+- **0007E-PLAN-047 — Per-panel audio errors.** *(2026-09-12 18:40)* New
+  `AudioError` component polls the backend and shows a red inline label under
+  the player; no longer only the global banner.
+- **0007E-PLAN-048 — Legacy Project JSON compatibility.** *(2026-09-12 18:40)*
+  Import now falls back to the legacy `spectralFusion` object, aliases the old
+  `spectral-blend` mode to `cross-synth`, and maps unknown modes to `off`
+  instead of producing an invalid value; covered by a unit test.
+- **0007E-PLAN-049 — Export filename parity.** *(2026-09-12 18:40)* Package
+  Samples, sampler WAV and Project JSON filenames now match the Rust fallbacks
+  (`project.songTitle`, else the Rust default string) exactly.
 
 ---
 

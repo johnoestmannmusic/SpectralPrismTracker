@@ -4,7 +4,7 @@ import {
   type SamplerSettings,
 } from "./sampler";
 import type { NoteValue, PatternCell } from "./fur/types";
-import { defaultSpectralSettings, type SpectralSettings } from "./spectral";
+import { SPECTRAL_FUSION_MODES, defaultSpectralSettings, type SpectralSettings } from "./spectral";
 import { retime, type PatternSnapshot, type SongModel } from "./songModel";
 
 export interface SourceSampleRef {
@@ -160,17 +160,31 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
 
 // ---- Sampler / spectral settings JSON mapping ----
 
+/** Legacy pre-prism_dsp Fusion mode keys that map onto a current mode. */
+const LEGACY_MODE_ALIASES: Record<string, SpectralSettings["mode"]> = {
+  "spectral-blend": "cross-synth",
+};
+
 function spectralFromJson(value: unknown): SpectralSettings {
   const d = defaultSpectralSettings();
   if (!value || typeof value !== "object") return d;
   const obj = value as Record<string, unknown>;
   const num = (key: string, fallback: number) =>
     typeof obj[key] === "number" ? (obj[key] as number) : fallback;
-  const mode = typeof obj.mode === "string" ? obj.mode : d.mode;
+  const rawMode =
+    typeof obj.mode === "string"
+      ? obj.mode
+      : typeof obj.algorithm === "string"
+        ? obj.algorithm
+        : d.mode;
+  const aliased = LEGACY_MODE_ALIASES[rawMode] ?? rawMode;
+  const mode = (SPECTRAL_FUSION_MODES as string[]).includes(aliased)
+    ? (aliased as SpectralSettings["mode"])
+    : "off";
   return {
     enabled: typeof obj.enabled === "boolean" ? obj.enabled : d.enabled,
     sourceIndex2: typeof obj.sourceIndex2 === "number" ? obj.sourceIndex2 : null,
-    mode: mode as SpectralSettings["mode"],
+    mode,
     freezePoint: num("freezePoint", d.freezePoint),
     freezePointB: num("freezePointB", d.freezePointB),
     tune: num("tune", d.tune),
@@ -213,7 +227,7 @@ export function samplerFromJson(value: unknown): SamplerSettings {
     panRandomRange: num("panRandomRange", d.panRandomRange),
     polyphonic: bool("polyphonic", d.polyphonic),
     voiceCap: num("voiceCap", d.voiceCap),
-    spectral: spectralFromJson(obj.spectral),
+    spectral: spectralFromJson(obj.spectral ?? obj.spectralFusion),
     muted: false,
   };
 }

@@ -133,13 +133,48 @@ export function adjustCell(
   return cell;
 }
 
+export interface FlatColumn {
+  channel: number;
+  column: EditColumn;
+}
+
+/** Every channel's flat columns in order, matching Rust's global `flat_columns`. */
+export function flatColumns(song: SongModel): FlatColumn[] {
+  const out: FlatColumn[] = [];
+  const channelCount = Math.min(song.channels.length, 4);
+  for (let channel = 0; channel < channelCount; channel++) {
+    for (const column of flatColumnsForChannel(song, channel)) out.push({ channel, column });
+  }
+  return out;
+}
+
+export function globalColumnIndex(
+  song: SongModel,
+  channel: number,
+  column: EditColumn,
+): number {
+  return flatColumns(song).findIndex(
+    (fc) => fc.channel === channel && sameColumn(fc.column, column),
+  );
+}
+
 export interface SelectionRect {
   order: number;
-  channel: number;
   rowLo: number;
   rowHi: number;
+  /** Global flat-column indices spanning channels. */
   colLo: number;
   colHi: number;
+}
+
+export function columnInRect(
+  song: SongModel,
+  rect: SelectionRect,
+  channel: number,
+  column: EditColumn,
+): boolean {
+  const index = globalColumnIndex(song, channel, column);
+  return index >= rect.colLo && index <= rect.colHi;
 }
 
 export function selectionRect(
@@ -148,26 +183,23 @@ export function selectionRect(
   anchor: CellPos | null,
 ): SelectionRect | null {
   if (!selected) return null;
-  if (!anchor || anchor.order !== selected.order || anchor.channel !== selected.channel) {
-    const index = columnIndex(song, selected.channel, selected.column);
+  const selectedIndex = globalColumnIndex(song, selected.channel, selected.column);
+  if (!anchor || anchor.order !== selected.order) {
     return {
       order: selected.order,
-      channel: selected.channel,
       rowLo: selected.row,
       rowHi: selected.row,
-      colLo: index,
-      colHi: index,
+      colLo: selectedIndex,
+      colHi: selectedIndex,
     };
   }
-  const a = columnIndex(song, anchor.channel, anchor.column);
-  const b = columnIndex(song, selected.channel, selected.column);
+  const anchorIndex = globalColumnIndex(song, anchor.channel, anchor.column);
   return {
     order: selected.order,
-    channel: selected.channel,
     rowLo: Math.min(anchor.row, selected.row),
     rowHi: Math.max(anchor.row, selected.row),
-    colLo: Math.min(a, b),
-    colHi: Math.max(a, b),
+    colLo: Math.min(anchorIndex, selectedIndex),
+    colHi: Math.max(anchorIndex, selectedIndex),
   };
 }
 
