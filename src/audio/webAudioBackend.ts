@@ -362,8 +362,9 @@ export class WebAudioBackend implements AudioBackend {
         );
         voice.release(when + duration, Math.min(Math.max(settings.release, 0), 2));
         this.patternSamplerPreview.push(voice);
-      } catch (e) {
-        this.webError = `Cannot audition: ${String(e)}`;
+      } catch {
+        // Audition is best-effort: a not-yet-ready sample/fusion render is not
+        // an error worth surfacing (previously showed a stuck "Cannot audition").
       }
     }
   }

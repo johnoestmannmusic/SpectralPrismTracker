@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 19:15 by Claude
+**Board Last Updated:** 2026-09-12 20:35 by opencode
 
 ### Branding (user-confirmed)
 
@@ -88,7 +88,7 @@ npm run build:prism-wasm # rebuild prism_dsp WASM (needs wasm-bindgen-cli)
 npm run test:all         # typecheck + unit + audit + build + e2e
 ```
 
-### Verification baseline (2026-09-12 18:40)
+### Verification baseline (2026-09-12 20:20)
 
 - `npm run typecheck` — clean.
 - `npx vitest run` — **6 files, 37 tests passing**, including the real
@@ -96,8 +96,9 @@ npm run test:all         # typecheck + unit + audit + build + e2e
 - `npm run audit:deps` — 40 checks passed, 0 failures; 172 transitive lockfile
   packages registry-resolved with sha512.
 - `npm run build` — renderer 326 kB JS + 326 kB WASM (102 kB gzip) + hashed font.
-- `npx playwright test` — 3 tests: smoke (load/theme/JSON), EDIT MODE
-  (select/navigate/edit), and editor (waveforms + close button).
+- `npx playwright test` — 7 tests: smoke, EDIT MODE (select/navigate + centred
+  scroll), editor modal, project (confirm New Project + hamburger delete),
+  features (comments/Base Tempo/no audition error), and JSON Load auto-apply.
 
 ---
 
@@ -115,7 +116,7 @@ npm run test:all         # typecheck + unit + audit + build + e2e
 
 ## Bugs
 
-_(none open — see 0007E-BUG-001…007 in Completed)_
+_(none open — see 0007E-BUG-001…008 in Completed)_
 
 ## Planned Features — Remaining Rust parity backlog
 
@@ -263,6 +264,76 @@ _(none currently)_
   console errors, no Worker-init fallback warning logged. New tests:
   `tests/unit/prism-worker-client.test.ts` (protocol, injected fake
   transport), `tests/unit/webSampler.test.ts` (stale-render discard).
+
+- **0007E-BUG-008 — Tracker did not follow the playhead or the selected EDIT
+  cell.** *(2026-09-12 19:20)* The React grid rendered a plain scroll container
+  with no scroll-to logic, unlike Rust's `TableBuilder::scroll_to_row`. Added a
+  `trackerRef` plus per-row refs and a post-render effect that keeps the playhead
+  row or the selected EDIT cell **centred** in the scroll area (below the sticky
+  header);
+  regression test `tests/e2e/edit.spec.ts` asserts the selection stays inside the
+  viewport after 45 ArrowDowns.
+
+- **0007E-PLAN-054 — New Project button.** *(2026-09-12 19:45)* Toolbar button
+  clears every pattern (one empty pattern per channel), resets to a single
+  instrument with default sampler settings and a default name/colour, and sets
+  Title/Author/Album to "New Song"/"Unknown Artist"/"New Album". Loaded Source
+  Samples are retained from the folder; Project JSON overrides are refreshed.
+- **0007E-PLAN-055 — Add / Delete instruments.** *(2026-09-12 19:45)*
+  "+ Add Instrument" appends a blank Game Boy instrument with default settings
+  and a golden-angle colour. Each row gains a Delete button (disabled on the
+  last remaining instrument); deleting remaps every pattern INS cell via
+  `remapInstrumentsAfterDelete` (references to it cleared, higher indices
+  shifted down), rebuilds timelines/timing, re-syncs the backend sequence and
+  settings, and closes or shifts any open editor. Covered by E2E
+  `tests/e2e/project.spec.ts` and a unit test for the remap.
+
+- **0007E-PLAN-056 — Follow Playhead stays on in EDIT MODE.** *(2026-09-12 20:20)*
+  Default `true`; removed the automatic `setFollow(false)` from cell selection,
+  vertical navigation and the pattern dropdown. The checkbox remains the only
+  way to turn it off.
+- **0007E-PLAN-057 — New Project resets volume levels.** *(2026-09-12 20:20)*
+  Channel volumes -> 1.0, mutes -> off, master -> 1.0, pushed to the backend
+  and written to the Project JSON fields.
+- **0007E-PLAN-058 — Editable Base Tempo (BPM).** *(2026-09-12 20:20)* New
+  EDIT-MODE field in the Timing card; editing back-solves
+  `tickRate = bpm × highlightA × speed / 60` (clamped 1..1000), reusing the
+  existing retime/sequence/`tickRateOverride` path.
+- **0007E-PLAN-059 — ADSR attack fade-in.** *(2026-09-12 20:20)* The graph now
+  draws a zero-volume baseline and start marker and enforces a minimum
+  on-screen attack ramp so short attacks still read as a fade-in (display only;
+  audio unchanged).
+- **0007E-PLAN-060 — Ref Pitch removed from the header.** *(2026-09-12 20:20)*
+  Kept in the instrument editor only; persistence unchanged.
+- **0007E-PLAN-061 — Project JSON Load.** *(2026-09-12 20:20)* Hidden
+  `<input type="file" accept=".json,application/json">`; reads the file into
+  the JSON textarea. Works in all target browsers (no grey-out needed).
+- **0007E-PLAN-062 — New Project confirmation.** *(2026-09-12 20:20)* Toolbar
+  button opens a confirm modal before resetting.
+- **0007E-PLAN-063 — Instrument delete behind a hamburger + confirm.**
+  *(2026-09-12 20:20)* Per-row `☰` menu with "Delete instrument…" and a
+  confirmation modal; disabled on the last instrument.
+- **0007E-PLAN-064 — Song Comments always present + EDIT-MODE editable.**
+  *(2026-09-12 20:20)* Panel always renders (collapsible); read-only with
+  `song.meta.comment` fallback, `<textarea>` bound to `project.comments` in
+  EDIT MODE.
+- **0007E-PLAN-065 — Spurious "Cannot Audition" fixed.** *(2026-09-12 20:20)*
+  `previewPattern` silently skips not-ready/not-assigned/empty-trim instead of
+  setting a persistent `webError`; `onAudition` skips source-less and
+  not-yet-rendered Spectral instruments; `AudioError` is now dismissible.
+  New E2E `tests/e2e/features.spec.ts`.
+
+- **0007E-PLAN-066 — Spectral Render button removed.** *(2026-09-12 20:35)*
+  Spectral edits already re-render automatically (`onUpdateSetting` /
+  `applyEngine`), so the manual Render button was redundant; the tab now shows
+  the rendering/ready status only.
+- **0007E-PLAN-067 — Project JSON Load auto-applies.** *(2026-09-12 20:35)*
+  `applyProjectText` now takes the text directly; `loadProjectFile` reads the
+  chosen file and applies it immediately, closing the modal. New E2E
+  `features.spec.ts` verifies title + modal close.
+- **0007E-PLAN-068 — Ctrl+Space plays from the selected EDIT cell.**
+  *(2026-09-12 20:35)* `PatternGrid` reports the selection to App; in EDIT MODE
+  Ctrl+Space seeks/plays from that cell's row instead of the current time.
 
 ---
 

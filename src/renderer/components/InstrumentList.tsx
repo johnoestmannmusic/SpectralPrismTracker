@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SongModel, InstrumentInfo } from "@/core/songModel";
 import type { SamplerSettings } from "@/core/sampler";
 import { useExplainer } from "../explainer";
@@ -12,11 +13,14 @@ interface InstrumentListProps {
   onTranspose: (index: number, delta: number) => void;
   onPreview: (index: number) => void;
   onOpenEditor: (index: number, spectral: boolean) => void;
+  onAddInstrument: () => void;
+  onRequestDelete: (index: number) => void;
 }
 
 export function InstrumentList(props: InstrumentListProps) {
   const { song, settings, sampleNames } = props;
   const explain = useExplainer();
+  const [menuIndex, setMenuIndex] = useState<number | null>(null);
   return (
     <section className="panel">
       <h2>INSTRUMENTS</h2>
@@ -109,10 +113,46 @@ export function InstrumentList(props: InstrumentListProps) {
                   Spectral
                 </button>
               </span>
+
+              <span
+                className="instrument-menu-wrap"
+                onMouseLeave={() => setMenuIndex((current) => (current === i ? null : current))}
+              >
+                <button
+                  className="hamburger"
+                  title="Instrument menu"
+                  aria-label={`Instrument ${i} menu`}
+                  onClick={() => setMenuIndex(menuIndex === i ? null : i)}
+                >
+                  ☰
+                </button>
+                {menuIndex === i && (
+                  <div className="instrument-menu">
+                    <button
+                      className="menu-item"
+                      disabled={song.instruments.length <= 1}
+                      title={
+                        song.instruments.length <= 1
+                          ? "At least one instrument is required"
+                          : "Delete this instrument and re-target pattern INS cells"
+                      }
+                      onClick={() => {
+                        setMenuIndex(null);
+                        props.onRequestDelete(i);
+                      }}
+                    >
+                      Delete instrument…
+                    </button>
+                  </div>
+                )}
+              </span>
             </div>
           );
         })}
       </div>
+      <button className="add-instrument" onClick={props.onAddInstrument}>
+        + Add Instrument
+      </button>
     </section>
   );
 }

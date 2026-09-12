@@ -140,6 +140,10 @@ function buildNoteTimeline(ch: Channel, patternLength: number): (NoteValue | nul
   });
 }
 
+export function instrumentColor(index: number): [number, number, number] {
+  return hslToRgb((index * 137.508) % 360, 65, 55);
+}
+
 export function buildSongModel(raw: RawFurModule): SongModel {
   const subsong = raw.subsongs[0]!;
 

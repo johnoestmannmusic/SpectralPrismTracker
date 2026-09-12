@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   applySnapshot,
   buildSongModel,
   cellAt,
+  instrumentColor,
   patternSnapshot,
   retime,
   type InstrumentInfo,
   type SongModel,
 } from "@/core/songModel";
+import { clearPatternsSnapshot, remapInstrumentsAfterDelete } from "@/core/tracker";
 import {
   applyTimingOverrides,
+  defaultProject,
   projectFromJson,
   projectToJson,
   projectToValue,
@@ -82,12 +85,19 @@ function findInstrumentSpot(
   return null;
 }
 
+const NEW_PROJECT_TITLE = "New Song";
+const NEW_PROJECT_ARTIST = "Unknown Artist";
+const NEW_PROJECT_ALBUM = "New Album";
+
 export function App() {
   const backendRef = useRef<WebAudioBackend | null>(null);
   const songRef = useRef<SongModel | null>(null);
   const settingsRef = useRef<SamplerSettings[]>([]);
   const viewOrderRef = useRef(0);
   const referenceRef = useRef(false);
+  const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const selectionRef = useRef<{ order: number; row: number } | null>(null);
+  const editModeRef = useRef(false);
   const [backend, setBackend] = useState<WebAudioBackend | null>(null);
   const [song, setSong] = useState<SongModel | null>(null);
   const [project, setProject] = useState<ProjectFile | null>(null);
@@ -113,12 +123,15 @@ export function App() {
   const [sampleInfoName, setSampleInfoName] = useState("");
   const [sampleInfoComments, setSampleInfoComments] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [newProjectConfirm, setNewProjectConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [wasmReady, setWasmReady] = useState(false);
   const [explainer, setExplainer] = useState<ExplainerContent>(DEFAULT_EXPLAINER);
 
   songRef.current = song;
   settingsRef.current = settings;
   referenceRef.current = reference;
+  editModeRef.current = editMode;
 
   useEffect(() => {
     let cancelled = false;
@@ -159,7 +172,16 @@ export function App() {
       event.preventDefault();
       if (event.ctrlKey) {
         engine.ensureStarted();
-        if (!engine.isPlaying()) engine.play(engine.currentTime());
+        const model = songRef.current;
+        const selection = selectionRef.current;
+        if (editModeRef.current && model && selection) {
+          // Continue playback from the selected EDIT cell's row.
+          const start = rowTime(model, selection.order, selection.row);
+          if (engine.isPlaying()) engine.seek(start);
+          else engine.play(start);
+        } else if (!engine.isPlaying()) {
+          engine.play(engine.currentTime());
+        }
         return;
       }
       if (engine.isPlaying()) {
@@ -309,7 +331,8 @@ export function App() {
         const instrument = ch.insTimeline[order]?.[row] ?? null;
         if (!note || instrument === null) continue;
         const setting = settingsRef.current[instrument];
-        if (setting?.muted) continue;
+        if (!setting || setting.muted || setting.sourceIndex === null) continue;
+        if (setting.spectral.enabled && !engine.fusionReady(instrument)) continue;
         const rate = samplerPlaybackRate(note, model.meta.tuningA4, 0);
         if (rate === null || !(rate > 0)) continue;
         const cell = cellAt(model, channel, order, row);
@@ -441,6 +464,118 @@ export function App() {
     setProject((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
+  const newProject = useCallback(() => {
+    const model = songRef.current;
+    const engine = backendRef.current;
+    if (!model || !engine) return;
+    engine.stop();
+    const snapshot = patternSnapshot(model);
+    clearPatternsSnapshot(snapshot, model.meta.patternLength);
+    applySnapshot(model, snapshot);
+    model.meta.comment = "";
+    if (model.instruments.length > 1) model.instruments = model.instruments.slice(0, 1);
+    if (model.instruments[0]) {
+      model.instruments[0].name = "Instrument 01";
+      model.instruments[0].colorRgb = instrumentColor(0);
+    }
+    const nextSettings = [defaultSamplerSettings()];
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    engine.setSamplerSettings(0, nextSettings[0]!);
+    engine.updateSequence(sequenceFromSong(model));
+    // Reset all volume levels to defaults.
+    for (let c = 0; c < 4; c++) {
+      engine.setChannelVolume(c, 1);
+      engine.setChannelMute(c, false);
+    }
+    engine.setMasterVolume(1);
+    setChannelVolume([1, 1, 1, 1]);
+    setChannelMuted([false, false, false, false]);
+    setMasterVolume(1);
+    setEditor(null);
+    setProject((prev) => {
+      const base = prev ?? defaultProject();
+      return {
+        ...base,
+        samplerModeEnabled: mode === "sampler",
+        songTitle: NEW_PROJECT_TITLE,
+        artist: NEW_PROJECT_ARTIST,
+        album: NEW_PROJECT_ALBUM,
+        comments: "",
+        channelVolume: [1, 1, 1, 1],
+        masterVolume: 1,
+        mutedChannels: [false, false, false, false],
+        mutedInstruments: [false],
+        instruments: nextSettings.map((setting) => ({ ...setting, muted: false })),
+        patternSnapshot: patternSnapshot(model),
+        tickRateOverride: model.meta.tickRate,
+        speedOverride: model.meta.speedPattern[0] ?? null,
+        highlightAOverride: model.meta.highlightA,
+        highlightBOverride: model.meta.highlightB,
+        virtualTempoOverride: model.meta.virtualTempo,
+      };
+    });
+    setStatus("New project");
+  }, [mode]);
+
+  const addInstrument = useCallback(() => {
+    const model = songRef.current;
+    const engine = backendRef.current;
+    if (!model) return;
+    const index = model.instruments.length;
+    model.instruments.push({
+      name: `Instrument ${(index + 1).toString().padStart(2, "0")}`,
+      insType: 2,
+      gameBoy: null,
+      colorRgb: instrumentColor(index),
+    });
+    const blank = defaultSamplerSettings();
+    const next = settingsRef.current.slice();
+    next.push(blank);
+    settingsRef.current = next;
+    setSettings(next);
+    engine?.setSamplerSettings(index, blank);
+    setProject((prev) =>
+      prev ? { ...prev, mutedInstruments: [...prev.mutedInstruments, false] } : prev,
+    );
+    setStatus(`Added instrument ${(index + 1).toString().padStart(2, "0")}`);
+  }, []);
+
+  const deleteInstrument = useCallback((index: number) => {
+    const model = songRef.current;
+    const engine = backendRef.current;
+    if (!model || !engine) return;
+    if (model.instruments.length <= 1) {
+      setStatus("Cannot delete the last instrument");
+      return;
+    }
+    const current = settingsRef.current[index];
+    if (current) engine.setSamplerSettings(index, { ...current, muted: true });
+    const snapshot = patternSnapshot(model);
+    remapInstrumentsAfterDelete(snapshot, index);
+    model.instruments.splice(index, 1);
+    applySnapshot(model, snapshot);
+    const nextSettings = settingsRef.current.slice();
+    nextSettings.splice(index, 1);
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    nextSettings.forEach((setting, i) => engine.setSamplerSettings(i, setting));
+    engine.updateSequence(sequenceFromSong(model));
+    setProject((prev) => {
+      if (!prev) return prev;
+      const muted = prev.mutedInstruments.slice();
+      muted.splice(index, 1);
+      return { ...prev, mutedInstruments: muted };
+    });
+    setEditor((prev) => {
+      if (!prev) return prev;
+      if (prev.index === index) return null;
+      if (prev.index > index) return { ...prev, index: prev.index - 1 };
+      return prev;
+    });
+    setStatus(`Deleted instrument ${index.toString().padStart(2, "0")}`);
+  }, []);
+
   const onPreview = useCallback(
     (index: number) => {
       const engine = backendRef.current;
@@ -539,10 +674,11 @@ export function App() {
     setProjectIoOpen(true);
   }, [song, project, mode, channelVolume, masterVolume, channelMuted, settings, reference, theme]);
 
-  const applyProjectText = useCallback(() => {
+  const applyProjectText = useCallback(
+    (text: string) => {
     if (!song) return;
     try {
-      const parsed = projectFromJson(projectIoText);
+      const parsed = projectFromJson(text);
       validateProject(parsed, song.instruments.length);
       if (parsed.patternSnapshot) applySnapshot(song, parsed.patternSnapshot);
       applyTimingOverrides(parsed, song);
@@ -576,7 +712,23 @@ export function App() {
     } catch (e) {
       setError(String(e));
     }
-  }, [song, projectIoText]);
+    },
+    [song],
+  );
+
+  const loadProjectFile = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+      void file.text().then((text) => {
+        setProjectIoText(text);
+        applyProjectText(text);
+        setStatus(`Loaded ${file.name}`);
+      });
+    },
+    [applyProjectText],
+  );
 
   const saveBytes = useCallback(async (name: string, bytes: Uint8Array) => {
     const ok = await window.lantern.saveFile(name, bytes);
@@ -659,19 +811,11 @@ export function App() {
           <h1>Lantern Music Player</h1>
           {song && (
             <p className="subtitle">
-              {song.meta.name} — {song.meta.author}
+              {project?.songTitle || song.meta.name} — {project?.artist || song.meta.author}
             </p>
           )}
         </div>
         <div className="header-right">
-          <label className="ref-toggle">
-            <input
-              type="checkbox"
-              checked={reference}
-              onChange={(e) => setReference(e.target.checked)}
-            />
-            Ref Pitch
-          </label>
           <button
             className="theme-toggle"
             onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
@@ -693,6 +837,7 @@ export function App() {
           <div className="main-column">
             <Toolbar
               onLoadFolder={() => void loadFolder()}
+              onNewProject={() => setNewProjectConfirm(true)}
               onSaveFur={saveFur}
               onSaveMidi={saveMidi}
               onOpenProjectJson={openProjectJson}
@@ -730,6 +875,9 @@ export function App() {
               onViewOrderChange={(order) => {
                 viewOrderRef.current = order;
               }}
+              onSelectionChange={(selection) => {
+                selectionRef.current = selection;
+              }}
             />
             <InstrumentList
               song={song}
@@ -740,6 +888,8 @@ export function App() {
               onTranspose={onTransposeAdjust}
               onPreview={onPreview}
               onOpenEditor={openEditor}
+              onAddInstrument={addInstrument}
+              onRequestDelete={(index) => setDeleteConfirm(index)}
             />
             <Piano song={song} backend={backend} />
             <SourceSamples
@@ -762,7 +912,14 @@ export function App() {
           <aside className="sidebar">
             <CoverArt song={song} backend={backend} title={project?.songTitle || song.meta.name} />
             <ExplainerCard content={explainer} />
-            <SongComments comments={project?.comments || song.meta.comment || ""} />
+            <SongComments
+              comments={project?.comments ?? ""}
+              fallback={song.meta.comment}
+              editMode={editMode}
+              onChange={(value) =>
+                setProject((prev) => (prev ? { ...prev, comments: value } : prev))
+              }
+            />
             <TimingCard song={song} editMode={editMode} onEdit={onTimingEdit} />
             <ChipsCard song={song} />
             <Mixer
@@ -814,8 +971,26 @@ export function App() {
               spellCheck={false}
             />
             <div className="row">
+              <button
+                onClick={() => jsonFileInputRef.current?.click()}
+                disabled={typeof File === "undefined"}
+                title={
+                  typeof File === "undefined"
+                    ? "File loading is not supported in this browser"
+                    : "Load a Project JSON file from disk"
+                }
+              >
+                Load…
+              </button>
+              <input
+                ref={jsonFileInputRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: "none" }}
+                onChange={loadProjectFile}
+              />
               <button onClick={() => void navigator.clipboard.writeText(projectIoText)}>Copy</button>
-              <button onClick={applyProjectText}>Apply</button>
+              <button onClick={() => applyProjectText(projectIoText)}>Apply</button>
               <button
                 onClick={() =>
                   void saveBytes(
@@ -872,6 +1047,59 @@ export function App() {
               >
                 Save
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirm !== null && (
+        <div className="modal-backdrop" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">
+              <span>
+                Delete Instrument {deleteConfirm.toString().padStart(2, "0")}?
+              </span>
+            </div>
+            <p>
+              This removes the instrument and re-targets every INS cell in the patterns
+              (references to it are cleared, later instruments shift down). This cannot be
+              undone.
+            </p>
+            <div className="row">
+              <button
+                onClick={() => {
+                  deleteInstrument(deleteConfirm);
+                  setDeleteConfirm(null);
+                }}
+              >
+                Delete Instrument
+              </button>
+              <button onClick={() => setDeleteConfirm(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {newProjectConfirm && (
+        <div className="modal-backdrop" onClick={() => setNewProjectConfirm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">
+              <span>New Project?</span>
+            </div>
+            <p>
+              Create a new project? This clears all patterns, resets every instrument to its
+              default settings, deletes all but the first instrument, and resets volume levels.
+            </p>
+            <div className="row">
+              <button
+                onClick={() => {
+                  newProject();
+                  setNewProjectConfirm(false);
+                }}
+              >
+                Create New Project
+              </button>
+              <button onClick={() => setNewProjectConfirm(false)}>Cancel</button>
             </div>
           </div>
         </div>

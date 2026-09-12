@@ -49,3 +49,38 @@ test("EDIT MODE: select cells, navigate with arrows, and edit", async () => {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
+
+test("EDIT MODE scrolls the selected cell into view", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-scroll-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+      timeout: 30_000,
+    });
+    await window.getByRole("button", { name: "EDIT MODE" }).click();
+    await window.locator(".tracker tbody tr").first().locator("td").nth(1).click();
+
+    // Move well past the ~24 visible rows.
+    for (let i = 0; i < 45; i++) await window.keyboard.press("ArrowDown");
+
+    const box = await window.evaluate(() => {
+      const selected = document.querySelector(".tracker-cell.selected") as HTMLElement | null;
+      const container = document.querySelector(".tracker") as HTMLElement | null;
+      if (!selected || !container) return null;
+      const s = selected.getBoundingClientRect();
+      const c = container.getBoundingClientRect();
+      return { selTop: s.top, selBottom: s.bottom, cTop: c.top, cBottom: c.bottom };
+    });
+    expect(box).not.toBeNull();
+    // The selected cell must be inside the scroll viewport (below the sticky header).
+    expect(box!.selTop).toBeGreaterThanOrEqual(box!.cTop + 40);
+    expect(box!.selBottom).toBeLessThanOrEqual(box!.cBottom + 1);
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});

@@ -373,6 +373,25 @@ export function removePatternAt(snapshot: PatternSnapshot, pos: number): void {
   }
 }
 
+/**
+ * Re-targets every INS cell after instrument `deletedIndex` is removed:
+ * references to it are cleared, and higher indices shift down by one.
+ */
+export function remapInstrumentsAfterDelete(
+  snapshot: PatternSnapshot,
+  deletedIndex: number,
+): void {
+  for (const channel of snapshot.channels) {
+    for (const [, rows] of channel.patterns) {
+      for (const cell of rows) {
+        if (cell.instrument === null) continue;
+        if (cell.instrument === deletedIndex) cell.instrument = null;
+        else if (cell.instrument > deletedIndex) cell.instrument -= 1;
+      }
+    }
+  }
+}
+
 export function clearPatternsSnapshot(snapshot: PatternSnapshot, patternLength: number): void {
   snapshot.orderLength = 1;
   for (const channel of snapshot.channels) {

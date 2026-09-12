@@ -251,7 +251,7 @@ function SpectralTab(
             ? "Rendering…"
             : fusionReady
               ? "Rendered result is ready."
-              : "Choose Sample A (and B where required), then Render."}
+              : "Choose Sample A (and B where required) — rendering is automatic."}
       </p>
       <div className="row wrap">
         <label>Mode</label>
@@ -262,9 +262,6 @@ function SpectralTab(
             </option>
           ))}
         </select>
-        <button disabled={props.rendering} onClick={() => backend.renderFusion(props.index)}>
-          {props.rendering ? "Rendering…" : "Render"}
-        </button>
       </div>
 
       <h3>Sample A</h3>

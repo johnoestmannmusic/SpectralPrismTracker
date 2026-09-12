@@ -37,7 +37,7 @@ test("loads the bundled song and renders the player shell", async () => {
     // The Project JSON window opens with the version-1 schema.
     await window.getByRole("button", { name: "Project JSON" }).click();
     await expect(window.locator(".project-json")).toContainText('"version": 1');
-    await window.getByRole("button", { name: "✕" }).click();
+    await window.locator(".modal-title button").click();
   } finally {
     await app.close();
     rmSync(userDataDir, { recursive: true, force: true });

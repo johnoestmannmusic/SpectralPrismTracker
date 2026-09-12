@@ -18,15 +18,35 @@ function useHoverExplain(content: ExplainerContent) {
   return (event: React.MouseEvent) => explain(content);
 }
 
-export function SongComments({ comments }: { comments: string }) {
+export function SongComments({
+  comments,
+  fallback = "",
+  editMode,
+  onChange,
+}: {
+  comments: string;
+  fallback?: string;
+  editMode: boolean;
+  onChange: (value: string) => void;
+}) {
   const [open, setOpen] = useState(true);
-  if (!comments.trim()) return null;
+  const display = comments.trim() ? comments : fallback;
   return (
     <section className="panel">
       <button className="collapse-header" onClick={() => setOpen((o) => !o)}>
         {open ? "▾" : "▸"} SONG COMMENTS
       </button>
-      {open && <p className="small">{comments}</p>}
+      {open &&
+        (editMode ? (
+          <textarea
+            className="comments-edit"
+            value={comments}
+            placeholder="Song comments…"
+            onChange={(e) => onChange(e.target.value)}
+          />
+        ) : (
+          <p className="small">{display || "—"}</p>
+        ))}
     </section>
   );
 }
@@ -89,6 +109,30 @@ export function TimingCard({
       </button>
       {open && (
         <div className="timing-grid">
+          <div className="timing-row">
+            <span className="muted small">base tempo (BPM)</span>
+            {editMode ? (
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                step={0.01}
+                value={Number(bpm.toFixed(2))}
+                onChange={(e) => {
+                  const nextBpm = Number(e.target.value);
+                  if (!Number.isFinite(nextBpm) || nextBpm <= 0) return;
+                  const speed = meta.speedPattern[0] ?? 6;
+                  const tickRate = Math.min(
+                    Math.max((nextBpm * Math.max(meta.highlightA, 1) * speed) / 60, 1),
+                    1000,
+                  );
+                  onEdit({ tickRate });
+                }}
+              />
+            ) : (
+              <span className="mono small">{bpm.toFixed(2)} BPM</span>
+            )}
+          </div>
           {number("tick rate (Hz)", meta.tickRate, 1, 1000, (v) => onEdit({ tickRate: v }), 1)}
           {number("speed(s)", meta.speedPattern[0] ?? 6, 1, 255, (v) => onEdit({ speed: v }))}
           <div className="timing-row">

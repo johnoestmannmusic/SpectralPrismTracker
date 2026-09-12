@@ -24,12 +24,18 @@ export function AdsrGraph({ settings, onChange }: AdsrGraphProps) {
   const px = (t: number) => Math.min(Math.max(t / X_DOMAIN, 0), 1);
   const py = (l: number) => 1 - Math.min(Math.max(l, 0), 1);
 
+  // Display-only minimum attack width so a very short attack still shows a
+  // visible fade-in; the underlying attack value and drag math are unchanged.
+  const MIN_ATTACK_WIDTH = 0.06;
+  const rawAttackX = px(attack);
+  const attackX = Math.max(rawAttackX, MIN_ATTACK_WIDTH);
+  const shift = attackX - rawAttackX;
   const points: Array<[number, number]> = [
     [0, 0],
-    [px(attack), py(1)],
-    [px(decayEnd), py(sustain)],
-    [px(holdEnd), py(sustain)],
-    [px(releaseEnd), py(0)],
+    [attackX, py(1)],
+    [Math.min(px(decayEnd) + shift, 1), py(sustain)],
+    [Math.min(px(holdEnd) + shift, 1), py(sustain)],
+    [Math.min(px(releaseEnd) + shift, 1), py(0)],
   ];
   const polyline = points.map(([x, y]) => `${x * 100},${y * 100}`).join(" ");
 
@@ -72,6 +78,16 @@ export function AdsrGraph({ settings, onChange }: AdsrGraphProps) {
     <div className="adsr-wrap" ref={wrapRef} title="Drag the points to shape the envelope">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
         <rect x="0" y="0" width="100" height="100" fill="var(--deep)" />
+        {/* zero-volume baseline */}
+        <line
+          x1="0"
+          y1="100"
+          x2="100"
+          y2="100"
+          stroke="var(--edge)"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
         <polyline
           points={polyline}
           fill="none"
@@ -79,6 +95,8 @@ export function AdsrGraph({ settings, onChange }: AdsrGraphProps) {
           strokeWidth="2"
           vectorEffect="non-scaling-stroke"
         />
+        {/* start point at zero volume */}
+        <rect x="0" y="99" width="1.6" height="1.6" fill="var(--accent)" />
       </svg>
       {handles.map((handle) => (
         <div

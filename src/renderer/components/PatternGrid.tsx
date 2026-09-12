@@ -54,6 +54,7 @@ interface PatternGridProps {
   onToggleChannel: (channel: number) => void;
   onAudition: (channels: number[], order: number, row: number) => void;
   onViewOrderChange: (order: number) => void;
+  onSelectionChange: (selection: { order: number; row: number } | null) => void;
 }
 
 interface MenuState {
@@ -89,6 +90,9 @@ export function PatternGrid(props: PatternGridProps) {
   const [, forceFlash] = useState(0);
   const flashesRef = useRef<Array<{ channel: number; row: number; until: number }>>([]);
   const lastFlashPosRef = useRef<string | null>(null);
+  const trackerRef = useRef<HTMLDivElement | null>(null);
+  const rowRefs = useRef(new Map<number, HTMLTableRowElement>());
+  const lastScrollKeyRef = useRef<string | null>(null);
 
   const undoStack = useRef<PatternSnapshot[]>([]);
   const redoStack = useRef<PatternSnapshot[]>([]);
@@ -159,6 +163,47 @@ export function PatternGrid(props: PatternGridProps) {
   useEffect(() => {
     propsRef.current.onViewOrderChange(order);
   }, [order]);
+
+  useEffect(() => {
+    propsRef.current.onSelectionChange(
+      selected ? { order: selected.order, row: selected.row } : null,
+    );
+  }, [selected]);
+
+  // Keep the playhead (when following) or the selected EDIT cell in view.
+  const followPlaying = follow && backend.isPlaying();
+  const scrollTarget: number | null = followPlaying
+    ? row
+    : editMode && selected && selected.order === order
+      ? selected.row
+      : null;
+
+  useEffect(() => {
+    if (scrollTarget === null) return;
+    const key = `${order}:${scrollTarget}`;
+    if (lastScrollKeyRef.current === key) return;
+    const container = trackerRef.current;
+    const element = rowRefs.current.get(scrollTarget);
+    if (!container || !element) return;
+    lastScrollKeyRef.current = key;
+    const containerRect = container.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const header = 52;
+    const visibleHeight = containerRect.height - header;
+    const elementTop = elementRect.top - containerRect.top;
+    const elementHeight = elementRect.height;
+    // Centre the row within the scrollable area below the sticky header.
+    const targetScroll =
+      container.scrollTop + elementTop - header - (visibleHeight - elementHeight) / 2;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    container.scrollTop = Math.max(0, Math.min(targetScroll, maxScroll));
+  }, [scrollTarget, order]);
+
+  useEffect(() => {
+    if (order > song.meta.orderLength - 1) {
+      setOrder(Math.max(song.meta.orderLength - 1, 0));
+    }
+  }, [song.meta.orderLength, order]);
 
   const lastValues = useRef<LastValues>(defaultLastValues());
 
@@ -274,7 +319,6 @@ export function PatternGrid(props: PatternGridProps) {
             let absolute = current.order * patternLength + current.row + dy * step;
             absolute = ((absolute % total) + total) % total;
             const nextOrder = Math.floor(absolute / patternLength);
-            setFollow(false);
             setOrder(nextOrder);
             setSelected({ ...current, order: nextOrder, row: absolute % patternLength });
             setAnchor(null);
@@ -430,7 +474,6 @@ export function PatternGrid(props: PatternGridProps) {
     if (shift) setAnchor(anchor ?? selected ?? pos);
     else setAnchor(null);
     setSelected(pos);
-    setFollow(false);
     props.onSeek(rowTime(song, order, r));
     if (!props.channelMuted[channel]) props.onAudition([channel], order, r);
   };
@@ -462,7 +505,6 @@ export function PatternGrid(props: PatternGridProps) {
         <select
           value={order}
           onChange={(e) => {
-            setFollow(false);
             setOrder(Number(e.target.value));
             props.onSeek(rowTime(song, Number(e.target.value), 0));
           }}
@@ -500,7 +542,7 @@ export function PatternGrid(props: PatternGridProps) {
         </p>
       )}
 
-      <div className="tracker">
+      <div className="tracker" ref={trackerRef}>
         <table>
           <thead>
             <tr>
@@ -546,7 +588,14 @@ export function PatternGrid(props: PatternGridProps) {
               else if (lines && song.meta.highlightA > 0 && r % song.meta.highlightA === 0)
                 rowClass = "bar";
               return (
-                <tr key={r} className={rowClass}>
+                <tr
+                  key={r}
+                  className={rowClass}
+                  ref={(el) => {
+                    if (el) rowRefs.current.set(r, el);
+                    else rowRefs.current.delete(r);
+                  }}
+                >
                   <td
                     className="row-col mono"
                     onMouseEnter={() =>
