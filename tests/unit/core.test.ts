@@ -212,7 +212,7 @@ describe("sampler", () => {
 
 describe("project json", () => {
   it("original project round-trips without losing its schema", () => {
-    const project = projectFromJson(fixtureText("assets/lmp-default-proj.json"));
+    const project = projectFromJson(fixtureText("assets/lmp-default-proj.lampjson"));
     validateProject(project, 10);
     expect(project.sourceSamples).toHaveLength(6);
     expect(project.instruments).toHaveLength(10);
@@ -228,7 +228,7 @@ describe("project json", () => {
   });
 
   it("legacy rootNote converts to transpose", () => {
-    const value = JSON.parse(fixtureText("assets/lmp-default-proj.json")) as {
+    const value = JSON.parse(fixtureText("assets/lmp-default-proj.lampjson")) as {
       instruments: Array<Record<string, unknown>>;
     };
     const first = value.instruments[0]!;
@@ -239,7 +239,7 @@ describe("project json", () => {
   });
 
   it("round-trips the instrument pan centre and random width", () => {
-    const project = projectFromJson(fixtureText("assets/lmp-default-proj.json"));
+    const project = projectFromJson(fixtureText("assets/lmp-default-proj.lampjson"));
     project.instruments[0]!.pan = -0.5;
     project.instruments[0]!.panRandomRange = 0.25;
     const reread = projectFromJson(projectToJson(project));
@@ -248,7 +248,7 @@ describe("project json", () => {
   });
 
   it("gracefully imports the legacy Fusion schema and unknown modes", () => {
-    const value = JSON.parse(fixtureText("assets/lmp-default-proj.json")) as {
+    const value = JSON.parse(fixtureText("assets/lmp-default-proj.lampjson")) as {
       instruments: Array<Record<string, unknown>>;
     };
     const first = value.instruments[0]!;
@@ -275,10 +275,10 @@ describe("project json", () => {
     const originalSecondRow = song.rowTimes[1]!;
     const originalTickRate = song.meta.tickRate;
 
-    applyTimingOverrides(projectFromJson(fixtureText("assets/lmp-default-proj.json")), song);
+    applyTimingOverrides(projectFromJson(fixtureText("assets/lmp-default-proj.lampjson")), song);
     expect(song.meta.tickRate).toBe(originalTickRate);
 
-    const project = projectFromJson(fixtureText("assets/lmp-default-proj.json"));
+    const project = projectFromJson(fixtureText("assets/lmp-default-proj.lampjson"));
     project.tickRateOverride = originalTickRate * 2;
     project.speedOverride = 3;
     project.highlightAOverride = 8;

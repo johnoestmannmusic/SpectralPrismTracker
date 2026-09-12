@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 23:05 by opencode
+**Board Last Updated:** 2026-09-12 23:35 by opencode
 
 ### Branding (user-confirmed)
 
@@ -464,6 +464,23 @@ _(none currently)_
   "follow stays on while editing" change. Removed it, so Follow Playhead is now
   only ever toggled by its checkbox. Regression assertion added to
   `tests/e2e/edit.spec.ts` (click a cell, then expect the checkbox checked).
+
+- **0007E-PLAN-106 — Project files use the `.lampjson` extension.**
+  *(2026-09-12 23:20)* Downloaded project files are now `*.lampjson`; the
+  Project JSON **Load** picker accepts `.lampjson` (plus legacy `.json` for
+  backward compatibility), and the Electron save dialog filters by the
+  suggested extension (a "Lantern Project" filter for `.lampjson`). Folder
+  assembly accepts `lmp-default-proj.lampjson` or `.json`. The bundled default
+  asset keeps its `.json` name since it is an internal asset / folder
+  convention, not a user-saved project.
+
+- **0007E-PLAN-107 — Strict `.lampjson` only.** *(2026-09-12 23:35)* The Load
+  picker now accepts only `.lampjson` and rejects anything else with an inline
+  error (even if the OS picker allows "all files"); the `.json` save filter was
+  dropped; folder assembly requires `lmp-default-proj.lampjson`; and the bundled
+  default asset was renamed to `lmp-default-proj.lampjson`. Regression test:
+  loading a `.json` file shows ".lampjson" in the error banner and keeps the
+  modal open.
 
 ---
 

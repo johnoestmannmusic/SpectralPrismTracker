@@ -187,7 +187,7 @@ export function spectralFusionExplain(): ExplainerText {
 export function projectJsonExplain(): ExplainerText {
   return {
     title: "Project JSON — save and restore the whole setup",
-    body: "A JSON dump of the whole setup: sampler configs, mixer levels/mutes, sample comments, page metadata and theme.\n\nCopy to save; Load or paste + Apply to restore. Samples are referenced by path, never embedded — files must exist under ASSETS/SourceSamples/.",
+    body: "A JSON dump of the whole setup: sampler configs, mixer levels/mutes, sample comments, page metadata and theme.\n\nCopy to save; Load a `.lampjson` file or paste + Apply to restore. Saving uses the `.lampjson` extension so it is easy to filter. Samples are referenced by path, never embedded — files must exist under ASSETS/SourceSamples/.",
   };
 }
 

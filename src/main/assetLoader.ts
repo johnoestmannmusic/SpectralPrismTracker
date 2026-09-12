@@ -27,7 +27,7 @@ export function loadDefaultSong(): LoadedSong | { error: string } {
   if (!furBytes) {
     return { error: `Cannot find bundled song assets in ${dir}` };
   }
-  const project = readTextIfPresent(path.join(dir, "lmp-default-proj.json")) ?? "";
+  const project = readTextIfPresent(path.join(dir, "lmp-default-proj.lampjson")) ?? "";
   const stems = [0, 1, 2, 3].map((i) => readIfPresent(path.join(dir, `${i}.ogg`)));
   const samples = [0, 1, 2].map((i) =>
     readIfPresent(path.join(dir, "SourceSamples", `${i}.ogg`)),
@@ -84,8 +84,22 @@ export async function chooseAudioFile(): Promise<
   }
 }
 
+const SAVE_FILTERS: Record<string, { name: string; extensions: string[] }> = {
+  lampjson: { name: "Lantern Project", extensions: ["lampjson"] },
+  wav: { name: "WAV audio", extensions: ["wav"] },
+  mid: { name: "MIDI", extensions: ["mid"] },
+  zip: { name: "ZIP archive", extensions: ["zip"] },
+  png: { name: "PNG image", extensions: ["png"] },
+  fur: { name: "Furnace module", extensions: ["fur"] },
+};
+
 export async function saveFile(suggestedName: string, bytes: Uint8Array): Promise<boolean> {
-  const result = await dialog.showSaveDialog({ defaultPath: suggestedName });
+  const extension = path.extname(suggestedName).replace(".", "").toLowerCase();
+  const filter = SAVE_FILTERS[extension];
+  const result = await dialog.showSaveDialog({
+    defaultPath: suggestedName,
+    filters: filter ? [filter] : undefined,
+  });
   if (result.canceled || !result.filePath) return false;
   writeFileSync(result.filePath, bytes);
   return true;

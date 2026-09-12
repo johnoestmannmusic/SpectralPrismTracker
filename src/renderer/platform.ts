@@ -38,7 +38,7 @@ export async function loadDefaultSong(): Promise<LoadedSong | { error: string }>
   if (!furBytes) {
     return { error: "Missing assets/flight_school_night_shift.fur" };
   }
-  const projectResponse = await fetch(assetUrl("lmp-default-proj.json")).catch(() => null);
+  const projectResponse = await fetch(assetUrl("lmp-default-proj.lampjson")).catch(() => null);
   const project = projectResponse && projectResponse.ok ? await projectResponse.text() : "";
   const stems = await Promise.all([0, 1, 2, 3].map((i) => fetchBytes(`${i}.ogg`)));
   const samples = await Promise.all([0, 1, 2].map((i) => fetchBytes(`SourceSamples/${i}.ogg`)));

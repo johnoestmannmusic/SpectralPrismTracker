@@ -14,7 +14,7 @@ function isAudio(name: string): boolean {
 /**
  * Port of lantern-app's `assemble_song_folder`: requires exactly one `.fur`,
  * optional 0- or 1-based numbered stems, optional source samples under
- * `assets/SourceSamples`, and an optional `lmp-default-proj.json` (else a
+ * `assets/SourceSamples`, and an optional `lmp-default-proj.lampjson` (else a
  * default project is synthesized).
  */
 export function assembleSongFolder(files: SongFolderFile[]): LoadedSong | { error: string } {
@@ -56,7 +56,7 @@ export function assembleSongFolder(files: SongFolderFile[]): LoadedSong | { erro
 
   let projectText: string;
   const projectFile = files.find((f) =>
-    norm(f.name).endsWith("/assets/lmp-default-proj.json"),
+    norm(f.name).endsWith("/assets/lmp-default-proj.lampjson"),
   );
   if (projectFile) {
     projectText = new TextDecoder().decode(projectFile.bytes);

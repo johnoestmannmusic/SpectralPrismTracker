@@ -59,10 +59,10 @@ test("Project JSON Load auto-applies and closes the modal", async () => {
     });
 
     const project = JSON.parse(
-      readFileSync(path.join(projectRoot, "assets/lmp-default-proj.json"), "utf8"),
+      readFileSync(path.join(projectRoot, "assets/lmp-default-proj.lampjson"), "utf8"),
     );
     project.songTitle = "Loaded Title";
-    const tmp = path.join(userDataDir, "project.json");
+    const tmp = path.join(userDataDir, "project.lampjson");
     writeFileSync(tmp, JSON.stringify(project));
 
     await window.getByRole("button", { name: "Project JSON" }).click();
@@ -71,6 +71,36 @@ test("Project JSON Load auto-applies and closes the modal", async () => {
     // Auto-applies: modal closes and the new title is reflected.
     await expect(window.locator(".modal")).toHaveCount(0);
     await expect(window.locator(".subtitle")).toContainText("Loaded Title");
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("Project JSON Load rejects non-.lampjson files", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-rejectjson-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
+      timeout: 30_000,
+    });
+
+    const project = JSON.parse(
+      readFileSync(path.join(projectRoot, "assets/lmp-default-proj.lampjson"), "utf8"),
+    );
+    const tmp = path.join(userDataDir, "project.json");
+    writeFileSync(tmp, JSON.stringify(project));
+
+    await window.getByRole("button", { name: "Project JSON" }).click();
+    await window.locator('.modal input[type="file"]').setInputFiles(tmp);
+
+    await expect(window.locator(".error-banner")).toContainText(".lampjson");
+    // The modal stays open because the file was rejected.
+    await expect(window.locator(".modal")).toHaveCount(1);
   } finally {
     await app.close();
     rmSync(userDataDir, { recursive: true, force: true });

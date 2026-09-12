@@ -4,7 +4,7 @@ export interface LoadedSong {
   raw: RawFurModule;
   /** Original `.fur` bytes, retained for "Save .FUR". */
   furBytes: Uint8Array;
-  /** `lmp-default-proj.json` contents as text. */
+  /** `lmp-default-proj.lampjson` contents as text. */
   project: string;
   stems: Array<Uint8Array | null>;
   samples: Array<Uint8Array | null>;

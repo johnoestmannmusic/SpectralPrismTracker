@@ -770,6 +770,10 @@ export function App() {
       const file = event.target.files?.[0];
       event.target.value = "";
       if (!file) return;
+      if (!file.name.toLowerCase().endsWith(".lampjson")) {
+        setError(`Unsupported project file "${file.name}" — expected a .lampjson file.`);
+        return;
+      }
       void file.text().then((text) => {
         setProjectIoText(text);
         applyProjectText(text);
@@ -1027,7 +1031,7 @@ export function App() {
               title={
                 typeof File === "undefined"
                   ? "File loading is not supported in this browser"
-                  : "Load a Project JSON file from disk"
+                  : "Load a Lantern Project file (.lampjson) from disk"
               }
             >
               Load…
@@ -1035,7 +1039,7 @@ export function App() {
             <input
               ref={jsonFileInputRef}
               type="file"
-              accept=".json,application/json"
+              accept=".lampjson"
               style={{ display: "none" }}
               onChange={loadProjectFile}
             />
@@ -1044,7 +1048,7 @@ export function App() {
             <button
               onClick={() =>
                 void saveBytes(
-                  `${safeFilename(project ? project.songTitle : "project")}.json`,
+                  `${safeFilename(project ? project.songTitle : "project")}.lampjson`,
                   new TextEncoder().encode(projectIoText),
                 )
               }
