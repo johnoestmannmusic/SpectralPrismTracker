@@ -20,6 +20,9 @@ export interface SamplerSettings {
   decay: number;
   sustain: number;
   release: number;
+  /** Stereo pan centre, -1 (left) .. 1 (right). */
+  pan: number;
+  /** Random pan width around the centre, 0..1. */
   panRandomRange: number;
   polyphonic: boolean;
   voiceCap: number;
@@ -41,6 +44,7 @@ export function defaultSamplerSettings(): SamplerSettings {
     decay: 0.08,
     sustain: 0.7,
     release: 0.15,
+    pan: 0,
     panRandomRange: 0,
     polyphonic: false,
     voiceCap: 8,

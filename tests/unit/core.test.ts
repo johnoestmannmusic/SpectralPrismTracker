@@ -238,6 +238,15 @@ describe("project json", () => {
     expect(project.instruments[0]!.transpose).toBe(12);
   });
 
+  it("round-trips the instrument pan centre and random width", () => {
+    const project = projectFromJson(fixtureText("assets/lmp-default-proj.json"));
+    project.instruments[0]!.pan = -0.5;
+    project.instruments[0]!.panRandomRange = 0.25;
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.instruments[0]!.pan).toBe(-0.5);
+    expect(reread.instruments[0]!.panRandomRange).toBe(0.25);
+  });
+
   it("gracefully imports the legacy Fusion schema and unknown modes", () => {
     const value = JSON.parse(fixtureText("assets/lmp-default-proj.json")) as {
       instruments: Array<Record<string, unknown>>;

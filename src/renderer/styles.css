@@ -139,6 +139,31 @@ body {
   align-self: flex-start;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
+  padding-right: 10px;
+  font-size: 19px;
+}
+
+/* Right-hand panels read +4px larger than the main layout. */
+.sidebar .small {
+  font-size: 16.5px;
+}
+
+.sidebar .hint {
+  font-size: 17px;
+}
+
+.sidebar .explainer-body {
+  font-size: 17px;
+}
+
+.sidebar .timing-grid,
+.sidebar .timing-row,
+.sidebar .collapse-header {
+  font-size: 17px;
+}
+
+.sidebar .timing-row input {
+  font-size: 15px;
 }
 
 .panel {
@@ -310,17 +335,18 @@ select {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .instrument-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 4px;
   padding: 5px 6px;
   border: 1px solid transparent;
   border-radius: 3px;
-  white-space: nowrap;
 }
 
 .instrument-row:nth-child(odd) {
@@ -746,7 +772,7 @@ select {
 .explainer {
   display: flex;
   flex-direction: column;
-  height: 150px;
+  height: 282px;
 }
 
 .explainer-title {
@@ -756,10 +782,30 @@ select {
 
 .explainer-body {
   margin-top: 6px;
-  overflow: auto;
+  height: 232px;
+  overflow: hidden;
   font-size: 13px;
   line-height: 1.35;
-  white-space: pre-line;
+}
+
+.explainer-body p {
+  margin: 0 0 6px;
+}
+
+.tk-num { color: var(--accent); }
+.tk-var { color: #7fb2d6; }
+.tk-kw { color: #c98fe0; font-weight: 600; }
+.tk-live { color: #e0a33a; font-weight: 600; }
+
+.tk-block {
+  margin: 0 0 6px;
+  padding: 4px 6px;
+  background: var(--deep);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 
 .collapse-header {
@@ -819,7 +865,7 @@ select {
 }
 
 .ins-name-input {
-  width: 130px;
+  width: 104px;
   background: var(--input-bg);
   color: var(--text);
   border: 2px solid var(--edge);
@@ -882,7 +928,6 @@ select {
 
 /* ---- ADSR graph ---- */
 .adsr-wrap {
-  position: relative;
   width: 100%;
   height: 110px;
   margin: 6px 0;
@@ -891,21 +936,11 @@ select {
   touch-action: none;
 }
 
-.adsr-wrap svg {
-  width: 100%;
-  height: 100%;
+.adsr-canvas {
   display: block;
-}
-
-.adsr-handle {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  margin: -6px 0 0 -6px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--panel);
-  cursor: move;
+  width: 100%;
+  height: 110px;
+  cursor: crosshair;
 }
 
 .audio-error {
@@ -996,4 +1031,109 @@ select {
   font-size: 12px;
   color: #ffb4b4;
   border-color: #7a3030;
+}
+
+/* Smooth Light <-> Dark transition */
+body,
+.app-header,
+.panel,
+.toolbar,
+.sidebar,
+.tracker,
+.tracker th,
+.tracker td,
+.floating-window,
+.modal,
+.cover-canvas,
+.adsr-wrap,
+button,
+input,
+select {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* EDIT MODE uses the blue accent; CHIP/SAMPLER return to green. */
+.app[data-mode="edit"] {
+  --accent: #3ea3e3;
+  --amber: #3ea3e3;
+  --sampler: #3ea3e3;
+}
+
+.pat-badge {
+  padding: 1px 6px;
+  border: 1px solid var(--edge);
+  border-radius: 2px;
+  color: var(--accent);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.pat-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+
+.pat-edit input {
+  width: 56px;
+}
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.draggable-title {
+  cursor: move;
+}
+
+.mode-tip {
+  display: inline-block;
+}
+
+.instrument-row.instrument-muted {
+  opacity: 0.5;
+}
+
+.instrument-row.flash {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.mute-btn {
+  min-width: 46px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-color: var(--edge);
+}
+
+.mute-btn.muted {
+  border-color: var(--accent);
+  color: var(--accent);
+  opacity: 0.65;
+}
+
+.pan-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+
+.pan-field input[type="range"] {
+  width: 70px;
+}
+
+.pan-field .mono {
+  width: 32px;
+  text-align: right;
+}
+
+.pan-field input[type="number"] {
+  width: 48px;
 }

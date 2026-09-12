@@ -3,6 +3,7 @@ import type { SongModel } from "@/core/songModel";
 import { songPositionAt } from "@/core/timing";
 import type { AudioBackend } from "@/audio/backend";
 import { safeFilename } from "../util";
+import { saveFile } from "../platform";
 import { useExplainer } from "../explainer";
 import { coverArtExplain } from "../explainerContent";
 
@@ -303,7 +304,7 @@ export function CoverArt({ song, backend, title }: CoverArtProps) {
     );
     if (!blob) return;
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    await window.lantern.saveFile(`${safeFilename(title)}-cover.png`, bytes);
+    await saveFile(`${safeFilename(title)}-cover.png`, bytes);
   };
 
   return (

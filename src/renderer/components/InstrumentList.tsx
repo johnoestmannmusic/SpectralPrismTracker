@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { SongModel, InstrumentInfo } from "@/core/songModel";
 import type { SamplerSettings } from "@/core/sampler";
 import { useExplainer } from "../explainer";
 import { hexToRgb, rgbToHex } from "../util";
 import { DbInput } from "./DbInput";
+import { useAnimationFrame } from "../hooks";
+import { songPositionAt } from "@/core/timing";
+import type { AudioBackend } from "@/audio/backend";
 import {
   instrumentExplain,
   instrumentsExplain,
@@ -12,6 +15,7 @@ import {
 } from "../explainerContent";
 
 interface InstrumentListProps {
+  backend: AudioBackend;
   song: SongModel;
   settings: SamplerSettings[];
   sampleNames: string[];
@@ -28,6 +32,37 @@ export function InstrumentList(props: InstrumentListProps) {
   const { song, settings, sampleNames } = props;
   const explain = useExplainer();
   const [menuIndex, setMenuIndex] = useState<number | null>(null);
+  const [flashes, setFlashes] = useState<number[]>([]);
+  const lastPos = useRef<string | null>(null);
+  const flashUntil = useRef<Record<number, number>>({});
+
+  useAnimationFrame(() => {
+    const now = performance.now() / 1000;
+    const playing = props.backend.isPlaying();
+    const pos = songPositionAt(song, props.backend.currentTime());
+    const key = playing ? `${pos.orderPos}:${pos.row}` : null;
+    if (playing && key !== lastPos.current) {
+      for (let c = 0; c < Math.min(song.channels.length, 4); c++) {
+        const ch = song.channels[c]!;
+        const patternIndex = ch.orderList[pos.orderPos];
+        const note =
+          patternIndex === undefined ? undefined : ch.patterns.get(patternIndex)?.rows[pos.row]?.note;
+        const instrument = ch.insTimeline[pos.orderPos]?.[pos.row] ?? null;
+        if (note && note.kind === "note" && instrument !== null) {
+          flashUntil.current[instrument] = now + 0.18;
+        }
+      }
+    }
+    lastPos.current = key;
+    const active: number[] = [];
+    for (const [index, until] of Object.entries(flashUntil.current)) {
+      if (until > now) active.push(Number(index));
+    }
+    active.sort((a, b) => a - b);
+    setFlashes((prev) =>
+      prev.length === active.length && prev.every((v, i) => v === active[i]) ? prev : active,
+    );
+  }, 20);
   return (
     <section className="panel">
       <h2 style={{ cursor: "help" }} onMouseEnter={() => explain(instrumentsExplain(song))}>INSTRUMENTS</h2>
@@ -37,7 +72,12 @@ export function InstrumentList(props: InstrumentListProps) {
           const setting = settings[i];
           if (!setting) return null;
           return (
-            <div className="instrument-row" key={i}>
+            <div
+              className={`instrument-row${setting.muted ? " instrument-muted" : ""}${
+                flashes.includes(i) ? " flash" : ""
+              }`}
+              key={i}
+            >
               <button onClick={() => props.onUpdate(i, { muted: !setting.muted })}>
                 {setting.muted ? "Unmute" : "Mute"}
               </button>
@@ -88,6 +128,36 @@ export function InstrumentList(props: InstrumentListProps) {
                   onChange={(linear) => props.onUpdate(i, { volume: linear })}
                 />
                 dB
+              </label>
+
+              <label className="pan-field" title="Pan centre (-100 left, +100 right)">
+                Pan
+                <input
+                  type="range"
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  value={setting.pan}
+                  onChange={(e) => props.onUpdate(i, { pan: Number(e.target.value) })}
+                />
+                <span className="mono">{Math.round(setting.pan * 100)}</span>
+              </label>
+
+              <label className="pan-field" title="Random pan width around the centre point">
+                Rnd Pan
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(setting.panRandomRange * 100)}
+                  onChange={(e) =>
+                    props.onUpdate(i, {
+                      panRandomRange: Math.min(Math.max(Number(e.target.value), 0), 100) / 100,
+                    })
+                  }
+                />
+                %
               </label>
 
               <select

@@ -282,7 +282,9 @@ export function renderSamplerMix(
         }
       }
 
-      const pan = ((random() / 0xffffffff) * 2 - 1) * clamp(setting.panRandomRange, 0, 1);
+      const panCentre = clamp(setting.pan, -1, 1);
+      const panWidth = clamp(setting.panRandomRange, 0, 1);
+      const pan = clamp(panCentre + ((random() / 0xffffffff) * 2 - 1) * panWidth, -1, 1);
       const rate = event.rate * Math.pow(2, clamp(setting.transpose, -48, 48) / 12);
       const voice: RenderVoice = {
         instrument: event.instrument,

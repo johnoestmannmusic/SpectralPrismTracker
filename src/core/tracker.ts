@@ -392,6 +392,28 @@ export function remapInstrumentsAfterDelete(
   }
 }
 
+/**
+ * Re-targets INS cells after instrument `deletedIndex` is removed by moving
+ * references to it onto `targetIndex` (given in the pre-deletion indexing);
+ * all other higher indices shift down by one as usual.
+ */
+export function reassignInstrument(
+  snapshot: PatternSnapshot,
+  deletedIndex: number,
+  targetIndex: number,
+): void {
+  const targetAfterDelete = targetIndex < deletedIndex ? targetIndex : targetIndex - 1;
+  for (const channel of snapshot.channels) {
+    for (const [, rows] of channel.patterns) {
+      for (const cell of rows) {
+        if (cell.instrument === null) continue;
+        if (cell.instrument === deletedIndex) cell.instrument = targetAfterDelete;
+        else if (cell.instrument > deletedIndex) cell.instrument -= 1;
+      }
+    }
+  }
+}
+
 export function clearPatternsSnapshot(snapshot: PatternSnapshot, patternLength: number): void {
   snapshot.orderLength = 1;
   for (const channel of snapshot.channels) {

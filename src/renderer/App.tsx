@@ -9,7 +9,7 @@ import {
   type InstrumentInfo,
   type SongModel,
 } from "@/core/songModel";
-import { clearPatternsSnapshot, remapInstrumentsAfterDelete } from "@/core/tracker";
+import { clearPatternsSnapshot, reassignInstrument, remapInstrumentsAfterDelete } from "@/core/tracker";
 import {
   applyTimingOverrides,
   defaultProject,
@@ -42,6 +42,7 @@ import { SourceSamples } from "./components/SourceSamples";
 import { Piano } from "./components/Piano";
 import { CoverArt } from "./components/CoverArt";
 import { SamplerEditor } from "./components/SamplerEditor";
+import { DraggableModal } from "./components/DraggableModal";
 import { AudioError } from "./components/AudioError";
 import {
   ChipsCard,
@@ -59,6 +60,7 @@ import {
 } from "./explainer";
 import { loadLocalState, saveLocalState } from "./localState";
 import { initPrismWasm } from "./vendor/prism/loader";
+import { chooseAudioFile, loadDefaultSong, loadSongFolder, saveFile } from "./platform";
 
 interface EditorState {
   index: number;
@@ -84,6 +86,8 @@ function findInstrumentSpot(
   }
   return null;
 }
+
+const BUILD_NUMBER = `v${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
 
 const NEW_PROJECT_TITLE = "New Song";
 const NEW_PROJECT_ARTIST = "Unknown Artist";
@@ -124,7 +128,11 @@ export function App() {
   const [sampleInfoComments, setSampleInfoComments] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
   const [newProjectConfirm, setNewProjectConfirm] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [deletePrompt, setDeletePrompt] = useState<{
+    index: number;
+    mode: "remove" | "reassign";
+    target: number;
+  } | null>(null);
   const [wasmReady, setWasmReady] = useState(false);
   const [explainer, setExplainer] = useState<ExplainerContent>(DEFAULT_EXPLAINER);
 
@@ -198,7 +206,7 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const applyLoaded = useCallback((result: Awaited<ReturnType<typeof window.lantern.loadDefaultSong>>) => {
+  const applyLoaded = useCallback((result: Awaited<ReturnType<typeof loadDefaultSong>>) => {
     if ("error" in result && result.error) {
       setError(result.error);
       setStatus("");
@@ -274,7 +282,7 @@ export function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const result = await window.lantern.loadDefaultSong();
+        const result = await loadDefaultSong();
         if (!cancelled) applyLoaded(result);
       } catch (e) {
         if (!cancelled) {
@@ -493,6 +501,7 @@ export function App() {
     setChannelMuted([false, false, false, false]);
     setMasterVolume(1);
     setEditor(null);
+    setStemsAvailable(false);
     setProject((prev) => {
       const base = prev ?? defaultProject();
       return {
@@ -541,7 +550,8 @@ export function App() {
     setStatus(`Added instrument ${(index + 1).toString().padStart(2, "0")}`);
   }, []);
 
-  const deleteInstrument = useCallback((index: number) => {
+  const deleteInstrument = useCallback(
+    (index: number, mode: "remove" | "reassign", target: number) => {
     const model = songRef.current;
     const engine = backendRef.current;
     if (!model || !engine) return;
@@ -552,13 +562,15 @@ export function App() {
     const current = settingsRef.current[index];
     if (current) engine.setSamplerSettings(index, { ...current, muted: true });
     const snapshot = patternSnapshot(model);
-    remapInstrumentsAfterDelete(snapshot, index);
+    if (mode === "reassign") reassignInstrument(snapshot, index, target);
+    else remapInstrumentsAfterDelete(snapshot, index);
     model.instruments.splice(index, 1);
     applySnapshot(model, snapshot);
     const nextSettings = settingsRef.current.slice();
     nextSettings.splice(index, 1);
     settingsRef.current = nextSettings;
     setSettings(nextSettings);
+    engine.replaceSettings(nextSettings);
     nextSettings.forEach((setting, i) => engine.setSamplerSettings(i, setting));
     engine.updateSequence(sequenceFromSong(model));
     setProject((prev) => {
@@ -574,7 +586,9 @@ export function App() {
       return prev;
     });
     setStatus(`Deleted instrument ${index.toString().padStart(2, "0")}`);
-  }, []);
+    },
+    [],
+  );
 
   const onPreview = useCallback(
     (index: number) => {
@@ -601,7 +615,7 @@ export function App() {
 
   const loadSample = useCallback(
     async (slot: number) => {
-      const choice = await window.lantern.chooseAudioFile();
+      const choice = await chooseAudioFile();
       if ("error" in choice) {
         if (choice.error !== "cancelled") setError(choice.error);
         return;
@@ -653,25 +667,32 @@ export function App() {
 
   const openProjectJson = useCallback(() => {
     if (!song || !project) return;
-    const live: ProjectFile = {
-      ...project,
-      samplerModeEnabled: mode === "sampler",
-      channelVolume,
-      masterVolume,
-      mutedChannels: channelMuted,
-      mutedInstruments: settings.map((s) => s.muted),
-      refPitchEnabled: reference,
-      theme,
-      instruments: settings.map((s) => ({ ...s, muted: false })),
-      patternSnapshot: patternSnapshot(song),
-      tickRateOverride: song.meta.tickRate,
-      speedOverride: song.meta.speedPattern[0] ?? null,
-      highlightAOverride: song.meta.highlightA,
-      highlightBOverride: song.meta.highlightB,
-      virtualTempoOverride: song.meta.virtualTempo,
-    };
-    setProjectIoText(projectToJson(live, true));
+    // Open immediately; the (occasionally large) serialization runs on the next
+    // tick so the modal paints without waiting for it.
     setProjectIoOpen(true);
+    setProjectIoText("");
+    const model = song;
+    const baseProject = project;
+    window.setTimeout(() => {
+      const live: ProjectFile = {
+        ...baseProject,
+        samplerModeEnabled: mode === "sampler",
+        channelVolume,
+        masterVolume,
+        mutedChannels: channelMuted,
+        mutedInstruments: settings.map((s) => s.muted),
+        refPitchEnabled: reference,
+        theme,
+        instruments: settings.map((s) => ({ ...s, muted: false })),
+        patternSnapshot: patternSnapshot(model),
+        tickRateOverride: model.meta.tickRate,
+        speedOverride: model.meta.speedPattern[0] ?? null,
+        highlightAOverride: model.meta.highlightA,
+        highlightBOverride: model.meta.highlightB,
+        virtualTempoOverride: model.meta.virtualTempo,
+      };
+      setProjectIoText(projectToJson(live, true));
+    }, 0);
   }, [song, project, mode, channelVolume, masterVolume, channelMuted, settings, reference, theme]);
 
   const applyProjectText = useCallback(
@@ -679,6 +700,34 @@ export function App() {
     if (!song) return;
     try {
       const parsed = projectFromJson(text);
+      // Adopt the JSON's instrument count (grow with blanks / shrink safely).
+      const targetCount = parsed.instruments.length;
+      if (targetCount > 0) {
+        if (song.instruments.length > targetCount) {
+          const snapshot = patternSnapshot(song);
+          for (const channel of snapshot.channels) {
+            for (const [, rows] of channel.patterns) {
+              for (const cell of rows) {
+                if (cell.instrument !== null && cell.instrument >= targetCount) {
+                  cell.instrument = null;
+                }
+              }
+            }
+          }
+          song.instruments = song.instruments.slice(0, targetCount);
+          applySnapshot(song, snapshot);
+        } else {
+          while (song.instruments.length < targetCount) {
+            const idx = song.instruments.length;
+            song.instruments.push({
+              name: `Instrument ${(idx + 1).toString().padStart(2, "0")}`,
+              insType: 2,
+              gameBoy: null,
+              colorRgb: instrumentColor(idx),
+            });
+          }
+        }
+      }
       validateProject(parsed, song.instruments.length);
       if (parsed.patternSnapshot) applySnapshot(song, parsed.patternSnapshot);
       applyTimingOverrides(parsed, song);
@@ -731,7 +780,7 @@ export function App() {
   );
 
   const saveBytes = useCallback(async (name: string, bytes: Uint8Array) => {
-    const ok = await window.lantern.saveFile(name, bytes);
+    const ok = await saveFile(name, bytes);
     if (ok) setStatus(`Saved ${name}`);
   }, []);
 
@@ -782,7 +831,7 @@ export function App() {
   }, [project, song, saveBytes]);
 
   const loadFolder = useCallback(async () => {
-    const result = await window.lantern.loadSongFolder();
+    const result = await loadSongFolder();
     if ("error" in result) {
       if (result.error !== "cancelled") setError(result.error || "Failed to load folder");
       return;
@@ -805,10 +854,10 @@ export function App() {
 
   return (
     <ExplainerContext.Provider value={setExplainer}>
-    <div className="app">
+    <div className="app" data-mode={editMode ? "edit" : mode}>
       <header className="app-header">
         <div>
-          <h1>Lantern Music Player</h1>
+          <h1>Lantern Music Player {BUILD_NUMBER}</h1>
           {song && (
             <p className="subtitle">
               {project?.songTitle || song.meta.name} — {project?.artist || song.meta.author}
@@ -839,12 +888,10 @@ export function App() {
         <main className="layout">
           <div className="main-column">
             <Toolbar
-              onLoadFolder={() => void loadFolder()}
               onNewProject={() => setNewProjectConfirm(true)}
               onSaveFur={saveFur}
               onSaveMidi={saveMidi}
               onOpenProjectJson={openProjectJson}
-              onPackageSamples={packageSamples}
               onSaveWav={saveWav}
               wavReady={mode === "sampler" || chipMix !== null}
               status={status}
@@ -853,6 +900,8 @@ export function App() {
               project={project}
               song={song}
               editMode={editMode}
+              mode={mode}
+              anySpectral={settings.some((s) => s.spectral.enabled)}
               onEdit={onMetadataEdit}
             />
             <Transport
@@ -883,6 +932,7 @@ export function App() {
               }}
             />
             <InstrumentList
+              backend={backend}
               song={song}
               settings={settings}
               sampleNames={sampleNames}
@@ -892,7 +942,9 @@ export function App() {
               onPreview={onPreview}
               onOpenEditor={openEditor}
               onAddInstrument={addInstrument}
-              onRequestDelete={(index) => setDeleteConfirm(index)}
+              onRequestDelete={(index) =>
+                setDeletePrompt({ index, mode: "remove", target: index === 0 ? 1 : 0 })
+              }
             />
             <Piano song={song} backend={backend} />
             <SourceSamples
@@ -961,167 +1013,178 @@ export function App() {
       )}
 
       {projectIoOpen && (
-        <div className="modal-backdrop" onClick={() => setProjectIoOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>Project JSON</span>
-              <button onClick={() => setProjectIoOpen(false)}>✕</button>
-            </div>
-            <textarea
-              className="project-json"
-              value={projectIoText}
-              onChange={(e) => setProjectIoText(e.target.value)}
-              spellCheck={false}
+        <DraggableModal title="Project JSON" onClose={() => setProjectIoOpen(false)}>
+          <textarea
+            className="project-json"
+            value={projectIoText}
+            onChange={(e) => setProjectIoText(e.target.value)}
+            spellCheck={false}
+          />
+          <div className="row">
+            <button
+              onClick={() => jsonFileInputRef.current?.click()}
+              disabled={typeof File === "undefined"}
+              title={
+                typeof File === "undefined"
+                  ? "File loading is not supported in this browser"
+                  : "Load a Project JSON file from disk"
+              }
+            >
+              Load…
+            </button>
+            <input
+              ref={jsonFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: "none" }}
+              onChange={loadProjectFile}
             />
-            <div className="row">
-              <button
-                onClick={() => jsonFileInputRef.current?.click()}
-                disabled={typeof File === "undefined"}
-                title={
-                  typeof File === "undefined"
-                    ? "File loading is not supported in this browser"
-                    : "Load a Project JSON file from disk"
-                }
-              >
-                Load…
-              </button>
-              <input
-                ref={jsonFileInputRef}
-                type="file"
-                accept=".json,application/json"
-                style={{ display: "none" }}
-                onChange={loadProjectFile}
-              />
-              <button onClick={() => void navigator.clipboard.writeText(projectIoText)}>Copy</button>
-              <button onClick={() => applyProjectText(projectIoText)}>Apply</button>
-              <button
-                onClick={() =>
-                  void saveBytes(
-                    `${safeFilename(project ? project.songTitle : "project")}.json`,
-                    new TextEncoder().encode(projectIoText),
-                  )
-                }
-              >
-                Download
-              </button>
-            </div>
+            <button onClick={() => void navigator.clipboard.writeText(projectIoText)}>Copy</button>
+            <button onClick={() => applyProjectText(projectIoText)}>Apply</button>
+            <button
+              onClick={() =>
+                void saveBytes(
+                  `${safeFilename(project ? project.songTitle : "project")}.json`,
+                  new TextEncoder().encode(projectIoText),
+                )
+              }
+            >
+              Download
+            </button>
           </div>
-        </div>
+        </DraggableModal>
       )}
 
       {sampleInfo !== null && (
-        <div className="modal-backdrop" onClick={() => setSampleInfo(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>Source Sample {sampleInfo}</span>
-              <button onClick={() => setSampleInfo(null)}>✕</button>
-            </div>
-            <label>Name</label>
-            <input value={sampleInfoName} onChange={(e) => setSampleInfoName(e.target.value)} />
-            <label>Comments</label>
-            <textarea
-              value={sampleInfoComments}
-              onChange={(e) => setSampleInfoComments(e.target.value)}
-            />
-            <div className="row">
-              <button
-                onClick={() => {
-                  setSampleNames((prev) => {
-                    const next = prev.slice();
-                    while (next.length < 6) next.push("");
-                    next[sampleInfo] = sampleInfoName;
-                    return next;
-                  });
-                  setProject((prev) => {
-                    if (!prev) return prev;
-                    const sourceSamples = prev.sourceSamples.slice();
-                    while (sourceSamples.length < 6) sourceSamples.push(null);
-                    const existing = sourceSamples[sampleInfo];
-                    sourceSamples[sampleInfo] = {
-                      name: sampleInfoName,
-                      url: existing?.url ?? null,
-                      comments: sampleInfoComments,
-                      dataUrl: existing?.dataUrl ?? null,
-                    };
-                    return { ...prev, sourceSamples };
-                  });
-                  setSampleInfo(null);
-                }}
-              >
-                Save
-              </button>
-            </div>
+        <DraggableModal
+          title={`Source Sample ${sampleInfo}`}
+          onClose={() => setSampleInfo(null)}
+        >
+          <label>Name</label>
+          <input value={sampleInfoName} onChange={(e) => setSampleInfoName(e.target.value)} />
+          <label>Comments</label>
+          <textarea
+            value={sampleInfoComments}
+            onChange={(e) => setSampleInfoComments(e.target.value)}
+          />
+          <div className="row">
+            <button
+              onClick={() => {
+                setSampleNames((prev) => {
+                  const next = prev.slice();
+                  while (next.length < 6) next.push("");
+                  next[sampleInfo] = sampleInfoName;
+                  return next;
+                });
+                setProject((prev) => {
+                  if (!prev) return prev;
+                  const sourceSamples = prev.sourceSamples.slice();
+                  while (sourceSamples.length < 6) sourceSamples.push(null);
+                  const existing = sourceSamples[sampleInfo];
+                  sourceSamples[sampleInfo] = {
+                    name: sampleInfoName,
+                    url: existing?.url ?? null,
+                    comments: sampleInfoComments,
+                    dataUrl: existing?.dataUrl ?? null,
+                  };
+                  return { ...prev, sourceSamples };
+                });
+                setSampleInfo(null);
+              }}
+            >
+              Save
+            </button>
           </div>
-        </div>
+        </DraggableModal>
       )}
 
-      {deleteConfirm !== null && (
-        <div className="modal-backdrop" onClick={() => setDeleteConfirm(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>
-                Delete Instrument {deleteConfirm.toString().padStart(2, "0")}?
-              </span>
-            </div>
-            <p>
-              This removes the instrument and re-targets every INS cell in the patterns
-              (references to it are cleared, later instruments shift down). This cannot be
-              undone.
-            </p>
-            <div className="row">
-              <button
-                onClick={() => {
-                  deleteInstrument(deleteConfirm);
-                  setDeleteConfirm(null);
-                }}
-              >
-                Delete Instrument
-              </button>
-              <button onClick={() => setDeleteConfirm(null)}>Cancel</button>
-            </div>
+      {song && deletePrompt && (
+        <DraggableModal
+          title={`Delete Instrument ${deletePrompt.index.toString().padStart(2, "0")}?`}
+          onClose={() => setDeletePrompt(null)}
+        >
+          <p>What should happen to the pattern notes that use this instrument?</p>
+          <label className="radio-row">
+            <input
+              type="radio"
+              checked={deletePrompt.mode === "remove"}
+              onChange={() => setDeletePrompt({ ...deletePrompt, mode: "remove" })}
+            />
+            Remove all notes that use it
+          </label>
+          <label className="radio-row">
+            <input
+              type="radio"
+              checked={deletePrompt.mode === "reassign"}
+              onChange={() => setDeletePrompt({ ...deletePrompt, mode: "reassign" })}
+            />
+            Re-assign those notes to
+          </label>
+          <select
+            disabled={deletePrompt.mode !== "reassign"}
+            value={deletePrompt.target}
+            onChange={(e) =>
+              setDeletePrompt({ ...deletePrompt, mode: "reassign", target: Number(e.target.value) })
+            }
+          >
+            {song.instruments.map((ins, idx) =>
+              idx === deletePrompt.index ? null : (
+                <option key={idx} value={idx}>
+                  {idx.toString(16).toUpperCase().padStart(2, "0")}: {ins.name || `Instrument ${idx}`}
+                </option>
+              ),
+            )}
+          </select>
+          <p className="hint">
+            The instrument is removed and later instruments shift down one index. This cannot be
+            undone.
+          </p>
+          <div className="row">
+            <button
+              onClick={() => {
+                deleteInstrument(deletePrompt.index, deletePrompt.mode, deletePrompt.target);
+                setDeletePrompt(null);
+              }}
+            >
+              Delete Instrument
+            </button>
+            <button onClick={() => setDeletePrompt(null)}>Cancel</button>
           </div>
-        </div>
+        </DraggableModal>
       )}
 
       {newProjectConfirm && (
-        <div className="modal-backdrop" onClick={() => setNewProjectConfirm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>New Project?</span>
-            </div>
-            <p>
-              Create a new project? This clears all patterns, resets every instrument to its
-              default settings, deletes all but the first instrument, and resets volume levels.
-            </p>
-            <div className="row">
-              <button
-                onClick={() => {
-                  newProject();
-                  setNewProjectConfirm(false);
-                }}
-              >
-                Create New Project
-              </button>
-              <button onClick={() => setNewProjectConfirm(false)}>Cancel</button>
-            </div>
+        <DraggableModal title="New Project?" onClose={() => setNewProjectConfirm(false)}>
+          <p>
+            Create a new project? This clears all patterns, resets every instrument to its default
+            settings, deletes all but the first instrument, and resets volume levels.
+          </p>
+          <div className="row">
+            <button
+              onClick={() => {
+                newProject();
+                setNewProjectConfirm(false);
+              }}
+            >
+              Create New Project
+            </button>
+            <button onClick={() => setNewProjectConfirm(false)}>Cancel</button>
           </div>
-        </div>
+        </DraggableModal>
       )}
 
       {clearConfirm && (
-        <div className="modal-backdrop" onClick={() => setClearConfirm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>Clear Source Samples?</span>
-            </div>
-            <p>Remove all six loaded source samples from this session? Files on disk are not deleted.</p>
-            <div className="row">
-              <button onClick={clearSamples}>Clear Samples</button>
-              <button onClick={() => setClearConfirm(false)}>Cancel</button>
-            </div>
+        <DraggableModal title="Clear Source Samples?" onClose={() => setClearConfirm(false)}>
+          <p>
+            Remove all six loaded source samples from this session? Files on disk are not deleted.
+          </p>
+          <div className="row">
+            <button onClick={clearSamples}>Clear Samples</button>
+            <button onClick={() => setClearConfirm(false)}>Cancel</button>
           </div>
-        </div>
+        </DraggableModal>
       )}
+
     </div>
     </ExplainerContext.Provider>
   );

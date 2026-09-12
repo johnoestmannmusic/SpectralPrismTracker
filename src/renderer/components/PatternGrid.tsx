@@ -39,6 +39,7 @@ import {
 } from "@/core/tracker";
 import { useAnimationFrame } from "../hooks";
 import { useExplainer } from "../explainer";
+import { DraggableModal } from "./DraggableModal";
 import { cellExplain, channelExplain, patternsExplain, rowExplain } from "../explainerContent";
 
 const CHANNEL_NAMES = ["PULSE 1", "PULSE 2", "WAVE", "NOISE"];
@@ -298,6 +299,11 @@ export function PatternGrid(props: PatternGridProps) {
         void pasteSelection(event.shiftKey);
         return;
       }
+      if (command && event.key.toLowerCase() === "x") {
+        event.preventDefault();
+        void cutSelection();
+        return;
+      }
 
       const moves: Array<[string, number, number]> = [
         ["ArrowUp", 0, -1],
@@ -367,14 +373,40 @@ export function PatternGrid(props: PatternGridProps) {
           return;
         }
       }
+      // Q/A/W/S adjust every cell in the selection (not just the focus cell).
+      if (key === "q" || key === "a" || key === "w" || key === "s") {
+        event.preventDefault();
+        const rect = selectionRect(model, current, stateRef.current.anchor);
+        const flat = flatColumns(model);
+        const adjust = (cell: PatternCell, column: EditColumn): PatternCell => {
+          if (key === "q") return adjustCell(cell, column, 1, model.instruments.length);
+          if (key === "a") return adjustCell(cell, column, -1, model.instruments.length);
+          if (key === "w") return adjustNote(cell, 12);
+          return adjustNote(cell, -12);
+        };
+        if (rect) {
+          mutate(() => {
+            for (let r = rect.rowLo; r <= rect.rowHi; r++) {
+              const byChannel = new Map<number, PatternCell>();
+              for (let ci = rect.colLo; ci <= rect.colHi; ci++) {
+                const fc = flat[ci]!;
+                const currentCell =
+                  byChannel.get(fc.channel) ?? cellAt(model, fc.channel, rect.order, r);
+                byChannel.set(fc.channel, adjust(currentCell, fc.column));
+              }
+              for (const [ch, cell] of byChannel) {
+                applyEdit(model, { channel: ch, order: rect.order, row: r, cell });
+              }
+            }
+          });
+        }
+        return;
+      }
+
       const cell = cellAt(model, current.channel, current.order, current.row);
       let next: PatternCell | null = null;
       if (key === "x") next = clearValue(cell, current.column);
       else if (key === "c") next = writeValue(cell, current.column, { kind: "note", value: { kind: "off" } });
-      else if (key === "q") next = adjustCell(cell, current.column, 1, model.instruments.length);
-      else if (key === "a") next = adjustCell(cell, current.column, -1, model.instruments.length);
-      else if (key === "w") next = adjustNote(cell, 12);
-      else if (key === "s") next = adjustNote(cell, -12);
       else if (key === "z") next = applyLastValue(cell, current.column, lastValues.current);
       if (next) {
         event.preventDefault();
@@ -444,6 +476,30 @@ export function PatternGrid(props: PatternGridProps) {
     [mutate],
   );
 
+  const cutSelection = useCallback(async () => {
+    await copySelection();
+    const model = songRef.current;
+    const current = stateRef.current.selected;
+    if (!current) return;
+    const rect = selectionRect(model, current, stateRef.current.anchor);
+    if (!rect) return;
+    const flat = flatColumns(model);
+    mutate(() => {
+      for (let r = rect.rowLo; r <= rect.rowHi; r++) {
+        const byChannel = new Map<number, PatternCell>();
+        for (let ci = rect.colLo; ci <= rect.colHi; ci++) {
+          const fc = flat[ci]!;
+          const cell =
+            byChannel.get(fc.channel) ?? cellAt(model, fc.channel, rect.order, r);
+          byChannel.set(fc.channel, clearValue(cell, fc.column));
+        }
+        for (const [ch, cell] of byChannel) {
+          applyEdit(model, { channel: ch, order: rect.order, row: r, cell });
+        }
+      }
+    });
+  }, [copySelection, mutate]);
+
   const applyMenuEdit = (newCell: PatternCell) => {
     if (!menu) return;
     commit({ ...menu.pos, row: menu.pos.row }, newCell);
@@ -469,8 +525,37 @@ export function PatternGrid(props: PatternGridProps) {
     selected.column.kind === column.kind &&
     (column.kind !== "fx" || selected.column.kind !== "fx" || selected.column.index === column.index);
 
+  const draggingRef = useRef(false);
+  const didDragRef = useRef(false);
+  const beginDrag = (channel: number, r: number, column: EditColumn) => {
+    if (!editMode) return;
+    draggingRef.current = true;
+    didDragRef.current = false;
+    const pos: CellPos = { channel, order, row: r, column };
+    setAnchor(pos);
+    setSelected(pos);
+    setFollow(false);
+  };
+  const extendDrag = (channel: number, r: number, column: EditColumn) => {
+    if (!draggingRef.current) return;
+    didDragRef.current = true;
+    setSelected({ channel, order, row: r, column });
+  };
+  useEffect(() => {
+    const up = () => {
+      draggingRef.current = false;
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
+
   const selectCell = (channel: number, r: number, column: EditColumn, shift: boolean) => {
     if (!editMode) return;
+    // A click that follows a drag should not collapse the dragged range.
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
     const pos: CellPos = { channel, order, row: r, column };
     if (shift) setAnchor(anchor ?? selected ?? pos);
     else setAnchor(null);
@@ -640,6 +725,8 @@ export function PatternGrid(props: PatternGridProps) {
                         channel={c}
                         row={r}
                         onSelect={(column, shift) => selectCell(c, r, column, shift)}
+                        onDragStart={(column) => beginDrag(c, r, column)}
+                        onDragOver={(column) => extendDrag(c, r, column)}
                         onExplain={(column, cell) =>
                           explain(cellExplain(song, c, order, r, column, cell))
                         }
@@ -676,48 +763,80 @@ export function PatternGrid(props: PatternGridProps) {
       )}
 
       {helpOpen && (
-        <div className="modal-backdrop" onClick={() => setHelpOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>EDIT MODE Keyboard Shortcuts</span>
-              <button onClick={() => setHelpOpen(false)}>✕</button>
-            </div>
-            <div className="help-grid mono small">
-              <span>Arrows</span><span>Move selection</span>
-              <span>Ctrl/Cmd + Up/Down</span><span>Move 16 rows</span>
-              <span>Ctrl/Cmd + Left/Right</span><span>Jump channel (NOTE)</span>
-              <span>Shift + arrows</span><span>Extend selection</span>
-              <span>Z</span><span>Enter last value / repeat</span>
-              <span>X</span><span>Clear cell or range</span>
-              <span>C</span><span>Note Off</span>
-              <span>Q / A</span><span>Value +1 / −1</span>
-              <span>W / S</span><span>Note ±1 octave</span>
-              <span>Ctrl/Cmd + C / V</span><span>Copy / paste</span>
-              <span>Ctrl/Cmd + Shift + V</span><span>Flood paste to end</span>
-              <span>Ctrl/Cmd + A</span><span>Select column / all</span>
-              <span>Ctrl/Cmd + Z / Y</span><span>Undo / redo</span>
-              <span>Space</span><span>Play from pattern start / pause</span>
-            </div>
+        <DraggableModal title="EDIT MODE Keyboard Shortcuts" onClose={() => setHelpOpen(false)}>
+          <div className="help-grid mono small">
+            <span>Arrows</span><span>Move selection</span>
+            <span>Ctrl/Cmd + Up/Down</span><span>Move 16 rows</span>
+            <span>Ctrl/Cmd + Left/Right</span><span>Jump channel (NOTE)</span>
+            <span>Shift + arrows / drag</span><span>Extend selection</span>
+            <span>Z</span><span>Enter last value / repeat</span>
+            <span>X</span><span>Clear cell or range</span>
+            <span>C</span><span>Note Off</span>
+            <span>Q / A</span><span>Value +1 / −1</span>
+            <span>W / S</span><span>Note ±1 octave</span>
+            <span>Ctrl/Cmd + C / X / V</span><span>Copy / cut / paste</span>
+            <span>Ctrl/Cmd + Shift + V</span><span>Flood paste to end</span>
+            <span>Ctrl/Cmd + A</span><span>Select column / all</span>
+            <span>Ctrl/Cmd + Z / Y</span><span>Undo / redo</span>
+            <span>Space</span><span>Play from pattern start / pause</span>
+            <span>Ctrl + Space</span><span>Play from the selected cell</span>
           </div>
-        </div>
+        </DraggableModal>
       )}
 
       {managerOpen && (
-        <div className="modal-backdrop" onClick={() => setManagerOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>Pattern Manager</span>
-              <button onClick={() => setManagerOpen(false)}>✕</button>
-            </div>
-            <div className="row">
-              <button onClick={() => setClearConfirm(true)}>Clear Patterns…</button>
-            </div>
-            <div className="manager-list">
-              {Array.from({ length: song.meta.orderLength }, (_, pos) => (
+        <DraggableModal title="Pattern Manager" onClose={() => setManagerOpen(false)}>
+          <div className="row">
+            <button onClick={() => setClearConfirm(true)}>Clear Patterns…</button>
+          </div>
+          <div className="manager-list">
+            {Array.from({ length: song.meta.orderLength }, (_, pos) => {
+              const patIndex = song.channels[0]?.orderList[pos] ?? 0;
+              return (
                 <div className="row manager-row" key={pos}>
-                  <span className="mono">{pos.toString().padStart(2, "0")}</span>
+                  <span className="mono muted" title="Order position">
+                    {pos.toString().padStart(2, "0")}
+                  </span>
+                  <span className="pat-badge" title="Pattern number — stable across reordering">
+                    PAT {patIndex.toString(16).toUpperCase().padStart(2, "0")}
+                  </span>
+                  <label className="pat-edit" title="Edit this pattern number">
+                    #
+                    <input
+                      type="number"
+                      min={0}
+                      max={255}
+                      value={patIndex}
+                      onChange={(e) => {
+                        const next = Math.min(Math.max(Number(e.target.value), 0), 255);
+                        mutate(() => {
+                          const snap = patternSnapshot(song);
+                          const ch0 = snap.channels[0];
+                          if (!ch0) return;
+                          ch0.orderList[pos] = next;
+                          if (!ch0.patterns.some(([idx]) => idx === next)) {
+                            ch0.patterns.push([
+                              next,
+                              Array.from({ length: patternLength }, () => ({
+                                note: null,
+                                instrument: null,
+                                volume: null,
+                                effects: Array.from({ length: 8 }, () => ({
+                                  effect: null,
+                                  value: null,
+                                })),
+                              })),
+                            ]);
+                            ch0.patterns.sort((a, b) => a[0] - b[0]);
+                          }
+                          applySnapshot(song, snap);
+                        });
+                      }}
+                    />
+                  </label>
                   <button
                     disabled={pos === 0}
+                    title="Move up"
                     onClick={() =>
                       mutate(() => {
                         const snap = patternSnapshot(song);
@@ -734,6 +853,7 @@ export function PatternGrid(props: PatternGridProps) {
                   </button>
                   <button
                     disabled={pos + 1 >= song.meta.orderLength}
+                    title="Move down"
                     onClick={() =>
                       mutate(() => {
                         const snap = patternSnapshot(song);
@@ -783,37 +903,32 @@ export function PatternGrid(props: PatternGridProps) {
                     Remove
                   </button>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        </div>
+        </DraggableModal>
       )}
 
       {clearConfirm && (
-        <div className="modal-backdrop" onClick={() => setClearConfirm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">
-              <span>Clear Patterns?</span>
-            </div>
-            <p>Replace every pattern with one empty pattern per channel?</p>
-            <div className="row">
-              <button
-                onClick={() => {
-                  mutate(() => {
-                    const snap = patternSnapshot(song);
-                    clearPatternsSnapshot(snap, patternLength);
-                    applySnapshot(song, snap);
-                  });
-                  setClearConfirm(false);
-                  setManagerOpen(false);
-                }}
-              >
-                Clear Patterns
-              </button>
-              <button onClick={() => setClearConfirm(false)}>Cancel</button>
-            </div>
+        <DraggableModal title="Clear Patterns?" onClose={() => setClearConfirm(false)}>
+          <p>Replace every pattern with one empty pattern per channel?</p>
+          <div className="row">
+            <button
+              onClick={() => {
+                mutate(() => {
+                  const snap = patternSnapshot(song);
+                  clearPatternsSnapshot(snap, patternLength);
+                  applySnapshot(song, snap);
+                });
+                setClearConfirm(false);
+                setManagerOpen(false);
+              }}
+            >
+              Clear Patterns
+            </button>
+            <button onClick={() => setClearConfirm(false)}>Cancel</button>
           </div>
-        </div>
+        </DraggableModal>
       )}
     </section>
   );
@@ -846,6 +961,8 @@ interface ChannelCellsProps {
   channel: number;
   row: number;
   onSelect: (column: EditColumn, shift: boolean) => void;
+  onDragStart: (column: EditColumn) => void;
+  onDragOver: (column: EditColumn) => void;
   onContext: (x: number, y: number, column: EditColumn) => void;
   onExplain: (column: EditColumn, cell: PatternCell | undefined) => void;
 }
@@ -896,7 +1013,13 @@ function ChannelCells(props: ChannelCellsProps) {
       e.preventDefault();
       props.onContext(e.clientX, e.clientY, column);
     },
-    onMouseEnter: () => props.onExplain(column, cell),
+    onMouseEnter: () => {
+      props.onExplain(column, cell);
+      props.onDragOver(column);
+    },
+    onMouseDown: (e: React.MouseEvent) => {
+      if (props.interactive && e.button === 0) props.onDragStart(column);
+    },
   });
 
   return (

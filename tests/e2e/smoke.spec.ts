@@ -17,7 +17,7 @@ test("loads the bundled song and renders the player shell", async () => {
     const window = await app.firstWindow();
     await window.waitForSelector(".app-header h1");
 
-    await expect(window.locator(".app-header h1")).toHaveText("Lantern Music Player");
+    await expect(window.locator(".app-header h1")).toContainText("Lantern Music Player");
     // The status line is set only after the .fur parses and the project loads.
     await expect(window.locator(".toolbar .status")).toContainText("flight_school_night_shift", {
       timeout: 30_000,

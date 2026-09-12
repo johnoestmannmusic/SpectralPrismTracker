@@ -1,15 +1,55 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { SongModel } from "@/core/songModel";
 import type { ProjectFile } from "@/core/project";
 import { rowDurationSec } from "@/core/timing";
 import { DEFAULT_EXPLAINER, useExplainer, type ExplainerContent } from "../explainer";
 import { chipsExplain, commentsExplain, timingExplain } from "../explainerContent";
 
+const MAX_EXPLAIN_CHARS = 320;
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Wrap numbers / identifiers / ALL-CAPS keywords in colour spans. */
+function highlight(text: string): string {
+  return escapeHtml(text).replace(
+    /(\d+(?:\.\d+)?)|([A-Z][A-Z0-9 /-]{2,}?)(?=\s|$|[.,;:)]|\/)|([a-zA-Z]+_[a-zA-Z0-9_]+|[a-z]+[A-Z][a-zA-Z0-9]*)/g,
+    (match, num, kw, ident) => {
+      if (num) return `<span class="tk-num">${num}</span>`;
+      if (kw) return `<span class="tk-kw">${kw}</span>`;
+      if (ident) return `<span class="tk-var">${ident}</span>`;
+      return match;
+    },
+  );
+}
+
+function renderExplainer(body: string): ReactNode[] {
+  const lines = body.split("\n").filter((line) => line.trim().length > 0);
+  const blocks: ReactNode[] = [];
+  let used = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (used + line.length > MAX_EXPLAIN_CHARS && blocks.length > 0) break;
+    used += line.length;
+    const html = highlight(line);
+    const isCode = line.includes(" = ") && line.length <= 90;
+    blocks.push(
+      isCode ? (
+        <div key={i} className="tk-block" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <p key={i} dangerouslySetInnerHTML={{ __html: html }} />
+      ),
+    );
+  }
+  return blocks;
+}
+
 export function ExplainerCard({ content }: { content: ExplainerContent }) {
   return (
     <section className="panel explainer">
       <strong className="explainer-title">{content.title}</strong>
-      <div className="explainer-body">{content.body}</div>
+      <div className="explainer-body">{renderExplainer(content.body)}</div>
     </section>
   );
 }
@@ -288,11 +328,15 @@ export function SongMetaCard({
   project,
   song,
   editMode,
+  mode,
+  anySpectral,
   onEdit,
 }: {
   project: ProjectFile | null;
   song: SongModel;
   editMode: boolean;
+  mode: "chip" | "sampler";
+  anySpectral: boolean;
   onEdit: (patch: Partial<ProjectFile>) => void;
 }) {
   const onHover = useHoverExplain({
@@ -326,7 +370,12 @@ export function SongMetaCard({
         </p>
       )}
       <p className="small muted">
-        {song.meta.system} · {song.meta.orderLength} patterns · {song.meta.patternLength} rows
+        {mode === "chip"
+          ? "Game Boy"
+          : anySpectral
+            ? "SAMPLER / SPECTRALPRISM"
+            : "SAMPLER"}{" "}
+        · {song.meta.orderLength} patterns · {song.meta.patternLength} rows
       </p>
     </section>
   );

@@ -104,14 +104,13 @@ export function Mixer(props: MixerProps) {
           key={c}
           onMouseEnter={() => explain(mixerChannelExplain(c))}
         >
-          <label className="mute" title={CHANNEL_NAMES[c]}>
-            <input
-              type="checkbox"
-              checked={props.channelMuted[c] ?? false}
-              onChange={(e) => props.onChannelMute(c, e.target.checked)}
-            />
+          <button
+            className={`mute-btn${props.channelMuted[c] ? " muted" : ""}`}
+            title={`${CHANNEL_NAMES[c]} — ${props.channelMuted[c] ? "click to unmute" : "click to mute"}`}
+            onClick={() => props.onChannelMute(c, !(props.channelMuted[c] ?? false))}
+          >
             CH{c}
-          </label>
+          </button>
           <input
             type="range"
             min={0}

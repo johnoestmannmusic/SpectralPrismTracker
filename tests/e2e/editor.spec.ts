@@ -22,8 +22,8 @@ test("Sampler/Spectral modal shows waveforms and closes", async () => {
     const modal = window.locator(".floating-window");
     await expect(modal).toBeVisible();
     await expect(modal.locator(".waveform canvas").first()).toBeVisible();
-    // Draggable ADSR graph (Sampler tab).
-    await expect(modal.locator(".adsr-handle")).toHaveCount(3);
+    // ADSR graph canvas (draggable points) on the Sampler tab.
+    await expect(modal.locator("canvas.adsr-canvas")).toBeVisible();
 
     // Switch to the Spectral tab: Sample A + Result waveforms must render.
     await modal.getByRole("button", { name: "Spectral" }).click();

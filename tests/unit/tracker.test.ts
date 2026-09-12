@@ -14,6 +14,7 @@ import {
   interpolateColumn,
   readValue,
   recordLastValue,
+  reassignInstrument,
   remapInstrumentsAfterDelete,
   removePatternAt,
   selectionRect,
@@ -120,6 +121,19 @@ describe("tracker helpers", () => {
     expect(rows[1]!.instrument).toBeNull(); // deleted
     expect(rows[2]!.instrument).toBe(2); // shifted down from 3
     expect(rows[3]!.instrument).toBe(1);
+  });
+
+  it("re-assigns INS cells to another instrument on delete", () => {
+    const song = fixture();
+    const pattern = song.channels[0]!.patterns.get(song.channels[0]!.orderList[0]!)!;
+    pattern.rows[0]!.instrument = 2;
+    pattern.rows[1]!.instrument = 3;
+    const snap = patternSnapshot(song);
+    // Delete instrument 2, re-assign its notes to instrument 4.
+    reassignInstrument(snap, 2, 4);
+    const rows = snap.channels[0]!.patterns[0]![1];
+    expect(rows[0]!.instrument).toBe(3); // 4 shifts down to 3
+    expect(rows[1]!.instrument).toBe(2); // 3 shifts down to 2
   });
 
   it("inserts, removes and clears patterns in a snapshot", () => {

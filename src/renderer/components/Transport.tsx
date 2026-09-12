@@ -47,14 +47,23 @@ export function Transport({
   return (
     <section className="panel transport">
       <div className="row wrap">
-        <button
-          className="mode-btn chip"
-          data-active={mode === "chip"}
-          disabled={!stemsAvailable}
-          onClick={() => onModeChange("chip")}
+        <span
+          className="mode-tip"
+          title={
+            stemsAvailable
+              ? "Play the original Furnace-rendered stems"
+              : "CHIP MODE needs this song's four stem files, which aren't available for this project."
+          }
         >
-          CHIP MODE
-        </button>
+          <button
+            className="mode-btn chip"
+            data-active={mode === "chip"}
+            disabled={!stemsAvailable}
+            onClick={() => onModeChange("chip")}
+          >
+            CHIP MODE
+          </button>
+        </span>
         <button
           className="mode-btn sampler"
           data-active={mode === "sampler" && !editMode}

@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 21:10 by opencode
+**Board Last Updated:** 2026-09-12 22:55 by opencode
 
 ### Branding (user-confirmed)
 
@@ -85,10 +85,13 @@ npm test                 # Vitest unit tests
 npm run test:e2e         # Playwright Electron smoke test (needs dist/)
 npm run audit:deps       # dependency-provenance / slopsquatting audit
 npm run build:prism-wasm # rebuild prism_dsp WASM (needs wasm-bindgen-cli)
-npm run test:all         # typecheck + unit + audit + build + e2e
+npm run build:web        # static web build -> dist/web (Electron + browser)
+npm run serve:web        # serve dist/web for browser testing
+npm run test:web         # Playwright browser test against dist/web (uses Chrome)
+npm run test:all         # typecheck + unit + audit + build + web + e2e
 ```
 
-### Verification baseline (2026-09-12 20:20)
+### Verification baseline (2026-09-12 22:20)
 
 - `npm run typecheck` — clean.
 - `npx vitest run` — **6 files, 37 tests passing**, including the real
@@ -364,6 +367,96 @@ _(none currently)_
   voices get a 5 ms end fade (an envelope-accurate ramp to 0) and raw source
   previews fade out before stopping, removing end-of-sample clicks. Should be
   re-confirmed by ear; loop seams already had 5 ms fades.
+
+- **0007E-PLAN-077 — Instrument row flash on trigger.** *(2026-09-12 22:20)*
+  Instrument rows briefly flash in the accent colour when a note using them
+  starts. *(item 1)*
+- **0007E-PLAN-078 — Sidebar text +4px.** *(2026-09-12 22:20)* Right-hand panel
+  text (Explainer, Comments, Timing, Chips, Mixer) increased ~4px. *(item 2)*
+- **0007E-PLAN-079 — Sidebar/scrollbar gap.** *(2026-09-12 22:20)* Added
+  `padding-right: 10px` so panel content doesn't touch the scrollbar. *(item 3)*
+- **0007E-PLAN-080 — ADSR recreated from the original 0006 logic.**
+  *(2026-09-12 22:20)* Canvas graph: fixed x-axis (stage max + nominal hold),
+  4px padding, filled amber curve, three draggable points; removed the earlier
+  min-width distortion. *(item 4)*
+- **0007E-PLAN-081 — Explainer colour-coding + code blocks.** *(2026-09-12
+  22:20)* Explainer bodies auto-highlight numbers/identifiers/keywords and
+  render formula lines as code blocks, matching the original's `tk-*` style.
+  *(item 5)*
+- **0007E-PLAN-082 — All modals draggable.** *(2026-09-12 22:20)* New
+  `DraggableModal` used by Project JSON, Sample Info, Clear Samples, New
+  Project, Delete Instrument, Pattern Manager, Keyboard Help and Clear Patterns.
+  *(item 6)*
+- **0007E-PLAN-083 — Delete instrument asks remove vs re-assign.** *(2026-09-12
+  22:20)* Prompt with "remove all notes" or "re-assign to <instrument>";
+  `reassignInstrument` re-targets INS cells. Also clears loop caches via
+  `replaceSettings`, fixing post-delete "Cannot play sample" errors. *(item 7)*
+- **0007E-PLAN-084 — Explainer fixed height, no scroll.** *(2026-09-12 22:20)*
+  Fixed panel height sized to the longest authored body (~246 chars) with a
+  320-char cap enforced at render. *(item 8)*
+- **0007E-PLAN-085 — Theme fade transition.** *(2026-09-12 22:20)*
+  0.3s background/colour/border transitions across panels and controls. *(item 9)*
+- **0007E-PLAN-086 — Mixer mute buttons.** *(2026-09-12 22:20)* Channel
+  checkboxes replaced with CH{n} Mute buttons in the instrument style. *(item 10)*
+- **0007E-PLAN-087 — Muted instrument rows semi-transparent.** *(2026-09-12
+  22:20)* *(item 11)*
+- **0007E-PLAN-088 — JSON load adopts its instrument count.** *(2026-09-12
+  22:20)* Grows with blank instruments or shrinks (clearing out-of-range INS
+  cells) to match the file instead of erroring. *(item 12)*
+- **0007E-PLAN-089 — Package Samples removed from the toolbar.** *(2026-09-12
+  22:20)* Still available in the Source Samples panel. *(item 13)*
+- **0007E-PLAN-090 — Song panel engine label.** *(2026-09-12 22:20)* Shows
+  `SAMPLER`, `SAMPLER / SPECTRALPRISM` (any instrument in Spectral), or
+  `Game Boy` in CHIP mode. *(item 14)*
+- **0007E-PLAN-091 — Title build number.** *(2026-09-12 22:20)* Heading is now
+  `Lantern Music Player vYYYYMMDD`. *(item 15)*
+- **0007E-PLAN-092 — Spectral modal title trimmed.** *(2026-09-12 22:20)* No
+  date; just "SpectralPrism". *(item 16)*
+- **0007E-PLAN-093 — Instrument previews at C5.** *(2026-09-12 22:20)* Preview
+  voice rate/reference tone shifted from A4 to C5. *(item 17)*
+- **0007E-PLAN-094 — CHIP MODE disabled style + tooltip.** *(2026-09-12 22:20)*
+  When stems are missing the button is dimmed with a hover tooltip; New Project
+  now marks stems unavailable. *(item 18)*
+- **0007E-PLAN-095 — EDIT MODE blue accent.** *(2026-09-12 22:20)*
+  `data-mode="edit"` switches the accent to `#3ea3e3`; CHIP/SAMPLER stay green.
+  *(item 19)*
+- **0007E-PLAN-096 — Click-drag cell selection.** *(2026-09-12 22:20)*
+  Mouse-drag across cells extends the selection like Shift. *(item 20)*
+- **0007E-PLAN-097 — Ctrl+X cut.** *(2026-09-12 22:20)* Copies the selection to
+  the clipboard, then clears it. *(item 21)*
+- **0007E-PLAN-098 — Visible/editable pattern number.** *(2026-09-12 22:20)*
+  Pattern Manager shows a `PAT xx` badge per position and an editable number
+  input (channel 0's pattern index, stable across reordering). *(item 22)*
+- **0007E-PLAN-099 — Lighter Project JSON.** *(2026-09-12 22:20)* Pattern
+  snapshots now store only non-empty cells as sparse `[row, cell]` pairs (still
+  reads the dense legacy form); empty metadata/mutes/source samples omitted.
+  *(item 23)*
+- **0007E-PLAN-100 — Toolbar reordered/trimmed.** *(2026-09-12 22:20)* Removed
+  Load Song Folder and Package Samples; order is Save .FUR, Save .MIDI,
+  Save .WAV, Project JSON, New Project. *(items 24, 25, 26)*
+
+- **0007E-PLAN-101 — Project JSON modal opens instantly.** *(2026-09-12 22:35)*
+  The modal now paints immediately; the (sometimes large) serialization runs on
+  the next tick and fills the textarea after. *(item 1)*
+- **0007E-PLAN-102 — Instrument Pan + Random Pan Width.** *(2026-09-12 22:35)*
+  `SamplerSettings` gains a `pan` centre (-1..1), and `panRandomRange` is now
+  the random width around that centre; wired through the live Web Audio voice,
+  the offline mixdown, Project JSON, and the instrument rows / Sampler editor.
+  *(item 2)*
+
+- **0007E-PLAN-103 — Q/A/W/S edit every highlighted cell.** *(2026-09-12 22:55)*
+  In EDIT MODE, Q/A/W/S now adjust all cells in the active selection range
+  (Shift or drag), not just the focus cell. *(item 1)*
+- **0007E-PLAN-104 — Instrument rows fit without horizontal scroll.**
+  *(2026-09-12 22:55)* Rows wrap instead of scrolling horizontally; the name
+  input is narrower. *(item 2)*
+- **0007E-PLAN-105 — Web build.** *(2026-09-12 22:55)* New browser platform
+  layer (`src/renderer/platform.ts`) so the same renderer runs in Electron or
+  the browser: bundled assets are fetched from `./assets/`, `.fur` zlib is
+  inflated with `DecompressionStream`, saves become Blob downloads and file
+  picks use `<input type="file">`. `npm run build:web` emits a static
+  `dist/web/` (assets copied, minus the large CHIP mix WAV) and
+  `npm run test:web` loads it in a real browser. *(item 3)*
 
 ---
 

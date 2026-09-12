@@ -63,9 +63,7 @@ export function SamplerEditor(props: SamplerEditorProps) {
     setRendering(backend.fusionRendering(props.index));
   });
 
-  const title = props.spectralTab
-    ? "SpectralPrism | v20260912 | LMP Integrated"
-    : `Sampler — ${props.name}`;
+  const title = props.spectralTab ? "SpectralPrism" : `Sampler — ${props.name}`;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
@@ -190,6 +188,7 @@ export function SamplerEditor(props: SamplerEditorProps) {
             <EnvelopeControls settings={settings} onUpdate={props.onUpdate} />
 
             <div className="row wrap">
+              <Slider label="Pan" value={settings.pan * 100} min={-100} max={100} step={1} onChange={(v) => props.onUpdate({ pan: v / 100 })} />
               <Slider label="Random Pan (%)" value={settings.panRandomRange * 100} min={0} max={100} step={1} onChange={(v) => props.onUpdate({ panRandomRange: v / 100 })} />
               <label>
                 <input type="checkbox" checked={settings.polyphonic} onChange={(e) => props.onUpdate({ polyphonic: e.target.checked })} />

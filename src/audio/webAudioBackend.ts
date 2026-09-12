@@ -18,6 +18,10 @@ async function decodeBytes(ctx: AudioContext, bytes: Uint8Array): Promise<AudioB
   return ctx.decodeAudioData(arrayBuffer);
 }
 
+// Instrument previews audition at C5 (three semitones above the A4/440
+// reference the samples are assumed to be at), rather than at A4 itself.
+const PREVIEW_RATE = Math.pow(2, 3 / 12);
+
 interface InstrumentPreview {
   voice: Voice;
   tone: OscillatorNode | null;
@@ -289,7 +293,7 @@ export class WebAudioBackend implements AudioBackend {
         settings,
         instrument,
         0,
-        1,
+        PREVIEW_RATE,
         settings.volume,
         ctx.currentTime + 0.01,
         ctx.destination,
@@ -307,7 +311,7 @@ export class WebAudioBackend implements AudioBackend {
     if (reference) {
       tone = ctx.createOscillator();
       toneGain = ctx.createGain();
-      tone.frequency.value = this.tuning;
+      tone.frequency.value = this.tuning * PREVIEW_RATE;
       const start = voice.start;
       const end = Math.min(voice.end, start + 5);
       const fade = Math.min(0.01, (end - start) / 4);
@@ -423,6 +427,12 @@ export class WebAudioBackend implements AudioBackend {
 
   setSamplerSettings(instrument: number, settings: SamplerSettings): void {
     this.sampler.updateSettings(instrument, settings, this.ctx?.currentTime ?? 0);
+  }
+
+  /** Replaces the whole per-instrument settings array (after add/delete/import). */
+  replaceSettings(settings: SamplerSettings[]): void {
+    this.sampler.setSettingsVec(settings);
+    this.sampler.loops = settings.map(() => null);
   }
 
   setMode(mode: PlaybackMode): void {

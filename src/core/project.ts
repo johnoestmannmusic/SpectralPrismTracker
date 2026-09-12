@@ -127,13 +127,30 @@ function cellFromSerde(value: unknown): PatternCell {
   };
 }
 
+function cellIsEmpty(cell: PatternCell): boolean {
+  return (
+    cell.note === null &&
+    cell.instrument === null &&
+    cell.volume === null &&
+    cell.effects.every((e) => e.effect === null && e.value === null)
+  );
+}
+
 export function snapshotToSerde(snapshot: PatternSnapshot | null | undefined): unknown {
   if (!snapshot) return null;
   return {
     orderLength: snapshot.orderLength,
     channels: snapshot.channels.map((channel) => ({
       orderList: channel.orderList,
-      patterns: channel.patterns.map(([index, rows]) => [index, rows.map(cellToSerde)]),
+      // Sparse rows: only cells that actually contain something are written,
+      // as [rowIndex, cell] pairs. Empty patterns collapse to `[]`.
+      patterns: channel.patterns.map(([index, rows]) => {
+        const sparse: unknown[] = [];
+        rows.forEach((cell, row) => {
+          if (!cellIsEmpty(cell)) sparse.push([row, cellToSerde(cell)]);
+        });
+        return [index, sparse];
+      }),
     })),
   };
 }
@@ -151,7 +168,20 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
         orderList: Array.isArray(channel.orderList) ? (channel.orderList as number[]) : [],
         patterns: patternsRaw.map((pair) => {
           const [index, rows] = pair as [number, unknown[]];
-          return [index, (rows ?? []).map(cellFromSerde)] as [number, PatternCell[]];
+          const list = rows ?? [];
+          const first = list[0];
+          const sparse = Array.isArray(first) && typeof (first as unknown[])[0] === "number";
+          if (sparse) {
+            const cells: PatternCell[] = [];
+            for (const entry of list as Array<[number, unknown]>) {
+              cells[entry[0]] = cellFromSerde(entry[1]);
+            }
+            for (let i = 0; i < cells.length; i++) {
+              if (!cells[i]) cells[i] = cellFromSerde(null);
+            }
+            return [index, cells] as [number, PatternCell[]];
+          }
+          return [index, list.map(cellFromSerde)] as [number, PatternCell[]];
         }),
       };
     }),
@@ -224,6 +254,7 @@ export function samplerFromJson(value: unknown): SamplerSettings {
     decay: num("decay", d.decay),
     sustain: num("sustain", d.sustain),
     release: num("release", d.release),
+    pan: num("pan", d.pan),
     panRandomRange: num("panRandomRange", d.panRandomRange),
     polyphonic: bool("polyphonic", d.polyphonic),
     voiceCap: num("voiceCap", d.voiceCap),
@@ -245,6 +276,7 @@ export function samplerToJson(settings: SamplerSettings, includeMuted = false): 
     decay: settings.decay,
     sustain: settings.sustain,
     release: settings.release,
+    pan: settings.pan,
     panRandomRange: settings.panRandomRange,
     polyphonic: settings.polyphonic,
     voiceCap: settings.voiceCap,
@@ -351,21 +383,21 @@ export function projectToValue(project: ProjectFile): Record<string, unknown> {
     samplerModeEnabled: project.samplerModeEnabled,
     channelVolume: project.channelVolume,
     masterVolume: project.masterVolume,
-    mutedChannels: project.mutedChannels,
-    mutedInstruments: project.mutedInstruments,
     refPitchEnabled: project.refPitchEnabled,
-    sourceSamples: project.sourceSamples,
     instruments: project.instruments.map((s) => samplerToJson(s, false)),
-    songTitle: project.songTitle,
-    artist: project.artist,
-    album: project.album,
-    comments: project.comments,
-    musicLicense: project.musicLicense,
-    codeLicense: project.codeLicense,
-    viewSourceLink: project.viewSourceLink,
-    websiteLink: project.websiteLink,
     theme: project.theme,
   };
+  if (project.mutedChannels.some(Boolean)) value.mutedChannels = project.mutedChannels;
+  if (project.mutedInstruments.some(Boolean)) value.mutedInstruments = project.mutedInstruments;
+  if (project.sourceSamples.some((s) => s !== null)) value.sourceSamples = project.sourceSamples;
+  if (project.songTitle) value.songTitle = project.songTitle;
+  if (project.artist) value.artist = project.artist;
+  if (project.album) value.album = project.album;
+  if (project.comments) value.comments = project.comments;
+  if (project.musicLicense) value.musicLicense = project.musicLicense;
+  if (project.codeLicense) value.codeLicense = project.codeLicense;
+  if (project.viewSourceLink) value.viewSourceLink = project.viewSourceLink;
+  if (project.websiteLink) value.websiteLink = project.websiteLink;
   if (project.patternSnapshot) value.patternSnapshot = snapshotToSerde(project.patternSnapshot);
   if (project.tickRateOverride != null) value.tickRateOverride = project.tickRateOverride;
   if (project.speedOverride != null) value.speedOverride = project.speedOverride;

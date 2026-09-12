@@ -132,8 +132,9 @@ export function buildVoice(
     when + attack + decay,
   );
 
-  pan.pan.value =
-    (Math.random() * 2 - 1) * Math.min(Math.max(settings.panRandomRange, 0), 1);
+  const panCentre = Math.min(Math.max(settings.pan, -1), 1);
+  const panWidth = Math.min(Math.max(settings.panRandomRange, 0), 1);
+  pan.pan.value = Math.min(Math.max(panCentre + (Math.random() * 2 - 1) * panWidth, -1), 1);
 
   source.connect(gain);
   gain.connect(pan);

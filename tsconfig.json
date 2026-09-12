@@ -26,6 +26,7 @@
     "src/wasm",
     "src/shared",
     "tests/unit",
-    "tests/e2e"
+    "tests/e2e",
+    "tests/web"
   ]
 }
