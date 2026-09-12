@@ -534,7 +534,6 @@ export function PatternGrid(props: PatternGridProps) {
     const pos: CellPos = { channel, order, row: r, column };
     setAnchor(pos);
     setSelected(pos);
-    setFollow(false);
   };
   const extendDrag = (channel: number, r: number, column: EditColumn) => {
     if (!draggingRef.current) return;

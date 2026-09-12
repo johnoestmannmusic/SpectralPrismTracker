@@ -29,6 +29,9 @@ test("EDIT MODE: select cells, navigate with arrows, and edit", async () => {
     const selected = window.locator(".tracker-cell.selected");
     await expect(selected).toHaveCount(1);
 
+    // Clicking a cell must not turn Follow Playhead off.
+    await expect(window.getByLabel("Follow playhead")).toBeChecked();
+
     // Read the selection's row before/after ArrowDown.
     const selectedRowBefore = await window.evaluate(() => {
       const el = document.querySelector(".tracker-cell.selected");

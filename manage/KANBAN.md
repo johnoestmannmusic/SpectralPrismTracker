@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-12 22:55 by opencode
+**Board Last Updated:** 2026-09-12 23:05 by opencode
 
 ### Branding (user-confirmed)
 
@@ -457,6 +457,13 @@ _(none currently)_
   picks use `<input type="file">`. `npm run build:web` emits a static
   `dist/web/` (assets copied, minus the large CHIP mix WAV) and
   `npm run test:web` loads it in a real browser. *(item 3)*
+
+- **0007E-BUG-009 — Clicking a tracker cell turned off Follow Playhead.**
+  *(2026-09-12 23:05)* The drag-select `beginDrag` (fired on mouse-down for
+  every cell click) still called `setFollow(false)`, left over from before the
+  "follow stays on while editing" change. Removed it, so Follow Playhead is now
+  only ever toggled by its checkbox. Regression assertion added to
+  `tests/e2e/edit.spec.ts` (click a cell, then expect the checkbox checked).
 
 ---
 
