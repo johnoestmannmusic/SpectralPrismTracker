@@ -80,6 +80,22 @@ function partitionPoint<T>(items: ArrayLike<T>, predicate: (item: T) => boolean)
   return lo;
 }
 
+/** Partition-point over `items[0..end)` without allocating a slice. */
+function partitionPointRange<T>(
+  items: ArrayLike<T>,
+  end: number,
+  predicate: (item: T) => boolean,
+): number {
+  let lo = 0;
+  let hi = Math.min(end, items.length);
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (predicate(items[mid] as T)) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /** Absolute song-time (seconds) -> (order position, row). Clamps negatives. */
 export function songPositionAt(song: SongModel, t: number): SongPosition {
   const rows = Math.max(song.rowTimes.length - 1, 1);
@@ -89,7 +105,7 @@ export function songPositionAt(song: SongModel, t: number): SongPosition {
     time = (((t < 0 ? 0 : t) % duration) + duration) % duration;
   }
   const totalRows = Math.max(
-    partitionPoint(song.rowTimes.slice(0, rows), (start) => start <= time) - 1,
+    partitionPointRange(song.rowTimes, rows, (start) => start <= time) - 1,
     0,
   );
   const patternLength = Math.max(song.meta.patternLength, 1);

@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import type { AudioBackend } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
+import { useExplainer } from "../explainer";
+import { dbToLinear, formatDb } from "../util";
 
 const CHANNEL_NAMES = ["Pulse 1", "Pulse 2", "Wave", "Noise"];
 
@@ -14,9 +16,58 @@ interface MixerProps {
   onMasterVolume: (volume: number) => void;
 }
 
-function linearToDb(value: number): string {
-  if (value <= 0) return "-∞";
-  return (20 * Math.log10(value)).toFixed(1);
+function linearToDb(value: number): number {
+  return value > 0 ? 20 * Math.log10(value) : -Infinity;
+}
+
+function DbField({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (db: number) => void;
+}) {
+  const [text, setText] = useState(() => formatDb(value));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) setText(formatDb(value));
+  }, [value]);
+
+  const commit = () => {
+    const trimmed = text.trim().toLowerCase();
+    if (trimmed === "-inf" || trimmed === "-infinity" || trimmed === "-∞") {
+      onChange(0);
+      setText("-∞");
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed)) {
+      onChange(Math.min(Math.max(dbToLinear(parsed), 0), 1.5));
+    } else {
+      setText(formatDb(value));
+    }
+  };
+
+  return (
+    <input
+      className="db-input mono"
+      value={text}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+        commit();
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
 }
 
 function Meter({ level, master = false }: { level: number; master?: boolean }) {
@@ -24,10 +75,7 @@ function Meter({ level, master = false }: { level: number; master?: boolean }) {
   const width = `${Math.min(level, 1) * 100}%`;
   return (
     <div className={`meter${master ? " master" : ""}`} title={`${db.toFixed(1)} dB`}>
-      <div
-        className={`meter-fill${level >= 0.98 ? " clip" : ""}`}
-        style={{ width }}
-      />
+      <div className={`meter-fill${level >= 0.98 ? " clip" : ""}`} style={{ width }} />
     </div>
   );
 }
@@ -35,6 +83,7 @@ function Meter({ level, master = false }: { level: number; master?: boolean }) {
 export function Mixer(props: MixerProps) {
   const [meters, setMeters] = useState([0, 0, 0, 0, 0]);
   const hold = useRef([0, 0, 0, 0, 0]);
+  const explain = useExplainer();
 
   useAnimationFrame(() => {
     const levels = props.backend.meterLevels();
@@ -43,13 +92,22 @@ export function Mixer(props: MixerProps) {
       h[i] = Math.max(levels[i] ?? 0, (h[i] ?? 0) * 0.85);
     }
     setMeters(h.slice());
-  });
+  }, 20);
 
   return (
     <section className="panel">
       <h2>MIXER</h2>
       {[0, 1, 2, 3].map((c) => (
-        <div className="row mixer-row" key={c}>
+        <div
+          className="row mixer-row"
+          key={c}
+          onMouseEnter={() =>
+            explain({
+              title: `CHANNEL ${c}`,
+              body: `${CHANNEL_NAMES[c]} — gain, mute and live peak. Type a value in the dB field, including -∞ for silence.`,
+            })
+          }
+        >
           <label className="mute" title={CHANNEL_NAMES[c]}>
             <input
               type="checkbox"
@@ -66,7 +124,11 @@ export function Mixer(props: MixerProps) {
             value={props.channelVolume[c] ?? 1}
             onChange={(e) => props.onChannelVolume(c, Number(e.target.value))}
           />
-          <span className="mono db">{linearToDb(props.channelVolume[c] ?? 1)} dB</span>
+          <DbField
+            value={props.channelVolume[c] ?? 1}
+            onChange={(db) => props.onChannelVolume(c, db)}
+          />
+          <span className="db">dB</span>
           <Meter level={meters[c] ?? 0} />
         </div>
       ))}
@@ -80,7 +142,8 @@ export function Mixer(props: MixerProps) {
           value={props.masterVolume}
           onChange={(e) => props.onMasterVolume(Number(e.target.value))}
         />
-        <span className="mono db">{linearToDb(props.masterVolume)} dB</span>
+        <DbField value={props.masterVolume} onChange={props.onMasterVolume} />
+        <span className="db">dB</span>
         <Meter level={meters[4] ?? 0} master />
       </div>
     </section>

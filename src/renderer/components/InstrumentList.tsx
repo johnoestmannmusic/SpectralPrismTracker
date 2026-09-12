@@ -1,60 +1,87 @@
-import type { SongModel } from "@/core/songModel";
+import type { SongModel, InstrumentInfo } from "@/core/songModel";
 import type { SamplerSettings } from "@/core/sampler";
+import { useExplainer } from "../explainer";
+import { dbToLinear, formatDb, hexToRgb, rgbToHex } from "../util";
 
 interface InstrumentListProps {
   song: SongModel;
   settings: SamplerSettings[];
   sampleNames: string[];
   onUpdate: (index: number, patch: Partial<SamplerSettings>) => void;
+  onUpdateInstrument: (index: number, patch: Partial<InstrumentInfo>) => void;
+  onTranspose: (index: number, delta: number) => void;
   onPreview: (index: number) => void;
   onOpenEditor: (index: number, spectral: boolean) => void;
 }
 
-function linearToDb(value: number): string {
-  if (value <= 0) return "-∞";
-  return (20 * Math.log10(value)).toFixed(1);
-}
-
 export function InstrumentList(props: InstrumentListProps) {
   const { song, settings, sampleNames } = props;
+  const explain = useExplainer();
   return (
     <section className="panel">
       <h2>INSTRUMENTS</h2>
-      <p className="hint">Preview, transpose, volume, source sample and per-instrument settings.</p>
+      <p className="hint">Quick edits stay synchronized with the movable Sampler/Spectral windows.</p>
       <div className="instruments">
         {song.instruments.map((instrument, i) => {
           const setting = settings[i];
           if (!setting) return null;
-          const [r, g, b] = instrument.colorRgb;
           return (
             <div className="instrument-row" key={i}>
-              <span
-                className="swatch"
-                style={{ background: `rgb(${r},${g},${b})` }}
-                title="Instrument colour"
-              />
-              <span className="mono index">{i.toString().padStart(2, "0")}</span>
-              <span className="ins-name" title={instrument.name}>
-                {instrument.name || `Instrument ${i}`}
-              </span>
-
               <button onClick={() => props.onUpdate(i, { muted: !setting.muted })}>
                 {setting.muted ? "Unmute" : "Mute"}
               </button>
 
-              <button onClick={() => props.onUpdate(i, { transpose: setting.transpose - 1 })}>
+              <input
+                className="color-swatch"
+                type="color"
+                value={rgbToHex(instrument.colorRgb)}
+                title="Pattern and piano colour"
+                onChange={(e) =>
+                  props.onUpdateInstrument(i, { colorRgb: hexToRgb(e.target.value) })
+                }
+              />
+
+              <span className="mono index">{i.toString().padStart(2, "0")}</span>
+
+              <input
+                className="ins-name-input"
+                value={instrument.name}
+                onChange={(e) => props.onUpdateInstrument(i, { name: e.target.value })}
+                onMouseEnter={() =>
+                  explain({
+                    title: `INSTRUMENT ${i.toString().padStart(2, "0")}`,
+                    body: `${instrument.name || "Unnamed"} is a Furnace instrument. Its colour follows held notes through the tracker, piano and cover scans; the quick controls share state with its movable Sampler and Spectral window.`,
+                  })
+                }
+              />
+
+              <button onClick={() => props.onTranspose(i, -1)} title="Transpose down and preview">
                 −
               </button>
               <span className="mono transpose">{setting.transpose.toFixed(0)} st</span>
-              <button onClick={() => props.onUpdate(i, { transpose: setting.transpose + 1 })}>
+              <button onClick={() => props.onTranspose(i, 1)} title="Transpose up and preview">
                 +
               </button>
 
-              <span className="mono volume">{linearToDb(setting.volume)} dB</span>
+              <label className="db-field" title="Instrument level">
+                <input
+                  type="number"
+                  step={0.1}
+                  value={Number(formatDb(setting.volume))}
+                  onChange={(e) =>
+                    props.onUpdate(i, { volume: Math.min(Math.max(dbToLinear(Number(e.target.value)), 0), 1.5) })
+                  }
+                />
+                dB
+              </label>
 
               <select
                 value={setting.sourceIndex === null ? "" : String(setting.sourceIndex)}
-                onChange={(e) => props.onUpdate(i, { sourceIndex: e.target.value === "" ? null : Number(e.target.value) })}
+                onChange={(e) =>
+                  props.onUpdate(i, {
+                    sourceIndex: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
               >
                 <option value="">(none)</option>
                 {sampleNames.map((name, slot) =>

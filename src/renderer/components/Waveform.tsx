@@ -25,7 +25,7 @@ interface WaveformProps {
 export function Waveform({
   peaks,
   height = 56,
-  color = "#6cd73c",
+  color,
   markers = [],
   trim,
   onTrimChange,
@@ -51,6 +51,7 @@ export function Waveform({
     ctx.clearRect(0, 0, width, height);
 
     const styles = getComputedStyle(document.documentElement);
+    const waveColor = color || styles.getPropertyValue("--wave").trim() || "#6cd73c";
     const deep = styles.getPropertyValue("--deep").trim() || "#0a0a0b";
     ctx.fillStyle = deep;
     ctx.fillRect(0, 0, width, height);
@@ -68,7 +69,7 @@ export function Waveform({
 
     const center = height / 2;
     const amp = height * 0.44;
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = waveColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i < peaks.length; i++) {

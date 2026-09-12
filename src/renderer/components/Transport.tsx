@@ -36,7 +36,7 @@ export function Transport({
     setDuration(backend.songDuration());
     setPos(songPositionAt(song, t));
     setReady(mode === "chip" ? backend.stemsReady() : backend.samplerReady());
-  });
+  }, 20);
 
   const play = () => {
     backend.ensureStarted();

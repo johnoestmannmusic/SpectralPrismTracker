@@ -31,8 +31,11 @@ export function Piano({ song, backend }: PianoProps) {
       spawnFlashes(song, pos.orderPos, pos.row, now);
     }
     lastPosition.current = playing ? key : null;
+    const activeFlash = flashes.current.some((f) => f.until > now);
+    const activeNoise = noise.current !== null && noise.current.until > now;
+    if (!playing && !activeFlash && !activeNoise) return;
     force((n) => n + 1);
-  });
+  }, 12);
 
   const spawnFlashes = (model: SongModel, order: number, row: number, now: number) => {
     for (let ch = 0; ch < Math.min(model.channels.length, 4); ch++) {

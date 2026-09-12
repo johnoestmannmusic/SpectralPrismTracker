@@ -733,3 +733,127 @@ select {
   grid-template-columns: auto 1fr;
   gap: 4px 18px;
 }
+
+/* ---- Explainer / sidebar cards ---- */
+.explainer {
+  display: flex;
+  flex-direction: column;
+  height: 150px;
+}
+
+.explainer-title {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+.explainer-body {
+  margin-top: 6px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.collapse-header {
+  background: transparent;
+  border: none;
+  color: var(--secondary);
+  text-align: left;
+  padding: 0;
+  letter-spacing: 0.12em;
+  font-size: 13px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.collapse-header:hover {
+  border: none;
+  color: var(--text);
+}
+
+.timing-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.timing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.timing-row input,
+.modal input,
+.floating-body input[type="number"],
+.instrument-row input[type="number"] {
+  width: 72px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+/* ---- Instrument quick edits ---- */
+.color-swatch {
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ins-name-input {
+  width: 130px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-family: inherit;
+}
+
+.db-field {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+
+.db-input {
+  width: 58px;
+  text-align: right;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.floating-title .close-btn {
+  padding: 2px 8px;
+}
+
+.tracker tr.bar td {
+  background: var(--tracker-alt);
+}
+
+.pattern-swatch {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  border: 1px solid var(--edge);
+  border-radius: 2px;
+}
+
+.tracker-cell.flash {
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 6px var(--accent);
+}

@@ -31,6 +31,7 @@ import {
   type EditColumn,
 } from "@/core/tracker";
 import { useAnimationFrame } from "../hooks";
+import { useExplainer } from "../explainer";
 
 const CHANNEL_NAMES = ["PULSE 1", "PULSE 2", "WAVE", "NOISE"];
 const UNDO_CAP = 20;
@@ -45,6 +46,7 @@ interface PatternGridProps {
   onSeek: (time: number) => void;
   onToggleChannel: (channel: number) => void;
   onAudition: (channels: number[], order: number, row: number) => void;
+  onViewOrderChange: (order: number) => void;
 }
 
 interface MenuState {
@@ -64,6 +66,7 @@ function effectText(effect: { effect: number | null; value: number | null }): st
 
 export function PatternGrid(props: PatternGridProps) {
   const { song, backend, editMode } = props;
+  const explain = useExplainer();
   const [order, setOrder] = useState(0);
   const [row, setRow] = useState(0);
   const [follow, setFollow] = useState(true);
@@ -76,6 +79,9 @@ export function PatternGrid(props: PatternGridProps) {
   const [managerOpen, setManagerOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [undoVersion, setUndoVersion] = useState(0);
+  const [, forceFlash] = useState(0);
+  const flashesRef = useRef<Array<{ channel: number; row: number; until: number }>>([]);
+  const lastFlashPosRef = useRef<string | null>(null);
 
   const undoStack = useRef<PatternSnapshot[]>([]);
   const redoStack = useRef<PatternSnapshot[]>([]);
@@ -90,8 +96,28 @@ export function PatternGrid(props: PatternGridProps) {
   useAnimationFrame(() => {
     const pos = songPositionAt(song, backend.currentTime());
     setRow(pos.row);
-    if (follow && backend.isPlaying()) setOrder(pos.orderPos);
-  });
+    const playing = backend.isPlaying();
+    if (follow && playing) setOrder(pos.orderPos);
+
+    const now = performance.now() / 1000;
+    const key = playing ? `${pos.orderPos}:${pos.row}` : null;
+    if (playing && key !== lastFlashPosRef.current) {
+      for (let c = 0; c < Math.min(song.channels.length, 4); c++) {
+        const ch = song.channels[c]!;
+        const patternIndex = ch.orderList[pos.orderPos];
+        const note =
+          patternIndex === undefined
+            ? undefined
+            : ch.patterns.get(patternIndex)?.rows[pos.row]?.note;
+        if (note && (note.kind === "note" || note.kind === "rawFreq")) {
+          flashesRef.current.push({ channel: c, row: pos.row, until: now + 0.18 });
+        }
+      }
+    }
+    lastFlashPosRef.current = key;
+    flashesRef.current = flashesRef.current.filter((f) => f.until > now);
+    if (flashesRef.current.length > 0) forceFlash((n) => n + 1);
+  }, 20);
 
   const pushUndo = useCallback(() => {
     const stack = undoStack.current;
@@ -122,6 +148,10 @@ export function PatternGrid(props: PatternGridProps) {
   useEffect(() => {
     if (!editMode) resetView();
   }, [editMode, resetView]);
+
+  useEffect(() => {
+    propsRef.current.onViewOrderChange(order);
+  }, [order]);
 
   const commit = useCallback(
     (pos: CellPos, cell: PatternCell) => {
@@ -252,8 +282,24 @@ export function PatternGrid(props: PatternGridProps) {
       }
 
       if (command) return;
-      const cell = cellAt(model, current.channel, current.order, current.row);
       const key = event.key.toLowerCase();
+      if (key === "x") {
+        const rect = selectionRect(model, current, stateRef.current.anchor);
+        if (rect && (rect.rowHi > rect.rowLo || rect.colHi > rect.colLo)) {
+          event.preventDefault();
+          mutate(() => {
+            for (let r = rect.rowLo; r <= rect.rowHi; r++) {
+              let rowCell = cellAt(model, rect.channel, rect.order, r);
+              for (let ci = rect.colLo; ci <= rect.colHi; ci++) {
+                rowCell = clearValue(rowCell, flat[ci]!);
+              }
+              applyEdit(model, { channel: rect.channel, order: rect.order, row: r, cell: rowCell });
+            }
+          });
+          return;
+        }
+      }
+      const cell = cellAt(model, current.channel, current.order, current.row);
       let next: PatternCell | null = null;
       if (key === "x") next = clearValue(cell, current.column);
       else if (key === "c") next = writeValue(cell, current.column, { kind: "note", value: { kind: "off" } });
@@ -390,7 +436,8 @@ export function PatternGrid(props: PatternGridProps) {
         </label>
       </div>
       <div className="row wrap">
-        <label>Order</label>
+        <label>Pattern</label>
+        <PatternSwatch song={song} order={order} channels={channels} />
         <select
           value={order}
           onChange={(e) => {
@@ -442,6 +489,14 @@ export function PatternGrid(props: PatternGridProps) {
                   <span
                     className="channel-head"
                     onClick={() => props.onToggleChannel(c)}
+                    onMouseEnter={() =>
+                      explain({
+                        title: `CHANNEL ${c}`,
+                        body: `${CHANNEL_NAMES[c]} — click to ${
+                          props.channelMuted[c] ? "unmute" : "mute"
+                        } this channel.`,
+                      })
+                    }
                     title="Mute or unmute this channel"
                   >
                     CH{c} · {CHANNEL_NAMES[c]}
@@ -459,11 +514,22 @@ export function PatternGrid(props: PatternGridProps) {
           <tbody>
             {Array.from({ length: patternLength }, (_, r) => {
               const isPlayhead = r === row && backend.isPlaying();
-              const beat = lines && r % 4 === 0;
+              let rowClass = "";
+              if (isPlayhead) rowClass = "playhead";
+              else if (lines && song.meta.highlightB > 0 && r % song.meta.highlightB === 0)
+                rowClass = "beat";
+              else if (lines && song.meta.highlightA > 0 && r % song.meta.highlightA === 0)
+                rowClass = "bar";
               return (
-                <tr key={r} className={isPlayhead ? "playhead" : beat ? "beat" : ""}>
+                <tr key={r} className={rowClass}>
                   <td
                     className="row-col mono"
+                    onMouseEnter={() =>
+                      explain({
+                        title: `ROW ${r.toString(16).toUpperCase().padStart(2, "0")}`,
+                        body: "Click to seek transport to this row and audition every unmuted channel.",
+                      })
+                    }
                     onClick={() => {
                       props.onSeek(rowTime(song, order, r));
                       props.onAudition(
@@ -502,9 +568,16 @@ export function PatternGrid(props: PatternGridProps) {
                         isInRange={isInRange}
                         isSelected={isSelected}
                         noteStart={!!note && note.kind === "note"}
+                        flash={flashesRef.current.some((f) => f.channel === c && f.row === r)}
                         channel={c}
                         row={r}
                         onSelect={(column, shift) => selectCell(c, r, column, shift)}
+                        onExplain={(column, value) =>
+                          explain({
+                            title: `CH${c} · ${columnLabel(column)}`,
+                            body: value,
+                          })
+                        }
                         onContext={(x, y, column) => setMenu({ x, y, pos: { channel: c, order, row: r, column } })}
                       />
                     );
@@ -526,15 +599,11 @@ export function PatternGrid(props: PatternGridProps) {
             const cell = cellAt(song, menu.pos.channel, menu.pos.order, menu.pos.row);
             applyMenuEdit(writeValue(cell, column, value));
           }}
-          onInterpolate={() => {
+          onInterpolate={(column) => {
             if (!rect) return;
             const model = song;
-            const flat = flatColumnsForChannel(model, rect.channel);
             mutate(() => {
-              for (let i = rect.colLo; i <= rect.colHi; i++) {
-                const column = flat[i]!;
-                interpolateColumn(model, rect.channel, column, rect.order, rect.rowLo, rect.rowHi);
-              }
+              interpolateColumn(model, rect.channel, column, rect.order, rect.rowLo, rect.rowHi);
             });
             setMenu(null);
           }}
@@ -708,10 +777,35 @@ interface ChannelCellsProps {
   isInRange: (channel: number, row: number, column: EditColumn) => boolean;
   isSelected: (channel: number, row: number, column: EditColumn) => boolean;
   noteStart: boolean;
+  flash: boolean;
   channel: number;
   row: number;
   onSelect: (column: EditColumn, shift: boolean) => void;
   onContext: (x: number, y: number, column: EditColumn) => void;
+  onExplain: (column: EditColumn, body: string) => void;
+}
+
+function effectsFor(cell: PatternCell | undefined, column: EditColumn): string {
+  if (!cell) return "";
+  if (column.kind === "fx" && column.kind === "fx") {
+    const slot = cell.effects[column.index];
+    return slot ? effectText(slot) : "....";
+  }
+  return "";
+}
+
+function describe(column: EditColumn, cell: PatternCell | undefined, effect: string): string {
+  if (!cell) return "Empty cell.";
+  switch (column.kind) {
+    case "note":
+      return cell.note ? `Held note ${noteToName(cell.note)}.` : "Empty note. Click and press Z to enter.";
+    case "ins":
+      return cell.instrument === null ? "No instrument." : `Instrument ${hex(cell.instrument)}.`;
+    case "vol":
+      return cell.volume === null ? "No volume." : `Volume ${hex(cell.volume)}.`;
+    case "fx":
+      return `Effect ${effect}.`;
+  }
 }
 
 function ChannelCells(props: ChannelCellsProps) {
@@ -723,8 +817,10 @@ function ChannelCells(props: ChannelCellsProps) {
   for (let i = 0; i < props.effectColumns; i++) columns.push({ kind: "fx", index: i });
 
   const mk = (column: EditColumn, base: string) => ({
-    className: `${base}${props.isSelected(props.channel, props.row, column) ? " selected" : ""}${
-      props.isInRange(props.channel, props.row, column) ? " in-range" : ""
+    className: `tracker-cell ${base}${
+      props.isSelected(props.channel, props.row, column) ? " selected" : ""
+    }${props.isInRange(props.channel, props.row, column) ? " in-range" : ""}${
+      props.flash && column.kind === "note" ? " flash" : ""
     }`,
     style: { background: props.background },
     onClick: (e: React.MouseEvent) => {
@@ -735,6 +831,8 @@ function ChannelCells(props: ChannelCellsProps) {
       e.preventDefault();
       props.onContext(e.clientX, e.clientY, column);
     },
+    onMouseEnter: () =>
+      props.onExplain(column, `${describe(column, cell, effectsFor(cell, column))}`),
   });
 
   return (
@@ -757,13 +855,37 @@ function ChannelCells(props: ChannelCellsProps) {
   );
 }
 
+function PatternSwatch({
+  song,
+  order,
+  channels,
+}: {
+  song: SongModel;
+  order: number;
+  channels: Array<{ orderList: number[]; patterns: Map<number, { rows: PatternCell[] }> }>;
+}) {
+  const patternIndex = channels[0]?.orderList[order];
+  const rows = patternIndex === undefined ? undefined : channels[0]?.patterns.get(patternIndex)?.rows;
+  let color = "transparent";
+  if (rows) {
+    for (let r = 0; r < rows.length; r++) {
+      const instrument = rows[r]?.instrument;
+      if (instrument != null && song.instruments[instrument]) {
+        color = `rgb(${song.instruments[instrument]!.colorRgb.join(",")})`;
+        break;
+      }
+    }
+  }
+  return <span className="pattern-swatch" style={{ background: color }} title="Pattern colour" />;
+}
+
 interface ContextMenuProps {
   song: SongModel;
   menu: MenuState;
   rect: ReturnType<typeof selectionRect>;
   onClose: () => void;
   onApply: (column: EditColumn, value: CellValue) => void;
-  onInterpolate: () => void;
+  onInterpolate: (column: EditColumn) => void;
 }
 
 function ContextMenu({ song, menu, rect, onClose, onApply, onInterpolate }: ContextMenuProps) {
@@ -771,11 +893,15 @@ function ContextMenu({ song, menu, rect, onClose, onApply, onInterpolate }: Cont
   const showInterpolate = rect && rect.rowHi > rect.rowLo && rect.channel === menu.pos.channel;
   return (
     <div className="context-menu" style={{ left: menu.x, top: menu.y }} onMouseLeave={onClose}>
-      {showInterpolate && (
-        <button className="menu-item" onClick={onInterpolate}>
-          Interpolate {columnLabel(column)}
-        </button>
-      )}
+      {showInterpolate &&
+        rect &&
+        flatColumnsForChannel(song, rect.channel)
+          .slice(rect.colLo, rect.colHi + 1)
+          .map((col, i) => (
+            <button key={i} className="menu-item" onClick={() => onInterpolate(col)}>
+              Interpolate {columnLabel(col)}
+            </button>
+          ))}
       {column.kind === "note" && (
         <>
           <div className="menu-label">Octave 3</div>

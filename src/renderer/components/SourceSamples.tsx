@@ -23,9 +23,14 @@ export function SourceSamples(props: SourceSamplesProps) {
   const [playheads, setPlayheads] = useState<SamplePlayhead[]>([]);
 
   useAnimationFrame(() => {
-    setDurations(props.backend.sampleDurations());
+    const nextDurations = props.backend.sampleDurations();
+    setDurations((prev) =>
+      prev.length === nextDurations.length && prev.every((v, i) => v === nextDurations[i])
+        ? prev
+        : nextDurations,
+    );
     setPlayheads(props.backend.samplePlayheads());
-  });
+  }, 12);
 
   const populated = durations.filter((d) => d > 0).length;
 

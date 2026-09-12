@@ -4,6 +4,8 @@ import {
   buildSongModel,
   cellAt,
   patternSnapshot,
+  retime,
+  type InstrumentInfo,
   type SongModel,
 } from "@/core/songModel";
 import {
@@ -17,6 +19,7 @@ import {
 import {
   defaultSamplerSettings,
   sequenceFromSong,
+  setSpectralEnabled,
   type SamplerSettings,
 } from "@/core/sampler";
 import { renderSamplerMix, wavPcm16, zipStore } from "@/core/export";
@@ -36,6 +39,21 @@ import { SourceSamples } from "./components/SourceSamples";
 import { Piano } from "./components/Piano";
 import { CoverArt } from "./components/CoverArt";
 import { SamplerEditor } from "./components/SamplerEditor";
+import {
+  ChipsCard,
+  ExplainerCard,
+  LicensesCard,
+  SongComments,
+  SongMetaCard,
+  TimingCard,
+  type TimingEditPatch,
+} from "./components/Sidebar";
+import {
+  DEFAULT_EXPLAINER,
+  ExplainerContext,
+  type ExplainerContent,
+} from "./explainer";
+import { loadLocalState, saveLocalState } from "./localState";
 import { initPrismWasm } from "./vendor/prism/loader";
 
 interface EditorState {
@@ -43,10 +61,32 @@ interface EditorState {
   spectral: boolean;
 }
 
+function findInstrumentSpot(
+  song: SongModel,
+  instrument: number,
+): { channel: number; order: number; row: number } | null {
+  const channelCount = Math.min(song.channels.length, 4);
+  for (let order = 0; order < song.meta.orderLength; order++) {
+    for (let row = 0; row < song.meta.patternLength; row++) {
+      for (let channel = 0; channel < channelCount; channel++) {
+        const ch = song.channels[channel]!;
+        const ins = ch.insTimeline[order]?.[row];
+        const note = ch.noteTimeline[order]?.[row];
+        if (ins === instrument && note && note.kind === "note") {
+          return { channel, order, row };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export function App() {
   const backendRef = useRef<WebAudioBackend | null>(null);
   const songRef = useRef<SongModel | null>(null);
   const settingsRef = useRef<SamplerSettings[]>([]);
+  const viewOrderRef = useRef(0);
+  const referenceRef = useRef(false);
   const [backend, setBackend] = useState<WebAudioBackend | null>(null);
   const [song, setSong] = useState<SongModel | null>(null);
   const [project, setProject] = useState<ProjectFile | null>(null);
@@ -73,9 +113,11 @@ export function App() {
   const [sampleInfoComments, setSampleInfoComments] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
   const [wasmReady, setWasmReady] = useState(false);
+  const [explainer, setExplainer] = useState<ExplainerContent>(DEFAULT_EXPLAINER);
 
   songRef.current = song;
   settingsRef.current = settings;
+  referenceRef.current = reference;
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +132,16 @@ export function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!song) return;
+    saveLocalState({
+      mutes: settings.map((s) => s.muted),
+      instrumentNames: song.instruments.map((i) => i.name),
+      instrumentColors: song.instruments.map((i) => i.colorRgb),
+      reference,
+    });
+  }, [song, settings, reference]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -109,10 +161,14 @@ export function App() {
         if (!engine.isPlaying()) engine.play(engine.currentTime());
         return;
       }
-      if (engine.isPlaying()) engine.pause();
-      else {
+      if (engine.isPlaying()) {
+        engine.pause();
+      } else {
         engine.ensureStarted();
-        engine.play(engine.currentTime());
+        // Plain Space starts from the viewed pattern's first row.
+        const model = songRef.current;
+        const start = model ? rowTime(model, viewOrderRef.current, 0) : engine.currentTime();
+        engine.play(start);
       }
     };
     window.addEventListener("keydown", handler);
@@ -139,6 +195,20 @@ export function App() {
     loadedProject.mutedInstruments.forEach((muted, i) => {
       if (loadedSettings[i]) loadedSettings[i]!.muted = !!muted;
     });
+
+    const saved = loadLocalState();
+    if (saved) {
+      saved.mutes.forEach((m, i) => {
+        if (loadedSettings[i]) loadedSettings[i]!.muted = !!m;
+      });
+      saved.instrumentNames.forEach((n, i) => {
+        if (model.instruments[i] && n) model.instruments[i]!.name = n;
+      });
+      saved.instrumentColors.forEach((c, i) => {
+        if (model.instruments[i] && c.length === 3)
+          model.instruments[i]!.colorRgb = [c[0]!, c[1]!, c[2]!];
+      });
+    }
 
     const engine = new WebAudioBackend();
     engine.ensureStarted();
@@ -168,7 +238,7 @@ export function App() {
     setChannelVolume(loadedProject.channelVolume.slice(0, 4));
     setChannelMuted(loadedProject.mutedChannels.slice(0, 4));
     setMasterVolume(loadedProject.masterVolume);
-    setReference(loadedProject.refPitchEnabled);
+    setReference(saved ? saved.reference : loadedProject.refPitchEnabled);
     setMode(initialMode);
     setStemsAvailable(haveStems);
     setCurrentFur(result.furBytes);
@@ -285,22 +355,112 @@ export function App() {
       const next = prev.slice();
       const current = next[index] ?? defaultSamplerSettings();
       let merged: SamplerSettings = { ...current, ...patch };
-      if (patch.sourceIndex !== undefined) {
+      // Source changes reset the trim only while driving the plain sampler.
+      if (patch.sourceIndex !== undefined && !merged.spectral.enabled) {
         const duration = engine?.sampleDurations()[patch.sourceIndex ?? -1] ?? 0;
         merged = { ...merged, startSec: 0, endSec: duration };
       }
-      next[index] = merged;
       engine?.setSamplerSettings(index, merged);
+      // Spectral parameter/source changes rebuild the render, then re-trim to it.
+      if (merged.spectral.enabled && (patch.spectral !== undefined || patch.sourceIndex !== undefined)) {
+        engine?.renderFusion(index);
+        const duration = engine?.effectiveDuration(index) ?? 0;
+        if (duration > 0) {
+          merged = { ...merged, startSec: 0, endSec: duration };
+          engine?.setSamplerSettings(index, merged);
+        }
+      }
+      next[index] = merged;
       return next;
     });
   }, []);
 
+  const applyEngine = useCallback((index: number, spectral: boolean) => {
+    const engine = backendRef.current;
+    setSettings((prev) => {
+      const next = prev.slice();
+      const current = next[index] ?? defaultSamplerSettings();
+      const merged: SamplerSettings = { ...current, spectral: { ...current.spectral } };
+      setSpectralEnabled(merged, spectral);
+      engine?.setSamplerSettings(index, merged);
+      if (spectral) {
+        engine?.renderFusion(index);
+        const duration = engine?.effectiveDuration(index) ?? 0;
+        if (duration > 0) {
+          merged.startSec = 0;
+          merged.endSec = duration;
+          engine?.setSamplerSettings(index, merged);
+        }
+      }
+      next[index] = merged;
+      return next;
+    });
+  }, []);
+
+  const onTimingEdit = useCallback((patch: TimingEditPatch) => {
+    const model = songRef.current;
+    if (!model) return;
+    if (patch.tickRate != null) model.meta.tickRate = patch.tickRate;
+    if (patch.speed != null) {
+      if (model.meta.speedPattern.length > 0) model.meta.speedPattern[0] = patch.speed;
+      else model.meta.speedPattern.push(patch.speed);
+    }
+    if (patch.highlightA != null) model.meta.highlightA = patch.highlightA;
+    if (patch.highlightB != null) model.meta.highlightB = patch.highlightB;
+    if (patch.virtualTempo) model.meta.virtualTempo = patch.virtualTempo;
+    retime(model);
+    backendRef.current?.updateSequence(sequenceFromSong(model));
+    // Nudge React so the controlled timing inputs re-render.
+    setSettings((prev) => prev.slice());
+  }, []);
+
+  const onTransposeAdjust = useCallback((index: number, delta: number) => {
+    const engine = backendRef.current;
+    const current = settingsRef.current[index] ?? defaultSamplerSettings();
+    const transpose = Math.min(Math.max(current.transpose + delta, -48), 48);
+    const merged: SamplerSettings = { ...current, transpose };
+    const next = settingsRef.current.slice();
+    next[index] = merged;
+    settingsRef.current = next;
+    setSettings(next);
+    engine?.setSamplerSettings(index, merged);
+    engine?.preview(index, referenceRef.current);
+  }, []);
+
+  const onUpdateInstrument = useCallback((index: number, patch: Partial<InstrumentInfo>) => {
+    const model = songRef.current;
+    if (!model) return;
+    const info = model.instruments[index];
+    if (!info) return;
+    Object.assign(info, patch);
+    setSettings((prev) => prev.slice());
+  }, []);
+
+  const onMetadataEdit = useCallback((patch: Partial<ProjectFile>) => {
+    setProject((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   const onPreview = useCallback(
     (index: number) => {
-      backendRef.current?.ensureStarted();
-      backendRef.current?.preview(index, reference);
+      const engine = backendRef.current;
+      if (!engine) return;
+      engine.ensureStarted();
+      if (mode === "chip") {
+        const model = songRef.current;
+        const spot = model ? findInstrumentSpot(model, index) : null;
+        if (model && spot) {
+          engine.previewPattern(
+            [spot.channel],
+            rowTime(model, spot.order, spot.row),
+            rowDuration(model, spot.order * model.meta.patternLength + spot.row) * 2,
+            [],
+          );
+          return;
+        }
+      }
+      engine.preview(index, referenceRef.current);
     },
-    [reference],
+    [mode],
   );
 
   const loadSample = useCallback(
@@ -337,7 +497,19 @@ export function App() {
     setSampleNames(Array.from({ length: 6 }, () => ""));
     setProject((prev) => (prev ? { ...prev, sourceSamples: Array.from({ length: 6 }, () => null) } : prev));
     setSettings((prev) =>
-      prev.map((s) => ({ ...s, sourceIndex: null, startSec: 0, endSec: 0 })),
+      prev.map((s) => {
+        const defaults = defaultSamplerSettings();
+        return {
+          ...s,
+          sourceIndex: null,
+          startSec: 0,
+          endSec: 0,
+          attack: defaults.attack,
+          decay: defaults.decay,
+          sustain: defaults.sustain,
+          release: defaults.release,
+        };
+      }),
     );
     setClearConfirm(false);
     setStatus("Cleared source samples");
@@ -386,6 +558,10 @@ export function App() {
         if (nextSettings[i]) nextSettings[i]!.muted = !!muted;
       });
       nextSettings.forEach((s, i) => engine?.setSamplerSettings(i, s));
+      // Reconstruct Spectral renders for enabled instruments, preserving saved trim.
+      nextSettings.forEach((s, i) => {
+        if (s.spectral.enabled) engine?.renderFusion(i);
+      });
       engine?.updateSequence(sequenceFromSong(song));
       setSettings(nextSettings);
       setProject(parsed);
@@ -463,13 +639,18 @@ export function App() {
     applyLoaded(result);
   }, [applyLoaded]);
 
-  const openEditor = useCallback((index: number, spectral: boolean) => {
-    setEditor({ index, spectral });
-  }, []);
+  const openEditor = useCallback(
+    (index: number, spectral: boolean) => {
+      applyEngine(index, spectral);
+      setEditor({ index, spectral });
+    },
+    [applyEngine],
+  );
 
   const infoProject = project;
 
   return (
+    <ExplainerContext.Provider value={setExplainer}>
     <div className="app">
       <header className="app-header">
         <div>
@@ -518,6 +699,12 @@ export function App() {
               wavReady={mode === "sampler" || chipMix !== null}
               status={status}
             />
+            <SongMetaCard
+              project={project}
+              song={song}
+              editMode={editMode}
+              onEdit={onMetadataEdit}
+            />
             <Transport
               backend={backend}
               song={song}
@@ -537,12 +724,17 @@ export function App() {
               onSeek={onSeek}
               onToggleChannel={onToggleChannel}
               onAudition={onAudition}
+              onViewOrderChange={(order) => {
+                viewOrderRef.current = order;
+              }}
             />
             <InstrumentList
               song={song}
               settings={settings}
               sampleNames={sampleNames}
               onUpdate={onUpdateSetting}
+              onUpdateInstrument={onUpdateInstrument}
+              onTranspose={onTransposeAdjust}
               onPreview={onPreview}
               onOpenEditor={openEditor}
             />
@@ -566,6 +758,10 @@ export function App() {
           </div>
           <aside className="sidebar">
             <CoverArt song={song} backend={backend} title={project?.songTitle || song.meta.name} />
+            <ExplainerCard content={explainer} />
+            <SongComments comments={project?.comments || song.meta.comment || ""} />
+            <TimingCard song={song} editMode={editMode} onEdit={onTimingEdit} />
+            <ChipsCard song={song} />
             <Mixer
               backend={backend}
               channelVolume={channelVolume}
@@ -575,17 +771,7 @@ export function App() {
               onChannelMute={onChannelMute}
               onMasterVolume={onMasterVolume}
             />
-            <section className="panel">
-              <h2>SONG</h2>
-              <p className="mono small">
-                {project?.songTitle || song.meta.name}
-                {project?.album ? ` — ${project.album}` : ""}
-              </p>
-              <p className="small muted">
-                {song.meta.system} · {song.meta.orderLength} orders · {song.meta.patternLength} rows
-              </p>
-              {project?.comments && <p className="small">{project.comments}</p>}
-            </section>
+            <LicensesCard project={project} />
           </aside>
         </main>
       )}
@@ -602,7 +788,10 @@ export function App() {
           onReferenceChange={setReference}
           spectralTab={editor.spectral}
           wasmAvailable={wasmReady}
-          onTabChange={(spectral) => setEditor({ ...editor, spectral })}
+          onTabChange={(spectral) => {
+            applyEngine(editor.index, spectral);
+            setEditor({ ...editor, spectral });
+          }}
           onUpdate={(patch) => onUpdateSetting(editor.index, patch)}
           onClose={() => setEditor(null)}
         />
@@ -700,5 +889,6 @@ export function App() {
         </div>
       )}
     </div>
+    </ExplainerContext.Provider>
   );
 }
