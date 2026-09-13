@@ -1,4 +1,4 @@
-import { useEffect, useRef, memo } from "react";
+import { useEffect, useRef, memo, forwardRef, useImperativeHandle } from "react";
 import type { SongModel } from "@/core/songModel";
 import { songPositionAt } from "@/core/timing";
 import type { AudioBackend } from "@/audio/backend";
@@ -326,7 +326,15 @@ interface CoverArtProps {
   title: string;
 }
 
-function CoverArtImpl({ song, backend, title }: CoverArtProps) {
+export interface CoverArtHandle {
+  /** Renders the current cover frame to 1600×1600 PNG bytes (for embedding). */
+  renderPngBytes(): Promise<Uint8Array | null>;
+}
+
+const CoverArtImpl = forwardRef<CoverArtHandle, CoverArtProps>(function CoverArtImpl(
+  { song, backend, title },
+  ref,
+) {
   const displayRef = useRef<HTMLCanvasElement | null>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
   const explain = useExplainer();
@@ -378,23 +386,29 @@ function CoverArtImpl({ song, backend, title }: CoverArtProps) {
     return () => cancelAnimationFrame(raf);
   }, [song, backend]);
 
-  const exportPng = async () => {
+  const renderPngBytes = async (): Promise<Uint8Array | null> => {
     const source = sourceRef.current;
-    if (!source) return;
+    if (!source) return null;
     const size = 1600;
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(source, 0, 0, size, size);
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), "image/png"),
     );
-    if (!blob) return;
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    await saveFile(`${safeFilename(title)}-cover.png`, bytes);
+    if (!blob) return null;
+    return new Uint8Array(await blob.arrayBuffer());
+  };
+
+  useImperativeHandle(ref, () => ({ renderPngBytes }), []);
+
+  const exportPng = async () => {
+    const bytes = await renderPngBytes();
+    if (bytes) await saveFile(`${safeFilename(title)}-cover.png`, bytes);
   };
 
   return (
@@ -411,6 +425,6 @@ function CoverArtImpl({ song, backend, title }: CoverArtProps) {
       <p className="hint">Click to save a crisp 1600×1600 PNG</p>
     </section>
   );
-}
+});
 
 export const CoverArt = memo(CoverArtImpl);

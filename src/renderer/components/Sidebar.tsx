@@ -3,8 +3,9 @@ import type { SongModel } from "@/core/songModel";
 import type { ProjectFile } from "@/core/project";
 import { rowDurationSec } from "@/core/timing";
 import { DEFAULT_EXPLAINER, useExplainer, type ExplainerContent } from "../explainer";
-import { chipsExplain, commentsExplain, timingExplain } from "../explainerContent";
+import { commentsExplain, timingExplain } from "../explainerContent";
 import { NumberInput } from "./NumberInput";
+import { LinkifiedText } from "./LinkifiedText";
 
 const MAX_EXPLAIN_CHARS = 320;
 
@@ -88,7 +89,9 @@ export function SongComments({
             onChange={(e) => onChange(e.target.value)}
           />
         ) : (
-          <p className="small">{display || "—"}</p>
+          <p className="small linkified">
+            <LinkifiedText text={display || "—"} />
+          </p>
         ))}
     </section>
   );
@@ -252,48 +255,33 @@ export function TimingCard({
   );
 }
 
-function chipName(id: number): string {
-  return id === 4 ? "Game Boy" : `Chip ${id}`;
-}
-
-export function ChipsCard({ song }: { song: SongModel }) {
-  const [open, setOpen] = useState(false);
-  const onHover = useHoverExplain(chipsExplain(song));
-  if (song.chips.length === 0) return null;
-  return (
-    <section className="panel" onMouseEnter={onHover}>
-      <button className="collapse-header" onClick={() => setOpen((o) => !o)}>
-        {open ? "▾" : "▸"} CHIPS · {song.chips.map((c) => chipName(c.chipId)).join(", ")}
-      </button>
-      {open &&
-        song.chips.map((chip, i) => (
-          <div key={i} className="small">
-            <strong>{chipName(chip.chipId)}</strong>
-            <div className="muted">
-              {chip.channelCount} channels · vol {chip.volume.toFixed(2)} · pan{" "}
-              {chip.panning.toFixed(2)} · front/rear {chip.frontRear.toFixed(2)}
-            </div>
-          </div>
-        ))}
-    </section>
-  );
-}
-
 export function LicensesCard({ project }: { project: ProjectFile | null }) {
   if (!project) return null;
   return (
     <section className="panel">
       <h2>LICENSES</h2>
       <div className="small muted">Music License</div>
-      <div className="small">{project.musicLicense || "—"}</div>
+      <div className="small linkified">
+        <LinkifiedText text={project.musicLicense || "—"} />
+      </div>
       <div className="small muted" style={{ marginTop: 6 }}>
         Code License
       </div>
-      <div className="small">{project.codeLicense || "—"}</div>
+      <div className="small linkified">
+        <LinkifiedText text={project.codeLicense || "—"} />
+      </div>
       {(project.viewSourceLink || project.websiteLink) && (
-        <div className="small" style={{ marginTop: 6 }}>
-          {project.viewSourceLink && <div>Source: {project.viewSourceLink}</div>}
-          {project.websiteLink && <div>Website: {project.websiteLink}</div>}
+        <div className="small linkified" style={{ marginTop: 6 }}>
+          {project.viewSourceLink && (
+            <div>
+              Source: <LinkifiedText text={project.viewSourceLink} />
+            </div>
+          )}
+          {project.websiteLink && (
+            <div>
+              Website: <LinkifiedText text={project.websiteLink} />
+            </div>
+          )}
         </div>
       )}
     </section>

@@ -27,11 +27,20 @@ import {
   setSpectralEnabled,
   type SamplerSettings,
 } from "@/core/sampler";
-import { renderSamplerMix, wavPcm16, zipStore } from "@/core/export";
+import {
+  applyExportEnvelope,
+  arrangeExport,
+  renderSamplerMix,
+  wavPcm16,
+  zipStore,
+  type ExportParams,
+} from "@/core/export";
+import { clipLen, clipSlice, type AudioClip } from "@/core/dsp";
 import { writeMidi } from "@/core/midi";
 import { samplerPlaybackRate } from "@/core/pitch";
 import { rowDuration, rowTime } from "@/core/timing";
 import { WebAudioBackend } from "@/audio/webAudioBackend";
+import { applyMasterFxOffline, decodeAudioBytes } from "@/audio/offline";
 import type { PlaybackMode } from "@/audio/backend";
 import { applyTheme, loadTheme, type ThemeName } from "./theme";
 import { safeFilename } from "./util";
@@ -42,13 +51,13 @@ import { InstrumentList } from "./components/InstrumentList";
 import { PatternGrid } from "./components/PatternGrid";
 import { SourceSamples } from "./components/SourceSamples";
 import { Piano } from "./components/Piano";
-import { CoverArt } from "./components/CoverArt";
+import { CoverArt, type CoverArtHandle } from "./components/CoverArt";
 import { SamplerEditor } from "./components/SamplerEditor";
 import { DraggableModal } from "./components/DraggableModal";
 import { MasterFxModal } from "./components/MasterFxModal";
+import { WavExportModal } from "./components/WavExportModal";
 import { AudioError } from "./components/AudioError";
 import {
-  ChipsCard,
   ExplainerCard,
   LicensesCard,
   SongComments,
@@ -103,6 +112,7 @@ const NEW_PROJECT_ALBUM = "New Album";
 
 export function App() {
   const backendRef = useRef<WebAudioBackend | null>(null);
+  const coverRef = useRef<CoverArtHandle | null>(null);
   const songRef = useRef<SongModel | null>(null);
   const settingsRef = useRef<SamplerSettings[]>([]);
   const viewOrderRef = useRef(0);
@@ -144,6 +154,9 @@ export function App() {
   const [wasmReady, setWasmReady] = useState(false);
   const [masterFx, setMasterFx] = useState<MasterFxSettings>(defaultMasterFx());
   const [masterFxOpen, setMasterFxOpen] = useState(false);
+  const [wavExportOpen, setWavExportOpen] = useState(false);
+  const [wavExportBusy, setWavExportBusy] = useState(false);
+  const [wavExportProgress, setWavExportProgress] = useState(0);
   const [explainer, setExplainer] = useState<ExplainerContent>(DEFAULT_EXPLAINER);
 
   songRef.current = song;
@@ -866,24 +879,88 @@ export function App() {
 
   const saveWav = useCallback(() => {
     if (!song) return;
-    if (mode === "chip" && chipMix) {
-      void saveBytes(`${safeFilename(song.meta.name)}.wav`, chipMix);
-      return;
-    }
-    const engine = backendRef.current;
-    if (!engine) return;
-    const clips = settings.map((_, i) => engine.effectiveClip(i));
-    const mix = renderSamplerMix(
-      sequenceFromSong(song),
+    setWavExportOpen(true);
+  }, [song]);
+
+  const runWavExport = useCallback(
+    async (params: ExportParams) => {
+      if (!song) return;
+      setWavExportBusy(true);
+      setWavExportProgress(0);
+      try {
+        // Yield so the progress modal can paint before the synchronous mixdown.
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const title = project?.songTitle || song.meta.name;
+        const isChip = mode === "chip" && chipMix !== null;
+        setWavExportProgress(0.08);
+        let base: AudioClip;
+        if (isChip && chipMix) {
+          base = await decodeAudioBytes(chipMix);
+        } else {
+          const engine = backendRef.current;
+          if (!engine) return;
+          const clips = settings.map((_, i) => engine.effectiveClip(i));
+          base = renderSamplerMix(
+            sequenceFromSong(song),
+            settings,
+            clips,
+            channelVolume,
+            channelMuted,
+            masterVolume,
+          );
+        }
+        setWavExportProgress(0.2);
+
+        // Arrange all loops + fade tail first, then run the Master FX chain once
+        // over the continuous signal so reverb/delay tails overlap the next loop
+        // instead of leaving a gap between them. With a fade we trim back to the
+        // arrangement so the file ends exactly at the fade; without one we let
+        // the final tail ring out.
+        const arranged = arrangeExport(base, params.loops, params.fadeOutMs);
+        const wet = await applyMasterFxOffline(arranged, masterFx, (fraction) =>
+          setWavExportProgress(0.2 + fraction * 0.7),
+        );
+        const trimmed = params.fadeOutMs > 0 ? clipSlice(wet, clipLen(arranged)) : wet;
+        const final = applyExportEnvelope(trimmed, params);
+        setWavExportProgress(0.93);
+
+        const artwork = (await coverRef.current?.renderPngBytes()) ?? undefined;
+        const bytes = wavPcm16(final, {
+          title,
+          artist: project?.artist || undefined,
+          album: project?.album || undefined,
+          artwork,
+        });
+        setWavExportProgress(0.97);
+
+        const now = new Date();
+        const stamp = `${String(now.getFullYear() % 100).padStart(2, "0")}${String(
+          now.getMonth() + 1,
+        ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+        const name = `${stamp}- ${safeFilename(title)}.wav`;
+        await saveBytes(name, bytes);
+        setWavExportProgress(1);
+        setWavExportOpen(false);
+      } catch (e) {
+        setError(`WAV export failed: ${String(e)}`);
+        setWavExportOpen(false);
+      } finally {
+        setWavExportBusy(false);
+      }
+    },
+    [
+      song,
+      mode,
+      chipMix,
       settings,
-      clips,
       channelVolume,
       channelMuted,
       masterVolume,
-    );
-    const title = project ? project.songTitle : song.meta.name;
-    void saveBytes(`${safeFilename(title)}-sampler-mix.wav`, wavPcm16(mix));
-  }, [song, mode, chipMix, settings, channelVolume, channelMuted, masterVolume, project, saveBytes]);
+      project,
+      masterFx,
+      saveBytes,
+    ],
+  );
 
   const packageSamples = useCallback(() => {
     const engine = backendRef.current;
@@ -1019,7 +1096,7 @@ export function App() {
             />
           </div>
           <aside className="sidebar">
-            <CoverArt song={song} backend={backend} title={project?.songTitle || song.meta.name} />
+            <CoverArt ref={coverRef} song={song} backend={backend} title={project?.songTitle || song.meta.name} />
             <ExplainerCard content={explainer} />
             <SongComments
               comments={project?.comments ?? ""}
@@ -1030,7 +1107,6 @@ export function App() {
               }
             />
             <TimingCard song={song} editMode={editMode} onEdit={onTimingEdit} />
-            <ChipsCard song={song} />
             <Mixer
               backend={backend}
               channelVolume={channelVolume}
@@ -1213,6 +1289,15 @@ export function App() {
           settings={masterFx}
           onChange={onMasterFxChange}
           onClose={() => setMasterFxOpen(false)}
+        />
+      )}
+
+      {wavExportOpen && (
+        <WavExportModal
+          busy={wavExportBusy}
+          progress={wavExportProgress}
+          onExport={runWavExport}
+          onClose={() => setWavExportOpen(false)}
         />
       )}
 

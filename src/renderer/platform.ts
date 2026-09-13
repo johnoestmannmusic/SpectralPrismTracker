@@ -72,4 +72,11 @@ export function chooseAudioFile(): Promise<AudioFileChoice | { error: string }> 
   });
 }
 
+/** Opens a URL in the system browser (desktop) or a new tab (web). */
+export async function openExternal(url: string): Promise<void> {
+  if (isDesktop) return window.lantern.openExternal(url);
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export type { LoadedSong, AudioFileChoice };
+

@@ -58,14 +58,6 @@ export function timingExplain(song: SongModel): ExplainerText {
   };
 }
 
-export function chipsExplain(song: SongModel): ExplainerText {
-  const names = song.chips.map((c) => (c.chipId === 4 ? "Game Boy" : `Chip ${c.chipId}`));
-  return {
-    title: "Chips — the sound hardware being emulated",
-    body: `${names.join(", ")} with ${song.channels.length} channels. Volume/panning are master-bus trims, separate from per-instrument and per-row volume.`,
-  };
-}
-
 export function instrumentsExplain(song: SongModel): ExplainerText {
   return {
     title: "Instruments — Game Boy channel presets",

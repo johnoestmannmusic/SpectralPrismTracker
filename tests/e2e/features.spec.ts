@@ -271,6 +271,49 @@ test("Master FX settings save into and load from Project JSON", async () => {
   }
 });
 
+test("Save WAV opens the export modal with loops, fades and normalize", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-wavmodal-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    await window.getByRole("button", { name: "Save .WAV" }).click();
+    const modal = window.locator(".modal", { hasText: "Export WAV" });
+    await expect(modal).toBeVisible();
+    await expect(modal.getByLabel("Number of Loops")).toHaveValue("0");
+    await expect(modal.getByLabel("Fade In (ms)")).toHaveValue("0");
+    await expect(modal.getByLabel("Fade Out (ms)")).toHaveValue("0");
+    await expect(modal.getByRole("checkbox")).toBeChecked();
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("license URLs render as external links", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-links-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    const licenses = window.locator(".panel", { hasText: "LICENSES" });
+    const link = licenses.locator(".linkified a").first();
+    await expect(link).toHaveAttribute("href", /^https:\/\//);
+    await expect(licenses.locator(".linkified").first()).toHaveCSS("word-break", "break-word");
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
 test("dragging pan during playback keeps the UI responsive", async () => {
   const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-pandrag-"));
   const app = await electron.launch({

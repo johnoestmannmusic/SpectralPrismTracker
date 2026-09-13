@@ -17,6 +17,7 @@ export const IPC = {
   loadDefaultSong: "assets:load-default-song",
   chooseAudioFile: "assets:choose-audio-file",
   saveFile: "file:save",
+  openExternal: "shell:open-external",
 } as const;
 
 export interface AudioFileChoice {
@@ -33,4 +34,5 @@ export interface LanternApi {
   loadDefaultSong(): Promise<LoadedSong | { error: string }>;
   chooseAudioFile(): Promise<AudioFileChoice | { error: string }>;
   saveFile(suggestedName: string, bytes: Uint8Array): Promise<boolean>;
+  openExternal(url: string): Promise<void>;
 }

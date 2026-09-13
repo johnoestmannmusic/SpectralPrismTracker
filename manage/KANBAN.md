@@ -624,6 +624,59 @@ _(none currently)_
   callbacks) so a pan drag only re-renders the instrument row. E2E stresses 60
   pan steps during playback and asserts the UI still responds.
 
+- **0007E-BUG-018 — WAV export ignored Master FX.** *(2026-09-13 10:20)* `saveWav`
+  rendered the sampler mix and encoded it straight to WAV, bypassing the delay
+  and reverb entirely. Extracted the live chain into a shared
+  `createMasterFxGraph` (`src/audio/masterFxGraph.ts`) used by both playback and
+  a new offline renderer (`src/audio/offline.ts`), so exports now sound like the
+  transport. Unit + E2E tested.
+- **0007E-PLAN-120 — WAV export options modal.** *(2026-09-13 10:20, revised 12:10)*
+  **Save .WAV** now opens a draggable modal (`WavExportModal`) with Number of
+  Loops (default 0 = single pass), Fade In ms, Fade Out ms (both default 0) and
+  Peak Normalize (default on). `finalizeExport` joins `loops + 1` full passes
+  with no gap, then appends the fade-out as an EXTRA tail that keeps looping the
+  source while ramping to zero over the fade time; the file ends exactly when it
+  reaches silence (e.g. Loops=1 + 8000ms = two full passes + an 8s fading 3rd
+  loop). The arranged signal is run through the offline Master FX and the
+  fade/normalise envelope is applied after it (see 0007E-BUG-019). Unit tests
+  cover the loop joins, the appended fade tail, long-fade wrapping, fade-in and
+  normalisation.
+
+- **0007E-BUG-019 — Silence between exported loops (per-loop Master FX tail).**
+  *(2026-09-13 12:25)* `runWavExport` applied the offline Master FX to a single
+  pass and then looped the result, so every repeat carried its own reverb/delay
+  decay tail — audible as a multi-second "gap" before the next loop (confirmed
+  in a real export: silent regions at 42.4–44.9s and 87.3–89.8s). Export now
+  arranges `loops + 1` passes + fade tail first (`arrangeExport`), runs the FX
+  chain once over that continuous signal, trims back to the arrangement length,
+  then applies the fade/normalise envelope (`applyExportEnvelope`). Re-exporting
+  the same project produced no silent regions and the expected length
+  (2×40.678s + 8.000s). Unit tests cover the arrange/envelope split.
+
+- **0007E-PLAN-121 — Linkified, wrapping Comments/Licenses text.** *(2026-09-13 12:40)*
+  Song Comments and the Licenses card now render through `LinkifiedText`:
+  `https://` words become anchors that open in the system browser (desktop,
+  via a new `shell:open-external` IPC + preload method and `setWindowOpenHandler`)
+  or a new tab (web), and a `.linkified` style (`overflow-wrap: anywhere`) wraps
+  long unbroken words/URLs instead of overflowing the panel. E2E checks a
+  Licenses link and the wrapping rule.
+- **0007E-PLAN-122 — WAV metadata tags, cover art, dated filename.** *(2026-09-13 12:40)*
+  `wavPcm16` accepts `WavTags` and appends a `LIST`/`INFO` block (INAM/IART/IPRD)
+  and an `id3 ` chunk with an ID3v2.3 tag (TIT2/TPE1/TALB + `APIC` front cover).
+  Exports embed the animated cover rendered at 1600×1600 at export time (via a
+  `CoverArtHandle` ref) and are named `YYMMDD- Title.wav`. Verified on a real
+  export: 1600×1600 PNG APIC and correct tags. Unit test covers the chunks.
+- **0007E-PLAN-123 — "Exporting WAV…" progress bar.** *(2026-09-13 12:40)*
+  The export modal swaps to a percentage progress bar while rendering;
+  `applyMasterFxOffline` reports progress using `OfflineAudioContext.suspend`
+  checkpoints, and the flow yields once so the bar paints before the synchronous
+  sampler mixdown.
+
+- **0007E-PLAN-124 — Remove the CHIPS panel.** *(2026-09-13 12:50)* The unused
+  right-hand Chips panel was removed (`ChipsCard` + its hover explainer and the
+  now-dead `chipsExplain` helper); the sidebar now runs Cover Art → Explainer →
+  Comments → Timing → Mixer → Licenses.
+
 ---
 
 _Add new cards at the bottom of their bucket; move them rather than copy._
