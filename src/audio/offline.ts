@@ -66,17 +66,39 @@ export async function applyMasterFxOffline(
   graph.output.connect(ctx.destination);
   source.start(0);
 
-  // Suspend the offline render at intervals so the UI can show real progress.
-  const steps = 24;
-  for (let i = 1; i < steps; i++) {
-    const time = (i / steps) * totalDuration;
-    void ctx.suspend(time).then(() => {
-      onProgress?.(i / steps);
-      void ctx.resume();
-    });
+  // Precise progress via render checkpoints, but `suspend` is missing on some
+  // browsers (e.g. Safari/Firefox builds) — fall back to a timed ramp there.
+  const canCheckpoint =
+    typeof ctx.suspend === "function" && typeof ctx.resume === "function";
+  let timer: ReturnType<typeof setInterval> | null = null;
+  if (canCheckpoint) {
+    const steps = 24;
+    for (let i = 1; i < steps; i++) {
+      const time = (i / steps) * totalDuration;
+      void ctx
+        .suspend(time)
+        .then(() => {
+          onProgress?.(i / steps);
+          void ctx.resume();
+        })
+        .catch(() => {
+          /* checkpoint unsupported/failed — ignore */
+        });
+    }
+  } else if (onProgress) {
+    const started = Date.now();
+    timer = setInterval(() => {
+      const elapsed = (Date.now() - started) / 1000;
+      onProgress(0.9 * (1 - Math.exp(-elapsed / 2)));
+    }, 100);
   }
 
-  const rendered = await ctx.startRendering();
+  let rendered: AudioBuffer;
+  try {
+    rendered = await ctx.startRendering();
+  } finally {
+    if (timer !== null) clearInterval(timer);
+  }
   onProgress?.(1);
   const channels: Float32Array[] = [];
   for (let c = 0; c < rendered.numberOfChannels; c++) {

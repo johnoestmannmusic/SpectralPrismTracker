@@ -13,7 +13,7 @@ test("comments, Base Tempo, and no spurious audition error", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", {
       timeout: 30_000,
     });
 
@@ -54,7 +54,7 @@ test("Project JSON Load auto-applies and closes the modal", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", {
       timeout: 30_000,
     });
 
@@ -85,7 +85,7 @@ test("Project JSON Load rejects non-.lampjson files", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", {
       timeout: 30_000,
     });
 
@@ -115,7 +115,7 @@ test("all six Source Samples load", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
     await expect(
       window.locator(".panel", { hasText: "SOURCE SAMPLES" }).getByText("6 / 6"),
     ).toBeVisible({ timeout: 30_000 });
@@ -133,7 +133,7 @@ test("instrument vibrato fields can be cleared and retyped", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     const depth = window.locator(".instrument-row").first().getByLabel("Depth");
     await depth.click();
@@ -158,7 +158,7 @@ test("instrument names save into Project JSON", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     const nameInput = window.locator(".instrument-row").first().locator(".ins-name-input");
     await nameInput.fill("Test Bass");
@@ -178,15 +178,12 @@ test("Master FX modal opens with Delay and Reverb", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     await window.getByRole("button", { name: "Master FX" }).click();
     await expect(window.locator(".modal-title", { hasText: "Master FX" })).toBeVisible();
     await expect(window.locator(".modal", { hasText: "Delay" })).toBeVisible();
     await expect(window.locator(".modal", { hasText: "Reverb" })).toBeVisible();
-    // Both start disabled.
-    const delay = window.locator(".modal", { hasText: "Master FX" }).getByRole("checkbox").first();
-    await expect(delay).not.toBeChecked();
   } finally {
     await app.close();
     rmSync(userDataDir, { recursive: true, force: true });
@@ -201,7 +198,7 @@ test("loading Project JSON restores instrument names", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     const project = JSON.parse(
       readFileSync(path.join(projectRoot, "assets/lmp-default-proj.lampjson"), "utf8"),
@@ -231,7 +228,7 @@ test("Master FX settings save into and load from Project JSON", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     // Enable Delay in Master FX, then confirm it appears in the exported JSON.
     await window.getByRole("button", { name: "Master FX" }).click();
@@ -279,7 +276,7 @@ test("Save WAV opens the export modal with loops, fades and normalize", async ()
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     await window.getByRole("button", { name: "Save .WAV" }).click();
     const modal = window.locator(".modal", { hasText: "Export WAV" });
@@ -302,12 +299,40 @@ test("license URLs render as external links", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     const licenses = window.locator(".panel", { hasText: "LICENSES" });
     const link = licenses.locator(".linkified a").first();
     await expect(link).toHaveAttribute("href", /^https:\/\//);
     await expect(licenses.locator(".linkified").first()).toHaveCSS("word-break", "break-word");
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("Mixer rows fit inside the panel", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-mixer-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
+
+    const rows = await window.evaluate(() =>
+      Array.from(document.querySelectorAll(".mixer-row")).map((row) => ({
+        rowRight: row.getBoundingClientRect().right,
+        childRight: Math.max(
+          ...Array.from(row.children).map((child) => child.getBoundingClientRect().right),
+        ),
+      })),
+    );
+    expect(rows.length).toBe(5);
+    for (const { rowRight, childRight } of rows) {
+      expect(childRight).toBeLessThanOrEqual(rowRight + 1);
+    }
   } finally {
     await app.close();
     rmSync(userDataDir, { recursive: true, force: true });
@@ -322,7 +347,7 @@ test("dragging pan during playback keeps the UI responsive", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
 
     const play = window.getByRole("button", { name: /Play/ });
     await expect(play).toBeEnabled({ timeout: 30_000 });

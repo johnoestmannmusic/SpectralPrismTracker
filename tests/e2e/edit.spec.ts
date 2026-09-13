@@ -14,7 +14,7 @@ test("EDIT MODE: select cells, navigate with arrows, and edit", async () => {
   try {
     const window = await app.firstWindow();
     await window.waitForSelector(".tracker tbody tr");
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", {
       timeout: 30_000,
     });
 
@@ -64,7 +64,7 @@ test("EDIT MODE scrolls the selected cell into view", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", {
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", {
       timeout: 30_000,
     });
     await window.getByRole("button", { name: "EDIT MODE" }).click();
@@ -99,7 +99,7 @@ test("EDIT MODE: Z repeats the last entered note", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
     await window.getByRole("button", { name: "EDIT MODE" }).click();
 
     // Enter a note via the right-click menu on row 0, channel 0.
@@ -135,7 +135,7 @@ test("EDIT MODE: hold-to-drag selects a range", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+    await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
     await window.getByRole("button", { name: "EDIT MODE" }).click();
 
     const start = window.locator(".tracker tbody tr").nth(8).locator("td").nth(1);

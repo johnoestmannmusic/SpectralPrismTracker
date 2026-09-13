@@ -677,6 +677,25 @@ _(none currently)_
   now-dead `chipsExplain` helper); the sidebar now runs Cover Art → Explainer →
   Comments → Timing → Mixer → Licenses.
 
+- **0007E-BUG-020 — Web WAV export crashed without `OfflineAudioContext.suspend`.**
+  *(2026-09-13 13:40)* On browsers whose `OfflineAudioContext` lacks `suspend`/
+  `resume` (Safari/older Firefox), the progress checkpoints threw
+  `TypeError: s.suspend is not a function`. Now feature-detected; when missing,
+  progress falls back to a timed ramp and the render proceeds. Web regression
+  test removes `suspend` and asserts a successful export.
+- **0007E-BUG-021 — Mixer sliders/volumes overflowed the sidebar panel.**
+  *(2026-09-13 13:40)* The row's fixed widths (66px "dB" label + 64px meter +
+  58px input + button + 10px gaps) exceeded the 300px sidebar content width, so
+  the range and meter spilled off the right edge. The `dB` label is now auto
+  width, the meter is 48px, and `.mixer-row` wraps with tighter gaps. E2E
+  measures every row's children against its right edge.
+- **0007E-BUG-022 — E2E expected the old bundled song title.**
+  *(2026-09-13 13:40)* The bundled default project became the finished track
+  ("Completed first track in this"), so hardcoded "Aquavats" waits and the
+  Master-FX-disabled / single-instrument assumptions failed. Waits now check for
+  the generic "instruments" status, and the Master FX/New Project tests assert
+  the modal and the post-reset count instead.
+
 ---
 
 _Add new cards at the bottom of their bucket; move them rather than copy._
