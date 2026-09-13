@@ -4,6 +4,7 @@ import type { ProjectFile } from "@/core/project";
 import { rowDurationSec } from "@/core/timing";
 import { DEFAULT_EXPLAINER, useExplainer, type ExplainerContent } from "../explainer";
 import { chipsExplain, commentsExplain, timingExplain } from "../explainerContent";
+import { NumberInput } from "./NumberInput";
 
 const MAX_EXPLAIN_CHARS = 320;
 
@@ -145,14 +146,7 @@ export function TimingCard({
     <div className="timing-row">
       <span className="muted small">{label}</span>
       {editMode ? (
-        <input
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Math.min(Math.max(Number(e.target.value), min), max))}
-        />
+        <NumberInput value={value} min={min} max={max} step={step} onChange={onChange} />
       ) : (
         <span className="mono small">{value}</span>
       )}
@@ -195,34 +189,20 @@ export function TimingCard({
             <span className="muted small">virtual tempo</span>
             {editMode ? (
               <span className="row">
-                <input
-                  type="number"
+                <NumberInput
+                  value={meta.virtualTempo[0]}
                   min={1}
                   max={255}
-                  value={meta.virtualTempo[0]}
-                  onChange={(e) =>
-                    onEdit({
-                      virtualTempo: [
-                        Math.min(Math.max(Number(e.target.value), 1), 255),
-                        meta.virtualTempo[1],
-                      ],
-                    })
-                  }
+                  step={1}
+                  onChange={(v) => onEdit({ virtualTempo: [v, meta.virtualTempo[1]] })}
                 />
                 <span>/</span>
-                <input
-                  type="number"
+                <NumberInput
+                  value={meta.virtualTempo[1]}
                   min={1}
                   max={255}
-                  value={meta.virtualTempo[1]}
-                  onChange={(e) =>
-                    onEdit({
-                      virtualTempo: [
-                        meta.virtualTempo[0],
-                        Math.min(Math.max(Number(e.target.value), 1), 255),
-                      ],
-                    })
-                  }
+                  step={1}
+                  onChange={(v) => onEdit({ virtualTempo: [meta.virtualTempo[0], v] })}
                 />
               </span>
             ) : (
@@ -235,23 +215,19 @@ export function TimingCard({
             <span className="muted small">highlights</span>
             {editMode ? (
               <span className="row">
-                <input
-                  type="number"
-                  min={1}
-                  max={255}
+                <NumberInput
                   value={meta.highlightA}
-                  onChange={(e) =>
-                    onEdit({ highlightA: Math.min(Math.max(Number(e.target.value), 1), 255) })
-                  }
-                />
-                <input
-                  type="number"
                   min={1}
                   max={255}
+                  step={1}
+                  onChange={(v) => onEdit({ highlightA: v })}
+                />
+                <NumberInput
                   value={meta.highlightB}
-                  onChange={(e) =>
-                    onEdit({ highlightB: Math.min(Math.max(Number(e.target.value), 1), 255) })
-                  }
+                  min={1}
+                  max={255}
+                  step={1}
+                  onChange={(v) => onEdit({ highlightB: v })}
                 />
               </span>
             ) : (

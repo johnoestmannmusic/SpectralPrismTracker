@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, memo } from "react";
 import type { SongModel } from "@/core/songModel";
 import { songPositionAt } from "@/core/timing";
 import type { AudioBackend } from "@/audio/backend";
@@ -326,7 +326,7 @@ interface CoverArtProps {
   title: string;
 }
 
-export function CoverArt({ song, backend, title }: CoverArtProps) {
+function CoverArtImpl({ song, backend, title }: CoverArtProps) {
   const displayRef = useRef<HTMLCanvasElement | null>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
   const explain = useExplainer();
@@ -412,3 +412,5 @@ export function CoverArt({ song, backend, title }: CoverArtProps) {
     </section>
   );
 }
+
+export const CoverArt = memo(CoverArtImpl);

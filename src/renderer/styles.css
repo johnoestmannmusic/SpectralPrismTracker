@@ -1144,3 +1144,23 @@ select {
 .pan-field input[type="number"] {
   width: 48px;
 }
+
+/* Buffered numeric inputs keep the compact size of the old number fields. */
+.number-input {
+  width: 72px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.pan-field .number-input {
+  width: 48px;
+}
+
+.slider .number-input {
+  width: 56px;
+}

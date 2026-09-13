@@ -30,6 +30,9 @@ test("loads the bundled song and renders the player shell", async () => {
     await expect(window.locator("h2", { hasText: "MIXER" })).toBeVisible();
     await expect(window.locator(".tracker")).toBeVisible();
     await expect(window.locator(".tracker tbody tr").first()).toBeVisible();
+    // Not in CHIP MODE, so channel headings are numbered only (no roles).
+    await expect(window.locator(".tracker thead")).toContainText("CH0");
+    await expect(window.locator(".tracker thead")).not.toContainText("PULSE 1");
 
     // Branding: Light is the default; the toggle switches themes.
     await expect(window.locator("html")).toHaveAttribute("data-theme", "light");

@@ -26,7 +26,7 @@ commit `5948fdc` ("Handover").
 **Rust Kanban:** `../SourceRepo/1000-shrines-of-spirit/src/0007/manage/KANBAN.md`
 **Parity Checklist:** `../SourceRepo/1000-shrines-of-spirit/src/0007/PARITY.md`
 **Original HTML:** `../SourceRepo/1000-shrines-of-spirit/src/0006/index.html`
-**Board Last Updated:** 2026-09-13 09:00 by opencode
+**Board Last Updated:** 2026-09-13 10:00 by opencode
 
 ### Branding (user-confirmed)
 
@@ -119,7 +119,7 @@ npm run test:all         # typecheck + unit + audit + build + web + e2e
 
 ## Bugs
 
-_(none open — see 0007E-BUG-001…014 in Completed)_
+_(none open — see 0007E-BUG-001…017 in Completed)_
 
 ## Planned Features — Remaining Rust parity backlog
 
@@ -569,6 +569,60 @@ _(none currently)_
   Range selection now only begins after the pointer has been held on a cell for
   250 ms; a quick click (which may drift across a cell or two) stays a
   single-cell selection. E2E covers both the quick-click and hold-drag cases.
+
+- **0007E-PLAN-116 — Numbered channel headings outside CHIP MODE.**
+  *(2026-09-13 09:10)* The tracker channel headers show just `CH0…CH3` in
+  SAMPLER/EDIT mode; the Game Boy roles (`PULSE 1`, `PULSE 2`, `WAVE`, `NOISE`)
+  only appear in CHIP MODE. `/tmp` smoke E2E asserts this.
+
+- **0007E-BUG-015 — Spectral instruments ended early (e.g. Aquavats Instrument 7).**
+  *(2026-09-13 09:15)* A Spectral instrument's saved trim (a ~0.44 s slice
+  of Sample A) was left in place after the fused loop rendered, so it cut the
+  rendered multi-second loop off early. `SamplerEngine.renderSpectral` now
+  resets `startSec`/`endSec` to the full fused result and sets `looping = true`
+  on completion (Spectral instruments loop by default). `setSpectralEnabled`
+  saves/restores the sampler's loop flag so turning Spectral off restores it.
+  Unit-tested.
+- **0007E-PLAN-117 — Per-instrument Vibrato.** *(2026-09-13 09:15)* Added
+  `vibratoSpeed` (Hz) and `vibratoDepth` (semitones, default 0) to
+  `SamplerSettings`. Live voices run a sine LFO into `AudioBufferSourceNode.detune`
+  (layering on pitch ramps); the offline mixdown applies the same modulation;
+  controls appear in the Sampler editor and compactly in the instrument rows;
+  Project JSON round-trips both fields.
+  *Follow-up (2026-09-13):* the instrument-row numeric fields (and the Timing
+  card values / voice cap) now use a buffered `NumberInput` that commits on
+  Enter/blur, so values can be backspaced and retyped (a small E2E clears and
+  retypes the Depth field).
+
+- **0007E-BUG-016 — Instrument names weren't exported/applied in Project JSON.**
+  *(2026-09-13 09:35)* The `live` export object omitted `instrumentNames` and
+  `applyProjectText` never applied them, so names never round-tripped. Both
+  paths added; E2E covers save and load.
+- **0007E-PLAN-118 — Numeric-input sizing, editable ADSR, centred editor.**
+  *(2026-09-13 09:35)* Buffered `NumberInput`s now carry a compact
+  `.number-input` style (they had reverted to default size when switched from
+  `type="number"`); the Sampler/Spectral envelope values are editable directly
+  (each slider now shows a `NumberInput`); and the editor window opens high and
+  horizontally centred.
+- **0007E-PLAN-119 — Master FX (Delay + Reverb).** *(2026-09-13 09:35)* New
+  master-output effect chain in `WebAudioBackend` (sum bus feeding delay with
+  feedback + low-pass tone, and a convolution reverb from a generated
+  noise-decay impulse). A **Master FX** button in the Mixer opens a draggable
+  modal with per-effect enable toggles (off by default), Delay
+  time/feedback/tone/mix, Reverb decay/mix, and a **PS1 Echo** preset. Settings
+  persist in Project JSON (`masterFx`). Unit + E2E tested.
+  *Follow-up (2026-09-13):* the export `live` object (and its callback deps)
+  omitted `masterFx`, so toggles never saved; fixed, and New Project now resets
+  Master FX to defaults. E2E verifies both save and load.
+
+- **0007E-BUG-017 — Dragging pan during playback hung the UI.** *(2026-09-13 10:00)*
+  Continuous control drags (pan/volume/vibrato) update app state on every
+  pointer tick, which re-rendered the whole tree — the tracker rebuilds
+  thousands of per-cell handlers each pass, so a drag became a re-render storm.
+  Memoized the heavy panels (`PatternGrid`, `Piano`, `CoverArt`, `Mixer`,
+  `SourceSamples`) and stabilized their props (stable muted-flags list, stable
+  callbacks) so a pan drag only re-renders the instrument row. E2E stresses 60
+  pan steps during playback and asserts the UI still responds.
 
 ---
 

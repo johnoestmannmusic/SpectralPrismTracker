@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { PatternCell } from "@/core/fur/types";
 import {
   applyEdit,
@@ -51,6 +51,8 @@ interface PatternGridProps {
   editMode: boolean;
   channelMuted: boolean[];
   instrumentMuted: boolean[];
+  /** Show the Game Boy channel roles (Pulse/Wave/Noise) — CHIP MODE only. */
+  showChannelTypes: boolean;
   onChanged: () => void;
   onSeek: (time: number) => void;
   onToggleChannel: (channel: number) => void;
@@ -74,7 +76,7 @@ function effectText(effect: { effect: number | null; value: number | null }): st
   return `${hex(effect.effect)}${hex(effect.value)}`;
 }
 
-export function PatternGrid(props: PatternGridProps) {
+function PatternGridImpl(props: PatternGridProps) {
   const { song, backend, editMode } = props;
   const explain = useExplainer();
   const [order, setOrder] = useState(0);
@@ -701,7 +703,7 @@ export function PatternGrid(props: PatternGridProps) {
                     onMouseEnter={() => explain(channelExplain(song, c, !!props.channelMuted[c]))}
                     title="Mute or unmute this channel"
                   >
-                    CH{c} · {CHANNEL_NAMES[c]}
+                    {props.showChannelTypes ? `CH${c} · ${CHANNEL_NAMES[c]}` : `CH${c}`}
                   </span>
                 </th>
               ))}
@@ -988,6 +990,8 @@ export function PatternGrid(props: PatternGridProps) {
     </section>
   );
 }
+
+export const PatternGrid = memo(PatternGridImpl);
 
 function SubHeaders({ song, channel }: { song: SongModel; channel: number }) {
   const effectColumns = Math.max(song.channels[channel]?.effectColumns ?? 1, 1);

@@ -194,6 +194,17 @@ function rateAt(voice: RenderVoice, time: number): number {
   return current;
 }
 
+/** Base playback rate plus this voice's optional vibrato modulation. */
+function modulatedRate(voice: RenderVoice, time: number, base: number): number {
+  const depth = voice.settings.vibratoDepth;
+  const speed = voice.settings.vibratoSpeed;
+  if (depth > 0 && speed > 0) {
+    const phase = 2 * Math.PI * speed * (time - voice.start);
+    return base * Math.pow(2, (depth * Math.sin(phase)) / 12);
+  }
+  return base;
+}
+
 function voiceEnvelope(voice: RenderVoice, time: number): number {
   if (voice.release && time >= voice.release.start) {
     const { start, level, duration } = voice.release;
@@ -323,11 +334,11 @@ export function renderSamplerMix(
 
     let traveled = 0;
     let previousTime = voice.start;
-    let previousRate = rateAt(voice, voice.start);
+    let previousRate = modulatedRate(voice, voice.start, rateAt(voice, voice.start));
 
     for (let frame = startFrame; frame < endFrame; frame++) {
       const t = frame / OUTPUT_RATE;
-      const rate = rateAt(voice, t);
+      const rate = modulatedRate(voice, t, rateAt(voice, t));
       traveled += (t - previousTime) * ((rate + previousRate) / 2);
       previousTime = t;
       previousRate = rate;

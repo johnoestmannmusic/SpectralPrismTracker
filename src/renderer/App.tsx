@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   applySnapshot,
   buildSongModel,
@@ -11,6 +11,7 @@ import {
   type SongModel,
 } from "@/core/songModel";
 import { clearPatternsSnapshot, reassignInstrument, remapInstrumentsAfterDelete } from "@/core/tracker";
+import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import {
   applyTimingOverrides,
   defaultProject,
@@ -44,6 +45,7 @@ import { Piano } from "./components/Piano";
 import { CoverArt } from "./components/CoverArt";
 import { SamplerEditor } from "./components/SamplerEditor";
 import { DraggableModal } from "./components/DraggableModal";
+import { MasterFxModal } from "./components/MasterFxModal";
 import { AudioError } from "./components/AudioError";
 import {
   ChipsCard,
@@ -140,6 +142,8 @@ export function App() {
     target: number;
   } | null>(null);
   const [wasmReady, setWasmReady] = useState(false);
+  const [masterFx, setMasterFx] = useState<MasterFxSettings>(defaultMasterFx());
+  const [masterFxOpen, setMasterFxOpen] = useState(false);
   const [explainer, setExplainer] = useState<ExplainerContent>(DEFAULT_EXPLAINER);
 
   songRef.current = song;
@@ -263,6 +267,7 @@ export function App() {
       engine.setChannelMute(c, loadedProject.mutedChannels[c] ?? false);
     }
     engine.setMasterVolume(loadedProject.masterVolume);
+    engine.setMasterFx(loadedProject.masterFx);
     const sampleBytes: Array<Uint8Array | null> = Array.from(
       { length: 6 },
       (_, i) => result.samples[i] ?? null,
@@ -284,6 +289,7 @@ export function App() {
     setChannelVolume(loadedProject.channelVolume.slice(0, 4));
     setChannelMuted(loadedProject.mutedChannels.slice(0, 4));
     setMasterVolume(loadedProject.masterVolume);
+    setMasterFx(loadedProject.masterFx);
     setReference(saved ? saved.reference : loadedProject.refPitchEnabled);
     setMode(initialMode);
     setStemsAvailable(haveStems);
@@ -517,6 +523,8 @@ export function App() {
     setMasterVolume(1);
     setEditor(null);
     setStemsAvailable(false);
+    engine.setMasterFx(defaultMasterFx());
+    setMasterFx(defaultMasterFx());
     setProject((prev) => {
       const base = prev ?? defaultProject();
       return {
@@ -531,6 +539,7 @@ export function App() {
         mutedChannels: [false, false, false, false],
         mutedInstruments: [false],
         instruments: nextSettings.map((setting) => ({ ...setting, muted: false })),
+        masterFx: defaultMasterFx(),
         patternSnapshot: patternSnapshot(model),
         tickRateOverride: model.meta.tickRate,
         speedOverride: model.meta.speedPattern[0] ?? null,
@@ -605,6 +614,30 @@ export function App() {
     [],
   );
 
+  const instrumentMuted = useMemo(
+    () => settings.map((s) => s.muted),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings.map((s) => s.muted).join(",")],
+  );
+
+  const onMasterFxChange = useCallback((settings: MasterFxSettings) => {
+    setMasterFx(settings);
+    backendRef.current?.setMasterFx(settings);
+  }, []);
+
+  const onOpenMasterFx = useCallback(() => setMasterFxOpen(true), []);
+
+  const onViewOrderChange = useCallback((order: number) => {
+    viewOrderRef.current = order;
+  }, []);
+
+  const onSelectionChange = useCallback(
+    (selection: { order: number; row: number } | null) => {
+      selectionRef.current = selection;
+    },
+    [],
+  );
+
   const onPreview = useCallback(
     (index: number) => {
       const engine = backendRef.current;
@@ -654,6 +687,19 @@ export function App() {
     [],
   );
 
+  const onSampleLoad = useCallback((slot: number) => void loadSample(slot), [loadSample]);
+  const onSamplePlay = useCallback((slot: number) => backendRef.current?.previewSample(slot), []);
+  const onSampleStop = useCallback(() => backendRef.current?.stopSamplePreview(), []);
+  const onSampleInfo = useCallback(
+    (slot: number) => {
+      setSampleInfo(slot);
+      setSampleInfoName(sampleNames[slot] ?? "");
+      setSampleInfoComments(project?.sourceSamples[slot]?.comments ?? "");
+    },
+    [sampleNames, project],
+  );
+  const onSampleClear = useCallback(() => setClearConfirm(true), []);
+
   const clearSamples = useCallback(() => {
     const engine = backendRef.current;
     if (!engine) return;
@@ -699,6 +745,8 @@ export function App() {
         refPitchEnabled: reference,
         theme,
         instruments: settings.map((s) => ({ ...s, muted: false })),
+        instrumentNames: model.instruments.map((i) => i.name),
+        masterFx,
         patternSnapshot: patternSnapshot(model),
         tickRateOverride: model.meta.tickRate,
         speedOverride: model.meta.speedPattern[0] ?? null,
@@ -708,7 +756,7 @@ export function App() {
       };
       setProjectIoText(projectToJson(live, true));
     }, 0);
-  }, [song, project, mode, channelVolume, masterVolume, channelMuted, settings, reference, theme]);
+  }, [song, project, mode, channelVolume, masterVolume, channelMuted, settings, reference, theme, masterFx]);
 
   const applyProjectText = useCallback(
     (text: string) => {
@@ -744,6 +792,9 @@ export function App() {
         }
       }
       validateProject(parsed, song.instruments.length);
+      parsed.instrumentNames.forEach((name, i) => {
+        if (song.instruments[i]) song.instruments[i]!.name = name;
+      });
       if (parsed.patternSnapshot) applySnapshot(song, parsed.patternSnapshot);
       applyTimingOverrides(parsed, song);
       const engine = backendRef.current;
@@ -752,6 +803,7 @@ export function App() {
         engine?.setChannelMute(c, parsed.mutedChannels[c] ?? false);
       }
       engine?.setMasterVolume(parsed.masterVolume);
+      engine?.setMasterFx(parsed.masterFx);
       const nextSettings = song.instruments.map(
         (_, i) => parsed.instruments[i] ?? defaultSamplerSettings(),
       );
@@ -770,6 +822,7 @@ export function App() {
       setChannelVolume(parsed.channelVolume.slice(0, 4));
       setChannelMuted(parsed.mutedChannels.slice(0, 4));
       setMasterVolume(parsed.masterVolume);
+      setMasterFx(parsed.masterFx);
       setReference(parsed.refPitchEnabled);
       setProjectIoOpen(false);
       setStatus("Applied Project JSON");
@@ -927,17 +980,14 @@ export function App() {
               backend={backend}
               editMode={editMode}
               channelMuted={channelMuted}
-              instrumentMuted={settings.map((s) => s.muted)}
+              instrumentMuted={instrumentMuted}
+              showChannelTypes={mode === "chip" && !editMode}
               onChanged={onPatternChanged}
               onSeek={onSeek}
               onToggleChannel={onToggleChannel}
               onAudition={onAudition}
-              onViewOrderChange={(order) => {
-                viewOrderRef.current = order;
-              }}
-              onSelectionChange={(selection) => {
-                selectionRef.current = selection;
-              }}
+              onViewOrderChange={onViewOrderChange}
+              onSelectionChange={onSelectionChange}
             />
             <InstrumentList
               backend={backend}
@@ -960,15 +1010,11 @@ export function App() {
               song={song}
               project={project}
               sampleNames={sampleNames}
-              onLoad={(slot) => void loadSample(slot)}
-              onPlay={(slot) => backend.previewSample(slot)}
-              onStop={() => backend.stopSamplePreview()}
-              onInfo={(slot) => {
-                setSampleInfo(slot);
-                setSampleInfoName(sampleNames[slot] ?? "");
-                setSampleInfoComments(infoProject?.sourceSamples[slot]?.comments ?? "");
-              }}
-              onClear={() => setClearConfirm(true)}
+              onLoad={onSampleLoad}
+              onPlay={onSamplePlay}
+              onStop={onSampleStop}
+              onInfo={onSampleInfo}
+              onClear={onSampleClear}
               onPackage={packageSamples}
             />
           </div>
@@ -993,6 +1039,7 @@ export function App() {
               onChannelVolume={onChannelVolume}
               onChannelMute={onChannelMute}
               onMasterVolume={onMasterVolume}
+              onOpenMasterFx={onOpenMasterFx}
             />
             <LicensesCard project={project} />
           </aside>
@@ -1159,6 +1206,14 @@ export function App() {
             <button onClick={() => setDeletePrompt(null)}>Cancel</button>
           </div>
         </DraggableModal>
+      )}
+
+      {masterFxOpen && (
+        <MasterFxModal
+          settings={masterFx}
+          onChange={onMasterFxChange}
+          onClose={() => setMasterFxOpen(false)}
+        />
       )}
 
       {newProjectConfirm && (

@@ -1,4 +1,5 @@
 import type { AudioClip } from "@/core/dsp";
+import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import { clipDuration } from "@/core/dsp";
 import { Scheduler, waveform, type SamplerSettings, type Sequence } from "@/core/sampler";
 import {
@@ -30,6 +31,14 @@ interface InstrumentPreview {
 
 export class WebAudioBackend implements AudioBackend {
   private ctx: AudioContext | null = null;
+  private masterFx: MasterFxSettings = defaultMasterFx();
+  private fxSum: GainNode | null = null;
+  private delayNode: DelayNode | null = null;
+  private delayTone: BiquadFilterNode | null = null;
+  private delayFeedback: GainNode | null = null;
+  private delayWet: GainNode | null = null;
+  private reverbConvolver: ConvolverNode | null = null;
+  private reverbWet: GainNode | null = null;
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private channelGain: Array<GainNode | null> = [null, null, null, null];
@@ -76,8 +85,36 @@ export class WebAudioBackend implements AudioBackend {
     const masterAnalyser = ctx.createAnalyser();
     masterAnalyser.fftSize = 512;
     master.gain.value = this.masterVolume;
-    master.connect(masterAnalyser);
+    // Master FX bus: dry + delay + reverb sum into the analyser/destination.
+    const fxSum = ctx.createGain();
+    master.connect(fxSum);
+    fxSum.connect(masterAnalyser);
     masterAnalyser.connect(ctx.destination);
+
+    const delayNode = ctx.createDelay(5.0);
+    const delayTone = ctx.createBiquadFilter();
+    delayTone.type = "lowpass";
+    const delayFeedback = ctx.createGain();
+    const delayWet = ctx.createGain();
+    master.connect(delayNode);
+    delayNode.connect(delayTone);
+    delayTone.connect(delayWet);
+    delayWet.connect(fxSum);
+    delayTone.connect(delayFeedback);
+    delayFeedback.connect(delayNode);
+
+    const reverbConvolver = ctx.createConvolver();
+    const reverbWet = ctx.createGain();
+    master.connect(reverbConvolver);
+    reverbConvolver.connect(reverbWet);
+    reverbWet.connect(fxSum);
+    this.fxSum = fxSum;
+    this.delayNode = delayNode;
+    this.delayTone = delayTone;
+    this.delayFeedback = delayFeedback;
+    this.delayWet = delayWet;
+    this.reverbConvolver = reverbConvolver;
+    this.reverbWet = reverbWet;
     for (let c = 0; c < NUM_CHANNELS; c++) {
       const gain = ctx.createGain();
       const analyser = ctx.createAnalyser();
@@ -91,6 +128,8 @@ export class WebAudioBackend implements AudioBackend {
     this.ctx = ctx;
     this.masterGain = master;
     this.masterAnalyser = masterAnalyser;
+    this.regenerateReverb();
+    this.applyMasterFx();
   }
 
   loadSampler(
@@ -599,6 +638,40 @@ export class WebAudioBackend implements AudioBackend {
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setValueAtTime(volume, this.ctx.currentTime);
     }
+  }
+
+  setMasterFx(settings: MasterFxSettings): void {
+    this.masterFx = settings;
+    this.regenerateReverb();
+    this.applyMasterFx();
+  }
+
+  private applyMasterFx(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const { delay, reverb } = this.masterFx;
+    if (this.delayNode) this.delayNode.delayTime.setValueAtTime(Math.max(0.001, delay.timeSec), now);
+    if (this.delayFeedback) this.delayFeedback.gain.setValueAtTime(delay.enabled ? Math.min(Math.max(delay.feedback, 0), 0.95) : 0, now);
+    if (this.delayTone) this.delayTone.frequency.setValueAtTime(Math.max(200, delay.toneHz), now);
+    if (this.delayWet) this.delayWet.gain.setValueAtTime(delay.enabled ? Math.min(Math.max(delay.mix, 0), 1) : 0, now);
+    if (this.reverbWet) this.reverbWet.gain.setValueAtTime(reverb.enabled ? Math.min(Math.max(reverb.mix, 0), 1) : 0, now);
+  }
+
+  /** Builds a noise-decay impulse response from the reverb decay time. */
+  private regenerateReverb(): void {
+    if (!this.ctx || !this.reverbConvolver) return;
+    const ctx = this.ctx;
+    const decay = Math.max(0.1, this.masterFx.reverb.decaySec);
+    const length = Math.floor(ctx.sampleRate * decay);
+    const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < length; i++) {
+        const envelope = Math.pow(1 - i / length, 2.2);
+        data[i] = (Math.random() * 2 - 1) * envelope;
+      }
+    }
+    this.reverbConvolver.buffer = buffer;
   }
 
   meterLevels(): number[] {

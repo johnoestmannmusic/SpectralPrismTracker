@@ -124,3 +124,181 @@ test("all six Source Samples load", async () => {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
+
+test("instrument vibrato fields can be cleared and retyped", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-vib-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    const depth = window.locator(".instrument-row").first().getByLabel("Depth");
+    await depth.click();
+    await window.keyboard.press("Control+a");
+    await window.keyboard.press("Backspace");
+    await expect(depth).toHaveValue("");
+
+    await depth.type("1.5");
+    await window.keyboard.press("Enter");
+    await expect(depth).toHaveValue("1.5");
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("instrument names save into Project JSON", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-names-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    const nameInput = window.locator(".instrument-row").first().locator(".ins-name-input");
+    await nameInput.fill("Test Bass");
+    await window.getByRole("button", { name: "Project JSON" }).click();
+    await expect(window.locator(".project-json")).toHaveValue(/Test Bass/, { timeout: 5_000 });
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("Master FX modal opens with Delay and Reverb", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-masterfx-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    await window.getByRole("button", { name: "Master FX" }).click();
+    await expect(window.locator(".modal-title", { hasText: "Master FX" })).toBeVisible();
+    await expect(window.locator(".modal", { hasText: "Delay" })).toBeVisible();
+    await expect(window.locator(".modal", { hasText: "Reverb" })).toBeVisible();
+    // Both start disabled.
+    const delay = window.locator(".modal", { hasText: "Master FX" }).getByRole("checkbox").first();
+    await expect(delay).not.toBeChecked();
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("loading Project JSON restores instrument names", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-loadnames-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    const project = JSON.parse(
+      readFileSync(path.join(projectRoot, "assets/lmp-default-proj.lampjson"), "utf8"),
+    );
+    project.instrumentNames = ["Loaded Bass"];
+    const tmp = path.join(userDataDir, "names.lampjson");
+    writeFileSync(tmp, JSON.stringify(project));
+
+    await window.getByRole("button", { name: "Project JSON" }).click();
+    await window.locator('.modal input[type="file"]').setInputFiles(tmp);
+
+    await expect(window.locator(".modal")).toHaveCount(0);
+    await expect(
+      window.locator(".instrument-row").first().locator(".ins-name-input"),
+    ).toHaveValue("Loaded Bass");
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("Master FX settings save into and load from Project JSON", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-masterfxio-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    // Enable Delay in Master FX, then confirm it appears in the exported JSON.
+    await window.getByRole("button", { name: "Master FX" }).click();
+    const fxModal = window.locator(".modal", { hasText: "Master FX" });
+    await fxModal.getByRole("checkbox").first().check();
+    await fxModal.locator(".close-btn").click();
+
+    await window.getByRole("button", { name: "Project JSON" }).click();
+    await expect(window.locator(".project-json")).toHaveValue(/"masterFx"/);
+    await expect(window.locator(".project-json")).toHaveValue(/"enabled": true/);
+    await window.locator(".modal-title button").click();
+
+    // Now load a project whose Delay is enabled and confirm the modal reflects it.
+    const project = JSON.parse(
+      readFileSync(path.join(projectRoot, "assets/lmp-default-proj.lampjson"), "utf8"),
+    );
+    project.masterFx = project.masterFx ?? {
+      delay: { enabled: false, timeSec: 0.25, feedback: 0.45, toneHz: 2600, mix: 0.35 },
+      reverb: { enabled: false, decaySec: 2, mix: 0.25 },
+    };
+    project.masterFx.delay.enabled = true;
+    project.masterFx.reverb.enabled = true;
+    const tmp = path.join(userDataDir, "fx.lampjson");
+    writeFileSync(tmp, JSON.stringify(project));
+
+    await window.getByRole("button", { name: "Project JSON" }).click();
+    await window.locator('.modal input[type="file"]').setInputFiles(tmp);
+    await expect(window.locator(".modal")).toHaveCount(0);
+
+    await window.getByRole("button", { name: "Master FX" }).click();
+    const loaded = window.locator(".modal", { hasText: "Master FX" });
+    await expect(loaded.getByRole("checkbox").nth(0)).toBeChecked();
+    await expect(loaded.getByRole("checkbox").nth(1)).toBeChecked();
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test("dragging pan during playback keeps the UI responsive", async () => {
+  const userDataDir = mkdtempSync(path.join(os.tmpdir(), "lantern-pandrag-"));
+  const app = await electron.launch({
+    args: [projectRoot, "--no-sandbox", `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+  });
+  try {
+    const window = await app.firstWindow();
+    await expect(window.locator(".toolbar .status")).toContainText("Aquavats", { timeout: 30_000 });
+
+    const play = window.getByRole("button", { name: /Play/ });
+    await expect(play).toBeEnabled({ timeout: 30_000 });
+    await play.click();
+
+    // Stress the pan control (the first range in the row) the way a drag would.
+    const slider = window.locator(".instrument-row").first().locator('input[type="range"]').first();
+    await slider.focus();
+    for (let i = 0; i < 60; i++) {
+      await window.keyboard.press(i % 2 === 0 ? "ArrowRight" : "ArrowLeft");
+    }
+
+    // The app must still respond promptly afterwards.
+    await window.getByRole("button", { name: "EDIT MODE" }).click();
+    await expect(window.getByRole("button", { name: "Pattern Manager" })).toBeVisible({
+      timeout: 5_000,
+    });
+  } finally {
+    await app.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});

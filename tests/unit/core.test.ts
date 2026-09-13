@@ -13,6 +13,7 @@ import { rowDurationSec, songPositionAt, rowTime } from "@/core/timing";
 import { DEFAULT_ENTRY_NOTE } from "@/core/pitch";
 import {
   LOOKAHEAD_SEC,
+  setSpectralEnabled,
   Scheduler,
   defaultSamplerSettings,
   envelopeAt,
@@ -268,6 +269,37 @@ describe("project json", () => {
     first.rootNote = 117;
     const project = projectFromJson(JSON.stringify(value));
     expect(project.instruments[0]!.transpose).toBe(12);
+  });
+
+  it("switching Spectral on loops by default and restores the sampler loop on exit", () => {
+    const settings = defaultSamplerSettings();
+    settings.looping = false;
+    setSpectralEnabled(settings, true);
+    expect(settings.spectral.enabled).toBe(true);
+    expect(settings.looping).toBe(true);
+    setSpectralEnabled(settings, false);
+    expect(settings.spectral.enabled).toBe(false);
+    expect(settings.looping).toBe(false);
+  });
+
+  it("round-trips master FX settings", () => {
+    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    project.masterFx.delay.enabled = true;
+    project.masterFx.delay.timeSec = 0.19;
+    project.masterFx.delay.feedback = 0.5;
+    project.masterFx.reverb.enabled = true;
+    project.masterFx.reverb.decaySec = 3.5;
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.masterFx).toEqual(project.masterFx);
+  });
+
+  it("round-trips vibrato settings", () => {
+    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    project.instruments[0]!.vibratoSpeed = 7.5;
+    project.instruments[0]!.vibratoDepth = 0.4;
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.instruments[0]!.vibratoSpeed).toBe(7.5);
+    expect(reread.instruments[0]!.vibratoDepth).toBe(0.4);
   });
 
   it("round-trips instrument display names", () => {
