@@ -38,6 +38,54 @@ export function render_fused(a_flat, a_channels, b_flat, b_channels, sample_rate
 }
 
 /**
+ * Loop-Length modulation: structural, so it is rendered by tiling
+ * phase-locked loops of different lengths into one fixed-length super-loop
+ * instead of varying per hop. Same arguments as `render_fused_modulated`,
+ * plus `num_segments` and the join/seam `crossfade_seconds`.
+ * @param {Float32Array} a_flat
+ * @param {number} a_channels
+ * @param {Float32Array} b_flat
+ * @param {number} b_channels
+ * @param {number} sample_rate
+ * @param {number} freeze_point_a_pct
+ * @param {number} volume_a_pct
+ * @param {number} tune_a_semitones
+ * @param {number} formant_shift_a_semitones
+ * @param {string} mode
+ * @param {number} freeze_point_b_pct
+ * @param {number} formant_shift_b_semitones
+ * @param {number} volume_b_pct
+ * @param {number} tune_b_semitones
+ * @param {number} mix_amount_pct
+ * @param {number} cross_synth_amount_pct
+ * @param {number} convolve_amount_pct
+ * @param {number} ring_mod_amount_pct
+ * @param {number} stereo_width_pct
+ * @param {number} loop_length_seconds
+ * @param {Float32Array} tracks_flat
+ * @param {number} num_points
+ * @param {number} track_mask
+ * @param {number} num_segments
+ * @param {number} crossfade_seconds
+ * @returns {object}
+ */
+export function render_fused_loop_lengths(a_flat, a_channels, b_flat, b_channels, sample_rate, freeze_point_a_pct, volume_a_pct, tune_a_semitones, formant_shift_a_semitones, mode, freeze_point_b_pct, formant_shift_b_semitones, volume_b_pct, tune_b_semitones, mix_amount_pct, cross_synth_amount_pct, convolve_amount_pct, ring_mod_amount_pct, stereo_width_pct, loop_length_seconds, tracks_flat, num_points, track_mask, num_segments, crossfade_seconds) {
+    const ptr0 = passArrayF32ToWasm0(a_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(b_flat, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArrayF32ToWasm0(tracks_flat, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.render_fused_loop_lengths(ptr0, len0, a_channels, ptr1, len1, b_channels, sample_rate, freeze_point_a_pct, volume_a_pct, tune_a_semitones, formant_shift_a_semitones, ptr2, len2, freeze_point_b_pct, formant_shift_b_semitones, volume_b_pct, tune_b_semitones, mix_amount_pct, cross_synth_amount_pct, convolve_amount_pct, ring_mod_amount_pct, stereo_width_pct, loop_length_seconds, ptr3, len3, num_points, track_mask, num_segments, crossfade_seconds);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * Modulated sibling of `render_fused`: same parameters, plus a flat array of
  * per-control-point absolute values for every modulatable target
  * (`MOD_TARGET_COUNT * num_points`, in the shared target order) and a bitmask
@@ -78,6 +126,47 @@ export function render_fused_modulated(a_flat, a_channels, b_flat, b_channels, s
     const ptr3 = passArrayF32ToWasm0(tracks_flat, wasm.__wbindgen_malloc);
     const len3 = WASM_VECTOR_LEN;
     const ret = wasm.render_fused_modulated(ptr0, len0, a_channels, ptr1, len1, b_channels, sample_rate, freeze_point_a_pct, volume_a_pct, tune_a_semitones, formant_shift_a_semitones, ptr2, len2, freeze_point_b_pct, formant_shift_b_semitones, volume_b_pct, tune_b_semitones, mix_amount_pct, cross_synth_amount_pct, convolve_amount_pct, ring_mod_amount_pct, stereo_width_pct, loop_length_seconds, ptr3, len3, num_points, track_mask);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * Percussion post-stage: takes the flat PCM produced by `render_fused` /
+ * `render_fused_modulated` (the output of *any* Fusion mode) and
+ * re-synthesizes it as a short one-shot percussive hit. Mirrors
+ * `prism_dsp::percussion::render_percussion`.
+ * @param {Float32Array} fused_flat
+ * @param {number} fused_channels
+ * @param {number} sample_rate
+ * @param {number} root_note
+ * @param {number} noise_amount_pct
+ * @param {string} noise_color
+ * @param {number} noise_decay_seconds
+ * @param {number} transient_amount_pct
+ * @param {number} transient_decay_seconds
+ * @param {number} transient_frequency_hz
+ * @param {number} pitch_start_semitones
+ * @param {number} pitch_end_semitones
+ * @param {number} pitch_decay_seconds
+ * @param {number} amp_decay_seconds
+ * @param {number} body_amount_pct
+ * @param {number} partial_count
+ * @param {number} partial_decay_seconds
+ * @param {number} digital_amount_pct
+ * @param {number} drive_amount_pct
+ * @param {number} compress_amount_pct
+ * @param {number} stereo_width_pct
+ * @param {number} length_seconds
+ * @returns {object}
+ */
+export function render_percussion(fused_flat, fused_channels, sample_rate, root_note, noise_amount_pct, noise_color, noise_decay_seconds, transient_amount_pct, transient_decay_seconds, transient_frequency_hz, pitch_start_semitones, pitch_end_semitones, pitch_decay_seconds, amp_decay_seconds, body_amount_pct, partial_count, partial_decay_seconds, digital_amount_pct, drive_amount_pct, compress_amount_pct, stereo_width_pct, length_seconds) {
+    const ptr0 = passArrayF32ToWasm0(fused_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(noise_color, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.render_percussion(ptr0, len0, fused_channels, sample_rate, root_note, noise_amount_pct, ptr1, len1, noise_decay_seconds, transient_amount_pct, transient_decay_seconds, transient_frequency_hz, pitch_start_semitones, pitch_end_semitones, pitch_decay_seconds, amp_decay_seconds, body_amount_pct, partial_count, partial_decay_seconds, digital_amount_pct, drive_amount_pct, compress_amount_pct, stereo_width_pct, length_seconds);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

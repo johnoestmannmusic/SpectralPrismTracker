@@ -1,0 +1,9 @@
+[package]
+name = "prism_dsp"
+version = "2026.9.11"
+edition = "2021"
+license = "MIT"
+description = "Vendored SpectralPrism DSP core (freeze/fusion/modulation/percussion). Do not edit by hand; re-run scripts/vendor-prism-dsp.mjs."
+
+[dependencies]
+realfft = "3.5"

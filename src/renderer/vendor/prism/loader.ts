@@ -1,5 +1,14 @@
-import init, { render_fused, render_fused_modulated } from "./prism_wasm.js";
-import { registerPrismWasm, registerPrismWasmWorker, type PrismWasmModule } from "@/wasm/prism";
+import init, {
+  render_fused,
+  render_fused_loop_lengths,
+  render_fused_modulated,
+  render_percussion,
+} from "./prism_wasm.js";
+import {
+  registerPrismWasm,
+  registerPrismWasmWorker,
+  type PrismWasmModule,
+} from "@/wasm/prism";
 import { PrismWorkerClient } from "@/wasm/prismWorkerClient";
 
 let initialized = false;
@@ -19,11 +28,19 @@ export async function initPrismWasm(): Promise<boolean> {
     initialized = true;
     return true;
   } catch (error) {
-    console.warn("prism_dsp Worker failed to initialise, falling back to the main thread:", error);
+    console.warn(
+      "prism_dsp Worker failed to initialise, falling back to the main thread:",
+      error,
+    );
   }
   try {
     await init();
-    registerPrismWasm({ render_fused, render_fused_modulated } as unknown as PrismWasmModule);
+    registerPrismWasm({
+      render_fused,
+      render_fused_modulated,
+      render_fused_loop_lengths,
+      render_percussion,
+    } as unknown as PrismWasmModule);
     initialized = true;
     return true;
   } catch (error) {

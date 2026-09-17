@@ -16,6 +16,7 @@
     "test:all": "npm run typecheck && npm run test && npm run audit:deps && npm run build && npm run build:web && npm run test:web && npm run test:e2e",
     "audit:deps": "node scripts/audit-dependencies.mjs",
     "build:prism-wasm": "node scripts/build-prism-wasm.mjs",
+    "vendor:prism-dsp": "node scripts/vendor-prism-dsp.mjs",
     "build:web": "node scripts/build-web.mjs",
     "serve:web": "npx serve dist/web",
     "test:web": "playwright test --config playwright.web.config.ts"

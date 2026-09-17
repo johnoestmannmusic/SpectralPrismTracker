@@ -2,17 +2,27 @@ import { A_REF_NOTE } from "./pitch";
 import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
 import type { NoteValue, PatternCell } from "./fur/types";
 import {
+  PERCUSSION_NOISE_COLORS,
+  PERCUSSION_PRESETS,
   SPECTRAL_FUSION_MODES,
   SPECTRAL_MOD_SHAPES,
   SPECTRAL_PARAMS,
+  defaultPercussionSettings,
   defaultSpectralSettings,
+  percussionPreset,
+  type PercussionNoiseColor,
+  type PercussionSettings,
   type SpectralModRoute,
   type SpectralModShape,
   type SpectralParamId,
   type SpectralSettings,
 } from "./spectral";
 import { retime, type PatternSnapshot, type SongModel } from "./songModel";
-import { defaultMasterFx, masterFxFromJson, type MasterFxSettings } from "./masterFx";
+import {
+  defaultMasterFx,
+  masterFxFromJson,
+  type MasterFxSettings,
+} from "./masterFx";
 
 export interface SourceSampleRef {
   name: string;
@@ -107,7 +117,8 @@ export function noteFromSerde(value: unknown): NoteValue | null {
   if (value && typeof value === "object") {
     const obj = value as Record<string, unknown>;
     if (typeof obj.Note === "number") return { kind: "note", note: obj.Note };
-    if (typeof obj.RawFreq === "number") return { kind: "rawFreq", value: obj.RawFreq };
+    if (typeof obj.RawFreq === "number")
+      return { kind: "rawFreq", value: obj.RawFreq };
   }
   return null;
 }
@@ -149,7 +160,9 @@ function cellIsEmpty(cell: PatternCell): boolean {
   );
 }
 
-export function snapshotToSerde(snapshot: PatternSnapshot | null | undefined): unknown {
+export function snapshotToSerde(
+  snapshot: PatternSnapshot | null | undefined,
+): unknown {
   if (!snapshot) return null;
   return {
     orderLength: snapshot.orderLength,
@@ -176,14 +189,19 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
     orderLength: typeof obj.orderLength === "number" ? obj.orderLength : 0,
     channels: channelsRaw.map((channelRaw) => {
       const channel = (channelRaw ?? {}) as Record<string, unknown>;
-      const patternsRaw = Array.isArray(channel.patterns) ? channel.patterns : [];
+      const patternsRaw = Array.isArray(channel.patterns)
+        ? channel.patterns
+        : [];
       return {
-        orderList: Array.isArray(channel.orderList) ? (channel.orderList as number[]) : [],
+        orderList: Array.isArray(channel.orderList)
+          ? (channel.orderList as number[])
+          : [],
         patterns: patternsRaw.map((pair) => {
           const [index, rows] = pair as [number, unknown[]];
           const list = rows ?? [];
           const first = list[0];
-          const sparse = Array.isArray(first) && typeof (first as unknown[])[0] === "number";
+          const sparse =
+            Array.isArray(first) && typeof (first as unknown[])[0] === "number";
           if (sparse) {
             const cells: PatternCell[] = [];
             for (const entry of list as Array<[number, unknown]>) {
@@ -216,7 +234,8 @@ function modRoutesFromJson(value: unknown): SpectralModRoute[] {
   for (const raw of value) {
     if (!raw || typeof raw !== "object") continue;
     const obj = raw as Record<string, unknown>;
-    if (typeof obj.target !== "string" || !validTargets.has(obj.target)) continue;
+    if (typeof obj.target !== "string" || !validTargets.has(obj.target))
+      continue;
     routes.push({
       target: obj.target as SpectralParamId,
       shape:
@@ -230,6 +249,49 @@ function modRoutesFromJson(value: unknown): SpectralModRoute[] {
     });
   }
   return routes;
+}
+
+function percussionFromJson(value: unknown): PercussionSettings {
+  const d = defaultPercussionSettings();
+  if (!value || typeof value !== "object") return d;
+  const obj = value as Record<string, unknown>;
+  const num = (key: string, fallback: number) =>
+    typeof obj[key] === "number" ? (obj[key] as number) : fallback;
+  const color =
+    typeof obj.noiseColor === "string" &&
+    (PERCUSSION_NOISE_COLORS as string[]).includes(obj.noiseColor)
+      ? (obj.noiseColor as PercussionNoiseColor)
+      : d.noiseColor;
+  return {
+    enabled: typeof obj.enabled === "boolean" ? obj.enabled : d.enabled,
+    noiseAmount: num("noiseAmount", d.noiseAmount),
+    noiseColor: color,
+    noiseDecay: num("noiseDecay", d.noiseDecay),
+    transientAmount: num("transientAmount", d.transientAmount),
+    transientDecay: num("transientDecay", d.transientDecay),
+    transientFrequency: num("transientFrequency", d.transientFrequency),
+    pitchStart: num("pitchStart", d.pitchStart),
+    pitchEnd: num("pitchEnd", d.pitchEnd),
+    pitchDecay: num("pitchDecay", d.pitchDecay),
+    ampDecay: num("ampDecay", d.ampDecay),
+    bodyAmount: num("bodyAmount", d.bodyAmount),
+    partialCount: num("partialCount", d.partialCount),
+    partialDecay: num("partialDecay", d.partialDecay),
+    digitalAmount: num("digitalAmount", d.digitalAmount),
+    driveAmount: num("driveAmount", d.driveAmount),
+    compressAmount: num("compressAmount", d.compressAmount),
+    stereoWidth: num("stereoWidth", d.stereoWidth),
+    lengthSeconds: num("lengthSeconds", d.lengthSeconds),
+  };
+}
+
+/** Applies a named percussion preset, preserving the current enable flag. */
+export function applyPercussionPreset(
+  settings: SpectralSettings,
+  preset: (typeof PERCUSSION_PRESETS)[number],
+  enabled = settings.percussion.enabled,
+): PercussionSettings {
+  return { ...percussionPreset(preset), enabled };
 }
 
 function spectralFromJson(value: unknown): SpectralSettings {
@@ -250,7 +312,8 @@ function spectralFromJson(value: unknown): SpectralSettings {
     : "off";
   return {
     enabled: typeof obj.enabled === "boolean" ? obj.enabled : d.enabled,
-    sourceIndex2: typeof obj.sourceIndex2 === "number" ? obj.sourceIndex2 : null,
+    sourceIndex2:
+      typeof obj.sourceIndex2 === "number" ? obj.sourceIndex2 : null,
     mode,
     freezePoint: num("freezePoint", d.freezePoint),
     freezePointB: num("freezePointB", d.freezePointB),
@@ -267,9 +330,12 @@ function spectralFromJson(value: unknown): SpectralSettings {
     stereoWidth: num("stereoWidth", d.stereoWidth),
     loopLengthSeconds: num("loopLengthSeconds", d.loopLengthSeconds),
     modulation: modRoutesFromJson(obj.modulation),
+    percussion: percussionFromJson(obj.percussion),
+    oneShot: typeof obj.oneShot === "boolean" ? obj.oneShot : d.oneShot,
     savedStartSec: num("savedStartSec", d.savedStartSec),
     savedEndSec: num("savedEndSec", d.savedEndSec),
-    savedLooping: typeof obj.savedLooping === "boolean" ? obj.savedLooping : d.savedLooping,
+    savedLooping:
+      typeof obj.savedLooping === "boolean" ? obj.savedLooping : d.savedLooping,
   };
 }
 
@@ -357,7 +423,9 @@ export function projectFromJson(text: string): ProjectFile {
 export function projectFromValue(value: Record<string, unknown>): ProjectFile {
   const base = defaultProject();
 
-  const instrumentsRaw = Array.isArray(value.instruments) ? value.instruments : [];
+  const instrumentsRaw = Array.isArray(value.instruments)
+    ? value.instruments
+    : [];
   const instruments = instrumentsRaw.map((raw) => {
     if (raw && typeof raw === "object") {
       const obj = raw as Record<string, unknown>;
@@ -369,19 +437,26 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     return samplerFromJson(raw);
   });
 
-  const sourceSamplesRaw = Array.isArray(value.sourceSamples) ? value.sourceSamples : [];
-  const sourceSamples: Array<SourceSampleRef | null> = Array.from({ length: 6 }, (_, i) =>
-    sourceSampleFromJson(sourceSamplesRaw[i]),
+  const sourceSamplesRaw = Array.isArray(value.sourceSamples)
+    ? value.sourceSamples
+    : [];
+  const sourceSamples: Array<SourceSampleRef | null> = Array.from(
+    { length: 6 },
+    (_, i) => sourceSampleFromJson(sourceSamplesRaw[i]),
   );
 
-  const arr = <T>(v: unknown, fallback: T[]): T[] => (Array.isArray(v) ? (v as T[]) : fallback);
+  const arr = <T>(v: unknown, fallback: T[]): T[] =>
+    Array.isArray(v) ? (v as T[]) : fallback;
   const str = (key: string, fallback: string) =>
     typeof value[key] === "string" ? (value[key] as string) : fallback;
   const num = (key: string, fallback: number) =>
     typeof value[key] === "number" ? (value[key] as number) : fallback;
 
   let virtualTempo: [number, number] | null = null;
-  if (Array.isArray(value.virtualTempoOverride) && value.virtualTempoOverride.length === 2) {
+  if (
+    Array.isArray(value.virtualTempoOverride) &&
+    value.virtualTempoOverride.length === 2
+  ) {
     const [a, b] = value.virtualTempoOverride as number[];
     virtualTempo = [a as number, b as number];
   }
@@ -390,15 +465,27 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     ...base,
     version: num("version", 1),
     samplerModeEnabled:
-      typeof value.samplerModeEnabled === "boolean" ? value.samplerModeEnabled : true,
+      typeof value.samplerModeEnabled === "boolean"
+        ? value.samplerModeEnabled
+        : true,
     channelVolume: arr<number>(value.channelVolume, [1, 1, 1, 1]).slice(0, 4),
     masterVolume: num("masterVolume", 1),
-    mutedChannels: arr<boolean>(value.mutedChannels, [false, false, false, false]).slice(0, 4),
+    mutedChannels: arr<boolean>(value.mutedChannels, [
+      false,
+      false,
+      false,
+      false,
+    ]).slice(0, 4),
     mutedInstruments: arr<boolean>(value.mutedInstruments, []),
-    refPitchEnabled: typeof value.refPitchEnabled === "boolean" ? value.refPitchEnabled : false,
+    refPitchEnabled:
+      typeof value.refPitchEnabled === "boolean"
+        ? value.refPitchEnabled
+        : false,
     sourceSamples,
     instruments,
-    instrumentNames: arr<unknown>(value.instrumentNames, []).map((n) => String(n)),
+    instrumentNames: arr<unknown>(value.instrumentNames, []).map((n) =>
+      String(n),
+    ),
     songTitle: str("songTitle", ""),
     artist: str("artist", ""),
     album: str("album", ""),
@@ -410,12 +497,20 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     theme: str("theme", "system"),
     masterFx: masterFxFromJson(value.masterFx),
     patternSnapshot: snapshotFromSerde(value.patternSnapshot),
-    tickRateOverride: typeof value.tickRateOverride === "number" ? value.tickRateOverride : null,
-    speedOverride: typeof value.speedOverride === "number" ? value.speedOverride : null,
+    tickRateOverride:
+      typeof value.tickRateOverride === "number"
+        ? value.tickRateOverride
+        : null,
+    speedOverride:
+      typeof value.speedOverride === "number" ? value.speedOverride : null,
     highlightAOverride:
-      typeof value.highlightAOverride === "number" ? value.highlightAOverride : null,
+      typeof value.highlightAOverride === "number"
+        ? value.highlightAOverride
+        : null,
     highlightBOverride:
-      typeof value.highlightBOverride === "number" ? value.highlightBOverride : null,
+      typeof value.highlightBOverride === "number"
+        ? value.highlightBOverride
+        : null,
     virtualTempoOverride: virtualTempo,
   };
 }
@@ -436,10 +531,14 @@ export function projectToValue(project: ProjectFile): Record<string, unknown> {
     theme: project.theme,
     masterFx: project.masterFx,
   };
-  if (project.instrumentNames.some((n) => n)) value.instrumentNames = project.instrumentNames;
-  if (project.mutedChannels.some(Boolean)) value.mutedChannels = project.mutedChannels;
-  if (project.mutedInstruments.some(Boolean)) value.mutedInstruments = project.mutedInstruments;
-  if (project.sourceSamples.some((s) => s !== null)) value.sourceSamples = project.sourceSamples;
+  if (project.instrumentNames.some((n) => n))
+    value.instrumentNames = project.instrumentNames;
+  if (project.mutedChannels.some(Boolean))
+    value.mutedChannels = project.mutedChannels;
+  if (project.mutedInstruments.some(Boolean))
+    value.mutedInstruments = project.mutedInstruments;
+  if (project.sourceSamples.some((s) => s !== null))
+    value.sourceSamples = project.sourceSamples;
   if (project.songTitle) value.songTitle = project.songTitle;
   if (project.artist) value.artist = project.artist;
   if (project.album) value.album = project.album;
@@ -448,17 +547,25 @@ export function projectToValue(project: ProjectFile): Record<string, unknown> {
   if (project.codeLicense) value.codeLicense = project.codeLicense;
   if (project.viewSourceLink) value.viewSourceLink = project.viewSourceLink;
   if (project.websiteLink) value.websiteLink = project.websiteLink;
-  if (project.patternSnapshot) value.patternSnapshot = snapshotToSerde(project.patternSnapshot);
-  if (project.tickRateOverride != null) value.tickRateOverride = project.tickRateOverride;
-  if (project.speedOverride != null) value.speedOverride = project.speedOverride;
-  if (project.highlightAOverride != null) value.highlightAOverride = project.highlightAOverride;
-  if (project.highlightBOverride != null) value.highlightBOverride = project.highlightBOverride;
+  if (project.patternSnapshot)
+    value.patternSnapshot = snapshotToSerde(project.patternSnapshot);
+  if (project.tickRateOverride != null)
+    value.tickRateOverride = project.tickRateOverride;
+  if (project.speedOverride != null)
+    value.speedOverride = project.speedOverride;
+  if (project.highlightAOverride != null)
+    value.highlightAOverride = project.highlightAOverride;
+  if (project.highlightBOverride != null)
+    value.highlightBOverride = project.highlightBOverride;
   if (project.virtualTempoOverride != null)
     value.virtualTempoOverride = project.virtualTempoOverride;
   return value;
 }
 
-export function validateProject(project: ProjectFile, instrumentCount: number): void {
+export function validateProject(
+  project: ProjectFile,
+  instrumentCount: number,
+): void {
   if (project.version !== 1) {
     throw new Error(`Unsupported Project JSON version ${project.version}`);
   }
@@ -481,14 +588,18 @@ export function validateProject(project: ProjectFile, instrumentCount: number): 
   }
 }
 
-export function applyTimingOverrides(project: ProjectFile, song: SongModel): void {
+export function applyTimingOverrides(
+  project: ProjectFile,
+  song: SongModel,
+): void {
   let changed = false;
   if (project.tickRateOverride != null) {
     song.meta.tickRate = project.tickRateOverride;
     changed = true;
   }
   if (project.speedOverride != null) {
-    if (song.meta.speedPattern.length > 0) song.meta.speedPattern[0] = project.speedOverride;
+    if (song.meta.speedPattern.length > 0)
+      song.meta.speedPattern[0] = project.speedOverride;
     else song.meta.speedPattern.push(project.speedOverride);
     changed = true;
   }

@@ -1,5 +1,14 @@
-import init, { render_fused, render_fused_modulated } from "@/renderer/vendor/prism/prism_wasm.js";
-import { makeSpectralRenderer, type PrismWasmModule, type SyncSpectralRenderFn } from "./prism";
+import init, {
+  render_fused,
+  render_fused_loop_lengths,
+  render_fused_modulated,
+  render_percussion,
+} from "@/renderer/vendor/prism/prism_wasm.js";
+import {
+  makeSpectralRenderer,
+  type PrismWasmModule,
+  type SyncSpectralRenderFn,
+} from "./prism";
 import type { WorkerRequest, WorkerResponse } from "./prismWorkerProtocol";
 
 interface WorkerScope {
@@ -14,7 +23,12 @@ let ready: Promise<SyncSpectralRenderFn> | null = null;
 function ensureReady(): Promise<SyncSpectralRenderFn> {
   if (!ready) {
     ready = init().then(() =>
-      makeSpectralRenderer({ render_fused, render_fused_modulated } as unknown as PrismWasmModule),
+      makeSpectralRenderer({
+        render_fused,
+        render_fused_modulated,
+        render_fused_loop_lengths,
+        render_percussion,
+      } as unknown as PrismWasmModule),
     );
   }
   return ready;
@@ -33,6 +47,10 @@ scope.onmessage = (event) => {
       scope.postMessage({ id: request.id, kind: "result", result }, transfer);
     })
     .catch((error: unknown) => {
-      scope.postMessage({ id: request.id, kind: "error", error: String(error) });
+      scope.postMessage({
+        id: request.id,
+        kind: "error",
+        error: String(error),
+      });
     });
 };

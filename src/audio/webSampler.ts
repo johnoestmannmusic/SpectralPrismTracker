@@ -3,6 +3,7 @@ import {
   LOOKAHEAD_SEC,
   Scheduler,
   envelopeAt,
+  envelopeShape,
   loopChannel,
   region,
   samplePosition,
@@ -36,7 +37,13 @@ export class Voice {
   levelAt(when: number): number {
     if (this.released && when >= this.released.start) {
       const { start, level, duration } = this.released;
-      return level * Math.min(Math.max(1 - (when - start) / Math.max(duration, 0.0001), 0), 1);
+      return (
+        level *
+        Math.min(
+          Math.max(1 - (when - start) / Math.max(duration, 0.0001), 0),
+          1,
+        )
+      );
     }
     return this.level * envelopeAt(this.settings, when - this.start);
   }
@@ -44,7 +51,8 @@ export class Voice {
   release(when: number, fade: number): void {
     if (
       this.end <= when ||
-      (this.released && this.released.start + this.released.duration <= when + fade)
+      (this.released &&
+        this.released.start + this.released.duration <= when + fade)
     ) {
       return;
     }
@@ -85,12 +93,23 @@ export class Voice {
   }
 
   pitchRamp(baseRate: number, when: number, duration: number): void {
-    const target = baseRate * Math.pow(2, Math.min(Math.max(this.settings.transpose, -48), 48) / 12);
+    const target =
+      baseRate *
+      Math.pow(2, Math.min(Math.max(this.settings.transpose, -48), 48) / 12);
     this.source.playbackRate.setValueAtTime(this.rate, when);
-    this.source.playbackRate.linearRampToValueAtTime(target, when + Math.max(duration, 0.0001));
+    this.source.playbackRate.linearRampToValueAtTime(
+      target,
+      when + Math.max(duration, 0.0001),
+    );
     if (!this.settings.looping) {
-      const regionLen = Math.max(this.settings.endSec - this.settings.startSec, 0);
-      this.end = Math.max(this.end, when + regionLen / Math.max(Math.min(this.rate, target), 0.001));
+      const regionLen = Math.max(
+        this.settings.endSec - this.settings.startSec,
+        0,
+      );
+      this.end = Math.max(
+        this.end,
+        when + regionLen / Math.max(Math.min(this.rate, target), 0.001),
+      );
     }
     this.rate = target;
   }
@@ -133,10 +152,11 @@ export function buildVoice(
   const gain = ctx.createGain();
   const pan = ctx.createStereoPanner();
 
-  const rate = baseRate * Math.pow(2, Math.min(Math.max(settings.transpose, -48), 48) / 12);
+  const rate =
+    baseRate *
+    Math.pow(2, Math.min(Math.max(settings.transpose, -48), 48) / 12);
   const level = volume * Math.min(Math.max(settings.volume, 0), 1.5);
-  const attack = Math.min(Math.max(settings.attack, 0.003), 5);
-  const decay = Math.min(Math.max(settings.decay, 0), 5);
+  const { attack, decay, sustain } = envelopeShape(settings);
 
   source.buffer = buffer;
   source.playbackRate.value = rate;
@@ -158,14 +178,14 @@ export function buildVoice(
 
   gain.gain.setValueAtTime(0, when);
   gain.gain.linearRampToValueAtTime(level, when + attack);
-  gain.gain.linearRampToValueAtTime(
-    level * Math.min(Math.max(settings.sustain, 0), 1),
-    when + attack + decay,
-  );
+  gain.gain.linearRampToValueAtTime(level * sustain, when + attack + decay);
 
   const panCentre = Math.min(Math.max(settings.pan, -1), 1);
   const panWidth = Math.min(Math.max(settings.panRandomRange, 0), 1);
-  pan.pan.value = Math.min(Math.max(panCentre + (Math.random() * 2 - 1) * panWidth, -1), 1);
+  pan.pan.value = Math.min(
+    Math.max(panCentre + (Math.random() * 2 - 1) * panWidth, -1),
+    1,
+  );
 
   source.connect(gain);
   gain.connect(pan);
@@ -202,7 +222,20 @@ export function buildVoice(
     }
   }
 
-  return new Voice(source, gain, pan, channel, instrument, settings, level, when, end, rate, lfo, lfoGain);
+  return new Voice(
+    source,
+    gain,
+    pan,
+    channel,
+    instrument,
+    settings,
+    level,
+    when,
+    end,
+    rate,
+    lfo,
+    lfoGain,
+  );
 }
 
 export interface LoopCache {
@@ -243,13 +276,17 @@ export class SamplerEngine {
   updateSettings(index: number, settings: SamplerSettings, now: number): void {
     if (settings.muted || settings.sourceIndex === null) {
       for (const voice of this.voices) {
-        if (voice.instrument === index && voice.end > now) voice.release(now, 0.008);
+        if (voice.instrument === index && voice.end > now)
+          voice.release(now, 0.008);
       }
     }
     this.settings[index] = settings;
   }
 
-  async decodeAll(ctx: AudioContext, sampleBytes: Array<Uint8Array | null>): Promise<void> {
+  async decodeAll(
+    ctx: AudioContext,
+    sampleBytes: Array<Uint8Array | null>,
+  ): Promise<void> {
     this.samples = [];
     this.clips = [];
     this.waveforms = [];
@@ -341,7 +378,9 @@ export class SamplerEngine {
       const a = this.clips[source];
       if (!a) throw new Error("Sample A is not ready");
       const b =
-        s.spectral.sourceIndex2 !== null ? this.clips[s.spectral.sourceIndex2] ?? null : null;
+        s.spectral.sourceIndex2 !== null
+          ? (this.clips[s.spectral.sourceIndex2] ?? null)
+          : null;
       const clip = await spectralRender(a, b, s.spectral);
       if (this.renderGeneration[instrument] !== generation) return; // superseded by a newer render
       const buffer = ctx.createBuffer(
@@ -357,16 +396,18 @@ export class SamplerEngine {
       this.fusedWaveforms[instrument] = waveform(clip.channels[0]!, 600);
       // The fused loop is this instrument's effective source, so play its full
       // length. Without this the old sampler trim (e.g. a 0.44s slice of sample
-      // A) would cut the rendered 4s loop off early.
+      // A) would cut the rendered 4s loop off early. Percussion renders are
+      // one-shots, so honour `spectral.oneShot` instead of always looping.
       s.startSec = 0;
       s.endSec = buffer.duration;
-      s.looping = true;
+      s.looping = !s.spectral.oneShot;
       this.fusionJustCompleted[instrument] = true;
     } catch (e) {
       if (this.renderGeneration[instrument] !== generation) return; // superseded, ignore its error too
       this.error = `Cannot render Spectral instrument: ${String(e)}`;
     } finally {
-      if (this.renderGeneration[instrument] === generation) this.rendering[instrument] = false;
+      if (this.renderGeneration[instrument] === generation)
+        this.rendering[instrument] = false;
     }
   }
 
@@ -403,7 +444,13 @@ export class SamplerEngine {
     const channels: Float32Array[] = [];
     for (let c = 0; c < original.numberOfChannels; c++) {
       channels.push(
-        loopChannel(original.getChannelData(c), original.sampleRate, start, start + length, settings.pingPong),
+        loopChannel(
+          original.getChannelData(c),
+          original.sampleRate,
+          start,
+          start + length,
+          settings.pingPong,
+        ),
       );
     }
     const buffer = ctx.createBuffer(
@@ -411,7 +458,8 @@ export class SamplerEngine {
       channels[0]!.length,
       original.sampleRate,
     );
-    for (let c = 0; c < channels.length; c++) buffer.getChannelData(c).set(channels[c]!);
+    for (let c = 0; c < channels.length; c++)
+      buffer.getChannelData(c).set(channels[c]!);
     this.loops[instrument] = {
       source,
       start,
@@ -446,7 +494,8 @@ export class SamplerEngine {
   private findLastVoice(channel: number, when: number): Voice | undefined {
     for (let i = this.voices.length - 1; i >= 0; i--) {
       const voice = this.voices[i]!;
-      if (voice.channel === channel && voice.end > when && !voice.stolen) return voice;
+      if (voice.channel === channel && voice.end > when && !voice.stolen)
+        return voice;
     }
     return undefined;
   }
@@ -460,7 +509,8 @@ export class SamplerEngine {
   ): void {
     if (event.type === "off") {
       const voice = this.findLastVoice(event.channel, when);
-      if (voice) voice.release(when, Math.min(Math.max(voice.settings.release, 0), 5));
+      if (voice)
+        voice.release(when, Math.min(Math.max(voice.settings.release, 0), 5));
       return;
     }
     if (event.type === "pitchRamp") {
@@ -537,17 +587,19 @@ export class SamplerEngine {
   effectiveWaveform(instrument: number): Array<[number, number]> {
     const s = this.settings[instrument];
     if (!s) return [];
-    if (this.spectralActive(instrument)) return this.fusedWaveforms[instrument] ?? [];
+    if (this.spectralActive(instrument))
+      return this.fusedWaveforms[instrument] ?? [];
     const src = s.sourceIndex;
-    return src !== null ? this.waveforms[src] ?? [] : [];
+    return src !== null ? (this.waveforms[src] ?? []) : [];
   }
 
   effectiveClip(instrument: number): AudioClip | null {
     const s = this.settings[instrument];
     if (!s) return null;
-    if (this.spectralActive(instrument)) return this.fusedClips[instrument] ?? null;
+    if (this.spectralActive(instrument))
+      return this.fusedClips[instrument] ?? null;
     const src = s.sourceIndex;
-    return src !== null ? this.clips[src] ?? null : null;
+    return src !== null ? (this.clips[src] ?? null) : null;
   }
 
   effectiveDuration(instrument: number): number {

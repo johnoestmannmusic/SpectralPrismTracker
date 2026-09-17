@@ -59,7 +59,10 @@ export function defaultSamplerSettings(): SamplerSettings {
   };
 }
 
-export function setSpectralEnabled(settings: SamplerSettings, enabled: boolean): void {
+export function setSpectralEnabled(
+  settings: SamplerSettings,
+  enabled: boolean,
+): void {
   if (enabled === settings.spectral.enabled) return;
   if (enabled) {
     settings.spectral.savedStartSec = settings.startSec;
@@ -75,20 +78,47 @@ export function setSpectralEnabled(settings: SamplerSettings, enabled: boolean):
   settings.spectral.enabled = enabled;
 }
 
+export interface EnvelopeShape {
+  attack: number;
+  decay: number;
+  sustain: number;
+}
+
+/**
+ * Effective amplitude envelope applied to a voice. One-shot Spectral voices
+ * (e.g. percussion) already carry their own baked amplitude envelope, so the
+ * instrument ADSR is bypassed — otherwise a long instrument attack can outlast
+ * a short hit and render it inaudible.
+ */
+export function envelopeShape(settings: SamplerSettings): EnvelopeShape {
+  if (settings.spectral.enabled && settings.spectral.oneShot) {
+    return { attack: 0.003, decay: 0, sustain: 1 };
+  }
+  return {
+    attack: Math.min(Math.max(settings.attack, 0.003), 5),
+    decay: Math.min(Math.max(settings.decay, 0), 5),
+    sustain: clamp01(settings.sustain),
+  };
+}
+
 export function envelopeAt(settings: SamplerSettings, time: number): number {
-  const attack = Math.min(Math.max(settings.attack, 0.003), 5);
-  const decay = Math.min(Math.max(settings.decay, 0), 5);
+  const { attack, decay, sustain } = envelopeShape(settings);
   if (time <= 0) return 0;
   if (time < attack) return time / attack;
-  if (time < attack + decay) return 1 + (clamp01(settings.sustain) - 1) * ((time - attack) / decay);
-  return clamp01(settings.sustain);
+  if (time < attack + decay)
+    return 1 + (sustain - 1) * ((time - attack) / decay);
+  return sustain;
 }
 
 function clamp01(v: number): number {
   return Math.min(Math.max(v, 0), 1);
 }
 
-export function samplePosition(settings: SamplerSettings, elapsed: number, rate: number): number {
+export function samplePosition(
+  settings: SamplerSettings,
+  elapsed: number,
+  rate: number,
+): number {
   const length = settings.endSec - settings.startSec;
   if (length <= 0) return settings.startSec;
   const traveled = Math.max(elapsed, 0) * rate;
@@ -105,7 +135,10 @@ export function samplePosition(settings: SamplerSettings, elapsed: number, rate:
 }
 
 /** Returns [start, length] for a valid slice of decoded audio, else null. */
-export function region(settings: SamplerSettings, duration: number): [number, number] | null {
+export function region(
+  settings: SamplerSettings,
+  duration: number,
+): [number, number] | null {
   if (
     !Number.isFinite(duration) ||
     duration <= 0 ||
@@ -120,7 +153,13 @@ export function region(settings: SamplerSettings, duration: number): [number, nu
 }
 
 export type SamplerEvent =
-  | { type: "note"; channel: number; instrument: number; rate: number; volume: number }
+  | {
+      type: "note";
+      channel: number;
+      instrument: number;
+      rate: number;
+      volume: number;
+    }
   | { type: "off"; channel: number }
   | { type: "pitchRamp"; channel: number; rate: number; duration: number };
 
@@ -149,7 +188,10 @@ export function sequenceFromSong(song: SongModel): Sequence {
       for (let channel = 0; channel < channelCount; channel++) {
         const ch = song.channels[channel]!;
         const patternIndex = ch.orderList[order];
-        const pattern = patternIndex === undefined ? undefined : ch.patterns.get(patternIndex);
+        const pattern =
+          patternIndex === undefined
+            ? undefined
+            : ch.patterns.get(patternIndex);
         const cell = pattern?.rows[row];
         if (!cell) continue;
 
@@ -195,7 +237,8 @@ export function sequenceFromSong(song: SongModel): Sequence {
           const baseRate = baseRates[channel];
           if (baseRate !== null) {
             const ticks = song.rowTicks[absoluteRow] ?? 6;
-            pitchOffsets[channel] = (pitchOffsets[channel] ?? 0) + (slides[channel] ?? 0) * ticks;
+            pitchOffsets[channel] =
+              (pitchOffsets[channel] ?? 0) + (slides[channel] ?? 0) * ticks;
             events.push({
               type: "pitchRamp",
               channel,
@@ -226,8 +269,14 @@ export class Scheduler {
 
   constructor(sequence: Sequence, startClock: number, offset: number) {
     const duration = sequenceDuration(sequence);
-    if (!(Number.isFinite(duration) && duration > 0 && sequence.rows.length > 0)) {
-      throw new Error("Scheduler requires a positive-duration, non-empty sequence");
+    if (!(
+      Number.isFinite(duration) &&
+      duration > 0 &&
+      sequence.rows.length > 0
+    )) {
+      throw new Error(
+        "Scheduler requires a positive-duration, non-empty sequence",
+      );
     }
     const clampedOffset = Math.max(offset, 0);
     this.rowTimes = sequence.rowTimes.slice();
@@ -237,7 +286,10 @@ export class Scheduler {
     const cycle = Math.floor(clampedOffset / duration);
     const within = ((clampedOffset % duration) + duration) % duration;
     const row = Math.max(
-      partitionPoint(this.rowTimes.slice(0, sequence.rows.length), (time) => time <= within) - 1,
+      partitionPoint(
+        this.rowTimes.slice(0, sequence.rows.length),
+        (time) => time <= within,
+      ) - 1,
       0,
     );
     this.nextRow = cycle * sequence.rows.length + row;
@@ -250,12 +302,18 @@ export class Scheduler {
       const cycle = Math.max(Math.floor(time / this.duration), 0);
       const within = ((time % this.duration) + this.duration) % this.duration;
       const row = Math.max(
-        partitionPoint(this.rowTimes.slice(0, rowCount), (start) => start <= within) - 1,
+        partitionPoint(
+          this.rowTimes.slice(0, rowCount),
+          (start) => start <= within,
+        ) - 1,
         0,
       );
       return cycle * rowCount + row;
     };
-    this.nextRow = Math.max(this.nextRow, locate(Math.max(songTime, this.offset)));
+    this.nextRow = Math.max(
+      this.nextRow,
+      locate(Math.max(songTime, this.offset)),
+    );
     const horizon = songTime + Math.max(lookahead, 0);
     const result: ScheduledRow[] = [];
     for (;;) {
@@ -276,7 +334,10 @@ export class Scheduler {
   }
 }
 
-function partitionPoint<T>(items: ArrayLike<T>, predicate: (item: T) => boolean): number {
+function partitionPoint<T>(
+  items: ArrayLike<T>,
+  predicate: (item: T) => boolean,
+): number {
   let lo = 0;
   let hi = items.length;
   while (lo < hi) {
@@ -295,7 +356,10 @@ export function loopChannel(
   end: number,
   pingPong: boolean,
 ): Float32Array {
-  const first = Math.min(Math.floor(Math.max(start, 0) * sampleRate), data.length);
+  const first = Math.min(
+    Math.floor(Math.max(start, 0) * sampleRate),
+    data.length,
+  );
   const last = Math.min(Math.ceil(Math.max(end, 0) * sampleRate), data.length);
   if (first >= last) return new Float32Array(0);
   const src = data.subarray(first, last);
@@ -316,7 +380,10 @@ export function loopChannel(
 }
 
 /** Min/max pairs for waveform display. */
-export function waveform(data: Float32Array, bins: number): Array<[number, number]> {
+export function waveform(
+  data: Float32Array,
+  bins: number,
+): Array<[number, number]> {
   if (data.length === 0 || bins === 0) return [];
   const chunkSize = Math.ceil(data.length / bins);
   const out: Array<[number, number]> = [];

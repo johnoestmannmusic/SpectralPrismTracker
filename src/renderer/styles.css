@@ -640,6 +640,43 @@ select {
   border-bottom: none;
 }
 
+.percussion {
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-top: 10px;
+}
+
+.percussion h3 {
+  margin-top: 0;
+}
+
+.percussion-graph {
+  width: 100%;
+  margin: 6px 0;
+}
+
+.percussion select {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-family: inherit;
+}
+
+.percussion-advanced {
+  margin-top: 8px;
+  border-top: 1px solid var(--edge);
+  padding-top: 6px;
+}
+
+.percussion-advanced summary {
+  cursor: pointer;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
 .floating-body input[type="number"] {
   width: 72px;
   background: var(--input-bg);
@@ -855,10 +892,20 @@ select {
   margin: 0 0 6px;
 }
 
-.tk-num { color: var(--accent); }
-.tk-var { color: #7fb2d6; }
-.tk-kw { color: #c98fe0; font-weight: 600; }
-.tk-live { color: #e0a33a; font-weight: 600; }
+.tk-num {
+  color: var(--accent);
+}
+.tk-var {
+  color: #7fb2d6;
+}
+.tk-kw {
+  color: #c98fe0;
+  font-weight: 600;
+}
+.tk-live {
+  color: #e0a33a;
+  font-weight: 600;
+}
 
 .tk-block {
   margin: 0 0 6px;
@@ -973,7 +1020,9 @@ select {
 }
 
 .tracker-cell.flash {
-  box-shadow: inset 0 0 0 2px var(--accent), 0 0 6px var(--accent);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 6px var(--accent);
 }
 
 /* Frozen two-row tracker header: explicit, non-overlapping sticky offsets. */
@@ -1112,7 +1161,10 @@ body,
 button,
 input,
 select {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 /* EDIT MODE uses the blue accent; CHIP/SAMPLER return to green. */

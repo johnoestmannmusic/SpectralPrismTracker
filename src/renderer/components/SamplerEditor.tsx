@@ -1,14 +1,23 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { SamplerSettings } from "@/core/sampler";
 import {
+  PERCUSSION_NOISE_COLORS,
+  PERCUSSION_PRESETS,
   SPECTRAL_FUSION_MODES,
   SPECTRAL_MOD_SHAPES,
   SPECTRAL_PARAMS,
+  percussionPreset,
   spectralModeHasAmount,
   spectralModeLabel,
   spectralModeNeedsB,
   spectralBaseValue,
   spectralParamMeta,
+  type PercussionPreset,
+  type PercussionSettings,
   type SpectralModRoute,
   type SpectralModShape,
   type SpectralParamId,
@@ -20,6 +29,7 @@ import type { AudioBackend } from "@/audio/backend";
 import { useAnimationFrame } from "../hooks";
 import { Waveform, type WaveformMarker } from "./Waveform";
 import { AdsrGraph } from "./AdsrGraph";
+import { PercussionEnvelopeGraph } from "./PercussionEnvelopeGraph";
 import { NumberInput } from "./NumberInput";
 import { useExplainer } from "../explainer";
 import { spectralFusionExplain } from "../explainerContent";
@@ -100,7 +110,10 @@ export function SamplerEditor(props: SamplerEditorProps) {
   const playable = duration > 0 && settings.endSec > settings.startSec;
 
   return (
-    <div className="floating-window" style={{ left: position.x, top: position.y }}>
+    <div
+      className="floating-window"
+      style={{ left: position.x, top: position.y }}
+    >
       <div
         className="floating-title"
         onPointerDown={onPointerDown}
@@ -120,7 +133,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
         <div className="row wrap">
           <strong
             style={{ cursor: "help" }}
-            onMouseEnter={() => props.spectralTab && explain(spectralFusionExplain())}
+            onMouseEnter={() =>
+              props.spectralTab && explain(spectralFusionExplain())
+            }
           >
             {props.spectralTab ? "SPECTRAL" : "SAMPLER"}
           </strong>
@@ -135,7 +150,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
           <button
             disabled={!playable}
             onClick={() =>
-              previewing ? backend.stopPreview() : backend.preview(props.index, props.reference)
+              previewing
+                ? backend.stopPreview()
+                : backend.preview(props.index, props.reference)
             }
           >
             {previewing ? "Stop Preview" : "Preview"}
@@ -183,7 +200,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
                 end: settings.endSec,
                 duration,
               }}
-              onTrimChange={(start, end) => props.onUpdate({ startSec: start, endSec: end })}
+              onTrimChange={(start, end) =>
+                props.onUpdate({ startSec: start, endSec: end })
+              }
               emptyLabel="Assign a source sample"
             />
             <div className="row wrap">
@@ -201,17 +220,26 @@ export function SamplerEditor(props: SamplerEditorProps) {
                 max={duration}
                 onChange={(v) => props.onUpdate({ endSec: v })}
               />
-              <button onClick={() => props.onUpdate({ startSec: 0, endSec: duration })}>
+              <button
+                onClick={() =>
+                  props.onUpdate({ startSec: 0, endSec: duration })
+                }
+              >
                 Reset Start/End
               </button>
             </div>
             <div className="row wrap">
               <label>Source</label>
               <select
-                value={settings.sourceIndex === null ? "" : String(settings.sourceIndex)}
+                value={
+                  settings.sourceIndex === null
+                    ? ""
+                    : String(settings.sourceIndex)
+                }
                 onChange={(e) =>
                   props.onUpdate({
-                    sourceIndex: e.target.value === "" ? null : Number(e.target.value),
+                    sourceIndex:
+                      e.target.value === "" ? null : Number(e.target.value),
                   })
                 }
               >
@@ -236,7 +264,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
                 <input
                   type="checkbox"
                   checked={settings.looping}
-                  onChange={(e) => props.onUpdate({ looping: e.target.checked })}
+                  onChange={(e) =>
+                    props.onUpdate({ looping: e.target.checked })
+                  }
                 />
                 Loop
               </label>
@@ -245,7 +275,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
                   type="checkbox"
                   checked={settings.pingPong}
                   disabled={!settings.looping}
-                  onChange={(e) => props.onUpdate({ pingPong: e.target.checked })}
+                  onChange={(e) =>
+                    props.onUpdate({ pingPong: e.target.checked })
+                  }
                 />
                 Ping-pong
               </label>
@@ -290,7 +322,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
                 <input
                   type="checkbox"
                   checked={settings.polyphonic}
-                  onChange={(e) => props.onUpdate({ polyphonic: e.target.checked })}
+                  onChange={(e) =>
+                    props.onUpdate({ polyphonic: e.target.checked })
+                  }
                 />
                 Polyphonic
               </label>
@@ -331,9 +365,13 @@ function SpectralTab(
     props.onUpdate({ spectral: { ...spectral, ...patch } });
 
   const sourceAWave =
-    settings.sourceIndex === null ? [] : backend.sampleWaveform(settings.sourceIndex);
+    settings.sourceIndex === null
+      ? []
+      : backend.sampleWaveform(settings.sourceIndex);
   const sourceBWave =
-    spectral.sourceIndex2 === null ? [] : backend.sampleWaveform(spectral.sourceIndex2);
+    spectral.sourceIndex2 === null
+      ? []
+      : backend.sampleWaveform(spectral.sourceIndex2);
   const resultWave = backend.fusionWaveform(props.index);
   const resultMarkers: WaveformMarker[] = props.markers
     .filter((m) => m.fraction >= 0 && m.fraction <= 1)
@@ -364,7 +402,9 @@ function SpectralTab(
         <label>Mode</label>
         <select
           value={spectral.mode}
-          onChange={(e) => patchSpectral({ mode: e.target.value as typeof spectral.mode })}
+          onChange={(e) =>
+            patchSpectral({ mode: e.target.value as typeof spectral.mode })
+          }
         >
           {SPECTRAL_FUSION_MODES.map((mode) => (
             <option key={mode} value={mode}>
@@ -378,10 +418,13 @@ function SpectralTab(
       <div className="row wrap">
         <label>Source</label>
         <select
-          value={settings.sourceIndex === null ? "" : String(settings.sourceIndex)}
+          value={
+            settings.sourceIndex === null ? "" : String(settings.sourceIndex)
+          }
           onChange={(e) =>
             props.onUpdate({
-              sourceIndex: e.target.value === "" ? null : Number(e.target.value),
+              sourceIndex:
+                e.target.value === "" ? null : Number(e.target.value),
             })
           }
         >
@@ -443,10 +486,15 @@ function SpectralTab(
           <div className="row wrap">
             <label>Source</label>
             <select
-              value={spectral.sourceIndex2 === null ? "" : String(spectral.sourceIndex2)}
+              value={
+                spectral.sourceIndex2 === null
+                  ? ""
+                  : String(spectral.sourceIndex2)
+              }
               onChange={(e) =>
                 patchSpectral({
-                  sourceIndex2: e.target.value === "" ? null : Number(e.target.value),
+                  sourceIndex2:
+                    e.target.value === "" ? null : Number(e.target.value),
                 })
               }
             >
@@ -511,7 +559,9 @@ function SpectralTab(
           min={0}
           max={100}
           step={1}
-          onChange={(v) => patchSpectral({ [amountKey]: v } as Partial<typeof spectral>)}
+          onChange={(v) =>
+            patchSpectral({ [amountKey]: v } as Partial<typeof spectral>)
+          }
         />
       )}
       <div className="row wrap">
@@ -533,11 +583,20 @@ function SpectralTab(
         />
       </div>
 
-      <h3>Result</h3>
       <ModulationControls
         spectral={spectral}
-        onUpdate={(patch) => props.onUpdate({ spectral: { ...spectral, ...patch } })}
+        onUpdate={(patch) =>
+          props.onUpdate({ spectral: { ...spectral, ...patch } })
+        }
       />
+      <PercussionControls
+        spectral={spectral}
+        onUpdate={(patch) =>
+          props.onUpdate({ spectral: { ...spectral, ...patch } })
+        }
+      />
+
+      <h3>Result</h3>
       <Waveform
         peaks={resultWave}
         markers={resultMarkers}
@@ -558,6 +617,235 @@ function formatModNumber(value: number): string {
   return String(Math.round(value * 100) / 100);
 }
 
+function PercussionControls(props: {
+  spectral: SpectralSettings;
+  onUpdate: (patch: Partial<SpectralSettings>) => void;
+}) {
+  const percussion = props.spectral.percussion;
+  const patch = (next: Partial<PercussionSettings>) =>
+    props.onUpdate({ percussion: { ...percussion, ...next } });
+  const applyPreset = (preset: PercussionPreset) =>
+    props.onUpdate({
+      percussion: { ...percussionPreset(preset), enabled: true },
+      oneShot: true,
+    });
+  // Primary "Pitch Drop" is the full span of the pitch envelope in semitones;
+  // editing it re-centres the envelope symmetrically. The Advanced Pitch
+  // Start/End controls set the endpoints directly.
+  const pitchDrop = Math.max(0, percussion.pitchStart - percussion.pitchEnd);
+  const setPitchDrop = (value: number) =>
+    patch({ pitchStart: value / 2, pitchEnd: -value / 2 });
+
+  return (
+    <div className="percussion">
+      <h3>PERCUSSION · third step, applied after Fusion</h3>
+      <div className="row wrap">
+        <label>
+          <input
+            type="checkbox"
+            checked={percussion.enabled}
+            onChange={(e) =>
+              props.onUpdate({
+                percussion: { ...percussion, enabled: e.target.checked },
+                oneShot: e.target.checked ? true : props.spectral.oneShot,
+              })
+            }
+          />
+          Enable percussion
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={props.spectral.oneShot}
+            disabled={!percussion.enabled}
+            onChange={(e) => props.onUpdate({ oneShot: e.target.checked })}
+          />
+          One-shot (don&#39;t loop)
+        </label>
+        {PERCUSSION_PRESETS.map((preset) => (
+          <button key={preset} onClick={() => applyPreset(preset)}>
+            {preset[0]!.toUpperCase() + preset.slice(1)}
+          </button>
+        ))}
+      </div>
+      {percussion.enabled && (
+        <>
+          <PercussionEnvelopeGraph settings={percussion} />
+          <div className="row wrap">
+            <Slider
+              label="Punch (%)"
+              value={percussion.transientAmount}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(v) => patch({ transientAmount: v })}
+            />
+            <Slider
+              label="Body (%)"
+              value={percussion.bodyAmount}
+              min={0}
+              max={200}
+              step={1}
+              onChange={(v) => patch({ bodyAmount: v })}
+            />
+            <Slider
+              label="Noise (%)"
+              value={percussion.noiseAmount}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(v) => patch({ noiseAmount: v })}
+            />
+            <Slider
+              label="Pitch Drop (st)"
+              value={pitchDrop}
+              min={0}
+              max={96}
+              step={1}
+              onChange={setPitchDrop}
+            />
+            <Slider
+              label="Decay (s)"
+              value={percussion.ampDecay}
+              min={0.01}
+              max={2}
+              step={0.01}
+              onChange={(v) => patch({ ampDecay: v })}
+            />
+            <Slider
+              label="Length (s)"
+              value={percussion.lengthSeconds}
+              min={0.03}
+              max={2}
+              step={0.01}
+              onChange={(v) => patch({ lengthSeconds: v })}
+            />
+            <Slider
+              label="Drive (%)"
+              value={percussion.driveAmount}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(v) => patch({ driveAmount: v })}
+            />
+            <Slider
+              label="Compression (%)"
+              value={percussion.compressAmount}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(v) => patch({ compressAmount: v })}
+            />
+          </div>
+          <details className="percussion-advanced">
+            <summary>Advanced</summary>
+            <div className="row wrap">
+              <label className="slider">
+                Noise colour
+                <select
+                  value={percussion.noiseColor}
+                  onChange={(e) =>
+                    patch({
+                      noiseColor: e.target
+                        .value as typeof percussion.noiseColor,
+                    })
+                  }
+                >
+                  {PERCUSSION_NOISE_COLORS.map((color) => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Slider
+                label="Noise Decay (s)"
+                value={percussion.noiseDecay}
+                min={0.005}
+                max={2}
+                step={0.005}
+                onChange={(v) => patch({ noiseDecay: v })}
+              />
+              <Slider
+                label="Transient Decay (s)"
+                value={percussion.transientDecay}
+                min={0.001}
+                max={0.5}
+                step={0.001}
+                onChange={(v) => patch({ transientDecay: v })}
+              />
+              <Slider
+                label="Transient Freq (Hz)"
+                value={percussion.transientFrequency}
+                min={200}
+                max={12000}
+                step={10}
+                onChange={(v) => patch({ transientFrequency: v })}
+              />
+              <Slider
+                label="Pitch Start (st)"
+                value={percussion.pitchStart}
+                min={-48}
+                max={48}
+                step={0.5}
+                onChange={(v) => patch({ pitchStart: v })}
+              />
+              <Slider
+                label="Pitch End (st)"
+                value={percussion.pitchEnd}
+                min={-48}
+                max={48}
+                step={0.5}
+                onChange={(v) => patch({ pitchEnd: v })}
+              />
+              <Slider
+                label="Pitch Decay (s)"
+                value={percussion.pitchDecay}
+                min={0.005}
+                max={1}
+                step={0.005}
+                onChange={(v) => patch({ pitchDecay: v })}
+              />
+              <Slider
+                label="Partials"
+                value={percussion.partialCount}
+                min={1}
+                max={48}
+                step={1}
+                onChange={(v) => patch({ partialCount: Math.round(v) })}
+              />
+              <Slider
+                label="Partial Decay (s)"
+                value={percussion.partialDecay}
+                min={0.01}
+                max={2}
+                step={0.01}
+                onChange={(v) => patch({ partialDecay: v })}
+              />
+              <Slider
+                label="Digital (%)"
+                value={percussion.digitalAmount}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(v) => patch({ digitalAmount: v })}
+              />
+              <Slider
+                label="Stereo Width (%)"
+                value={percussion.stereoWidth}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(v) => patch({ stereoWidth: v })}
+              />
+            </div>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ModulationControls(props: {
   spectral: SpectralSettings;
   onUpdate: (patch: Partial<SpectralSettings>) => void;
@@ -566,10 +854,14 @@ function ModulationControls(props: {
   const available = SPECTRAL_PARAMS.filter(
     (param) => !param.modes || param.modes.includes(props.spectral.mode),
   );
-  const patchRoutes = (next: SpectralModRoute[]) => props.onUpdate({ modulation: next });
+  const patchRoutes = (next: SpectralModRoute[]) =>
+    props.onUpdate({ modulation: next });
   const update = (index: number, patch: Partial<SpectralModRoute>) =>
-    patchRoutes(routes.map((route, i) => (i === index ? { ...route, ...patch } : route)));
-  const remove = (index: number) => patchRoutes(routes.filter((_, i) => i !== index));
+    patchRoutes(
+      routes.map((route, i) => (i === index ? { ...route, ...patch } : route)),
+    );
+  const remove = (index: number) =>
+    patchRoutes(routes.filter((_, i) => i !== index));
   const add = () => {
     const target = available[0]?.id ?? "volumeA";
     patchRoutes([
@@ -583,8 +875,8 @@ function ModulationControls(props: {
       <h3>MODULATION · bake parameter movement into the loop</h3>
       {routes.length === 0 && (
         <p className="hint">
-          No modulation. Add a route to sweep any SpectralPrism parameter over the loop (LFO / ramp
-          / random), baked into the rendered result.
+          No modulation. Add a route to sweep any SpectralPrism parameter over
+          the loop (LFO / ramp / random), baked into the rendered result.
         </p>
       )}
       {routes.map((route, index) => {
@@ -596,7 +888,9 @@ function ModulationControls(props: {
           <div className="row wrap mod-route" key={index}>
             <select
               value={route.target}
-              onChange={(e) => update(index, { target: e.target.value as SpectralParamId })}
+              onChange={(e) =>
+                update(index, { target: e.target.value as SpectralParamId })
+              }
             >
               {available.map((param) => (
                 <option key={param.id} value={param.id}>
@@ -606,7 +900,9 @@ function ModulationControls(props: {
             </select>
             <select
               value={route.shape}
-              onChange={(e) => update(index, { shape: e.target.value as SpectralModShape })}
+              onChange={(e) =>
+                update(index, { shape: e.target.value as SpectralModShape })
+              }
             >
               {SPECTRAL_MOD_SHAPES.map((shape) => (
                 <option key={shape} value={shape}>
@@ -774,7 +1070,9 @@ function NumberField(props: {
         max={props.max}
         value={props.value}
         onChange={(e) =>
-          props.onChange(Math.min(Math.max(Number(e.target.value), props.min), props.max))
+          props.onChange(
+            Math.min(Math.max(Number(e.target.value), props.min), props.max),
+          )
         }
       />
     </label>
