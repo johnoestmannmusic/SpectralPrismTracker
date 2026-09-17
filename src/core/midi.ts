@@ -1,4 +1,4 @@
-import type { NoteValue } from "./fur/types";
+import type { NoteValue } from "./songTypes";
 import { cellAt, type SongModel } from "./songModel";
 
 const TICKS_PER_ROW = 24;

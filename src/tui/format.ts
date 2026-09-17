@@ -1,4 +1,4 @@
-import type { PatternCell } from "@/core/fur/types";
+import type { PatternCell } from "@/core/songTypes";
 import { noteToName } from "@/core/pitch";
 import { envelopeAt, type SamplerSettings } from "@/core/sampler";
 

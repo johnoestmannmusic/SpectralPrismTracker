@@ -1,6 +1,6 @@
 import { A_REF_NOTE } from "./pitch";
 import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
-import type { NoteValue, PatternCell } from "./fur/types";
+import type { NoteValue, PatternCell } from "./songTypes";
 import {
   PERCUSSION_NOISE_COLORS,
   PERCUSSION_PRESETS,
@@ -40,7 +40,7 @@ export interface ProjectFile {
   refPitchEnabled: boolean;
   sourceSamples: Array<SourceSampleRef | null>;
   instruments: SamplerSettings[];
-  /** Display names for the instruments (not part of the .fur). */
+  /** Display names for the instruments (not part of the pattern data). */
   instrumentNames: string[];
   songTitle: string;
   artist: string;

@@ -30,7 +30,6 @@ describe("runtime assets", () => {
     expect(() => JSON.parse(result.project)).not.toThrow();
 
     // All six source samples are bundled.
-    expect(result.raw).toBeUndefined();
     expect(result.samples).toHaveLength(6);
     expect(result.samples.every((sample) => sample instanceof Uint8Array)).toBe(
       true,
@@ -73,7 +72,7 @@ describe("runtime files", () => {
   });
 
   it("normalises extensions", () => {
-    expect(extensionOf("Song.FUR")).toBe("fur");
+    expect(extensionOf("Song.LAMPJSON")).toBe("lampjson");
     expect(ensureExtension("song", "wav")).toBe("song.wav");
     expect(ensureExtension("song.wav", "wav")).toBe("song.wav");
     expect(ensureExtension("song", ".mid")).toBe("song.mid");

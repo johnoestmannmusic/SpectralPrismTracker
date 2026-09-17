@@ -1,4 +1,4 @@
-import type { NoteValue } from "./fur/types";
+import type { NoteValue } from "./songTypes";
 import { samplerPlaybackRate } from "./pitch";
 import type { SongModel } from "./songModel";
 import { defaultSpectralSettings, type SpectralSettings } from "./spectral";

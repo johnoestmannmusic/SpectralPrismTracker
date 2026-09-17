@@ -1,7 +1,7 @@
 import { render } from "ink-testing-library";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "@/tui/App";
-import { ExplainerPanel } from "@/tui/components/ExplainerPanel";
+import { ExplainerPanel, isClipping } from "@/tui/components/ExplainerPanel";
 import { ParamEditorOverlay } from "@/tui/components/ParamEditorOverlay";
 import { PatternView } from "@/tui/components/PatternView";
 import { samplerGroups } from "@/tui/editors";
@@ -41,6 +41,29 @@ describe("TUI explainer", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("EXPLAINER");
     expect(frame).toContain("Look here for details.");
+    unmount();
+  });
+
+  it("shows CH1-CH4 + master meters and flags clipping", () => {
+    expect(isClipping(1)).toBe(true);
+    expect(isClipping(0.99)).toBe(false);
+    const fake = {
+      meterLevels: () => [0.5, 0.2, 1.2, 0.9, 1],
+    } as unknown as Session;
+    const { lastFrame, unmount } = render(
+      <ExplainerPanel
+        content={{ title: "EXPLAINER", body: "Body" }}
+        width={40}
+        height={14}
+        session={fake}
+      />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("CH1");
+    expect(frame).toContain("CH4");
+    expect(frame).toContain("MAS");
+    // CH3 and master are at/over full scale.
+    expect(frame.match(/CLIP/g)?.length).toBe(2);
     unmount();
   });
 
@@ -87,9 +110,9 @@ describe("TUI explainer", () => {
       unmount();
     });
 
-    it("pushes the highlighted setting to the explainer", () => {
+    it("pushes the highlighted setting to the explainer", async () => {
       const onExplain = vi.fn();
-      const { unmount } = render(
+      const { stdin, unmount } = render(
         <ParamEditorOverlay
           title="Sampler"
           groups={samplerGroups(session, 0)}
@@ -100,7 +123,15 @@ describe("TUI explainer", () => {
         />,
       );
       expect(onExplain).toHaveBeenCalled();
-      expect(onExplain.mock.calls[0]?.[0].title).toContain("Source sample");
+      // The instrument name is the first parameter in the Sampler menu.
+      expect(onExplain.mock.calls[0]?.[0].title).toContain("Instrument · Name");
+      // Move down to the next parameter (Source sample) and check the panel.
+      stdin.write("\u001B[B");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const titles = onExplain.mock.calls.map((call) => call[0].title);
+      expect(titles.some((title) => title.includes("Source sample"))).toBe(
+        true,
+      );
       unmount();
     });
 

@@ -1,19 +1,18 @@
 import { WebAudioBackend } from "@/audio/webAudioBackend";
 import type { PatternNote } from "@/audio/backend";
-import type { NoteValue, PatternCell } from "@/core/fur/types";
+import type { NoteValue, PatternCell } from "@/core/songTypes";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import {
   applyEdit,
   applySnapshot,
-  buildSongModel,
   buildSongModelFromProject,
   cellAt,
+  instrumentColor,
   patternSnapshot,
   retime,
   type SongModel,
 } from "@/core/songModel";
 import {
-  applyTimingOverrides,
   projectFromJson,
   validateProject,
   type ProjectFile,
@@ -47,6 +46,7 @@ import {
   pitchSlideRate,
   readValue,
   recordLastValue,
+  remapInstrumentsAfterDelete,
   removePatternAt as removePatternAtSnapshot,
   selectionRect,
   setOrderPattern,
@@ -60,6 +60,9 @@ import { installWebAudioGlobals } from "@/runtime/audio";
 import { loadDefaultSong } from "@/runtime/assets";
 import type { LoadedSong } from "@/shared/types";
 
+/** Mutating actions between autosave backups. */
+export const AUTOSAVE_EVERY = 15;
+
 export interface Cursor {
   order: number;
   channel: number;
@@ -72,6 +75,8 @@ export interface SessionState {
   error: string | null;
   song: SongModel | null;
   project: ProjectFile | null;
+  /** Absolute path of the on-disk project this session was opened from/saved to. */
+  projectPath: string | null;
   settings: SamplerSettings[];
   sampleNames: string[];
   channelVolume: number[];
@@ -79,8 +84,6 @@ export interface SessionState {
   masterVolume: number;
   masterFx: MasterFxSettings;
   reference: boolean;
-  /** Original `.fur` bytes, for `/export fur` (null for project-only songs). */
-  furBytes: Uint8Array | null;
   wasmReady: boolean;
   playing: boolean;
   time: number;
@@ -128,7 +131,6 @@ function initialState(): SessionState {
     masterVolume: 1,
     masterFx: defaultMasterFx(),
     reference: false,
-    furBytes: null,
     wasmReady: false,
     playing: false,
     time: 0,
@@ -143,6 +145,7 @@ function initialState(): SessionState {
     dirty: false,
     commandHistory: [],
     controlPath: null,
+    projectPath: null,
   };
 }
 
@@ -163,6 +166,23 @@ export class Session {
   private historyCursor: number | null = null;
   /** Guards stale async stepthrough auditions (bumped on every step). */
   private previewToken = 0;
+
+  /** Counts mutating actions; every AUTOSAVE_EVERYth fires the autosave hook. */
+  private actionCount = 0;
+  private autosaveHook: (() => void) | null = null;
+
+  /** Registers the autosave callback (wired to the IO layer by main). */
+  setAutosaveHook(hook: (() => void) | null): void {
+    this.autosaveHook = hook;
+  }
+
+  /** Records one mutating action; triggers autosave on the threshold. */
+  private markAction(): void {
+    this.actionCount += 1;
+    if (this.actionCount < AUTOSAVE_EVERY) return;
+    this.actionCount = 0;
+    this.autosaveHook?.();
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -233,15 +253,7 @@ export class Session {
     if (!("project" in result)) return;
 
     const loadedProject = projectFromJson(result.project);
-    let model: SongModel;
-    if (result.raw) {
-      model = buildSongModel(result.raw);
-      if (loadedProject.patternSnapshot)
-        applySnapshot(model, loadedProject.patternSnapshot);
-      applyTimingOverrides(loadedProject, model);
-    } else {
-      model = buildSongModelFromProject(loadedProject);
-    }
+    const model = buildSongModelFromProject(loadedProject);
     validateProject(loadedProject, model.instruments.length);
     loadedProject.instrumentNames.forEach((name, i) => {
       if (model.instruments[i]) model.instruments[i]!.name = name;
@@ -273,6 +285,7 @@ export class Session {
     this.history = [];
     this.redoStack = [];
     this.historyCursor = null;
+    this.actionCount = 0;
     this.patch({
       error: null,
       song: model,
@@ -286,9 +299,9 @@ export class Session {
       masterVolume: loadedProject.masterVolume,
       masterFx: loadedProject.masterFx,
       reference: loadedProject.refPitchEnabled,
-      furBytes: result.furBytes ?? null,
       status: `${model.meta.name} — ${model.instruments.length} instruments`,
       dirty: false,
+      projectPath: null,
       viewOrder: 0,
       cursor: { order: 0, channel: 0, row: 0, column: 0 },
       selectionAnchor: null,
@@ -460,6 +473,15 @@ export class Session {
       row: cursor.row,
       column,
     };
+  }
+
+  /**
+   * Begin a block selection anchored at the current cursor. Used by visual
+   * selection mode so arrow keys can extend without holding Shift, which many
+   * terminals capture for scrollback.
+   */
+  startSelection(): void {
+    this.patch({ selectionAnchor: { ...this.state.cursor } });
   }
 
   extendSelection(delta: {
@@ -803,6 +825,7 @@ export class Session {
     this.redoStack = [];
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ dirty: true });
+    this.markAction();
   }
 
   private applyEntries(
@@ -821,6 +844,7 @@ export class Session {
     }
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ dirty: true });
+    this.markAction();
   }
 
   undo(): boolean {
@@ -1022,6 +1046,7 @@ export class Session {
     this.redoStack = [];
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ dirty: true });
+    this.markAction();
     return true;
   }
 
@@ -1046,6 +1071,7 @@ export class Session {
       dirty: true,
       viewOrder: Math.min(pos + 1, song.meta.orderLength - 1),
     });
+    this.markAction();
     return true;
   }
 
@@ -1066,6 +1092,7 @@ export class Session {
       dirty: true,
       viewOrder: Math.min(pos, song.meta.orderLength - 1),
     });
+    this.markAction();
     return true;
   }
 
@@ -1080,6 +1107,7 @@ export class Session {
     this.history = [];
     this.redoStack = [];
     this.patch({ dirty: true, viewOrder: pos + direction });
+    this.markAction();
     return true;
   }
 
@@ -1096,6 +1124,7 @@ export class Session {
     this.history = [];
     this.redoStack = [];
     this.patch({ dirty: true });
+    this.markAction();
     return true;
   }
 
@@ -1109,6 +1138,7 @@ export class Session {
     this.history = [];
     this.redoStack = [];
     this.patch({ dirty: true, viewOrder: 0 });
+    this.markAction();
     return true;
   }
 
@@ -1186,6 +1216,7 @@ export class Session {
     const channelMuted = this.state.channelMuted.slice();
     channelMuted[channel] = muted;
     this.patch({ channelMuted });
+    this.markAction();
   }
 
   toggleChannelMute(channel: number): void {
@@ -1198,17 +1229,20 @@ export class Session {
     const channelVolume = this.state.channelVolume.slice();
     channelVolume[channel] = clamped;
     this.patch({ channelVolume });
+    this.markAction();
   }
 
   setMasterVolume(volume: number): void {
     const clamped = Math.min(Math.max(volume, 0), 1);
     this.engine?.setMasterVolume(clamped);
     this.patch({ masterVolume: clamped });
+    this.markAction();
   }
 
   setMasterFx(settings: MasterFxSettings): void {
     this.engine?.setMasterFx(settings);
     this.patch({ masterFx: settings });
+    this.markAction();
   }
 
   /** Patches a single master-FX field from a nested editor. */
@@ -1218,6 +1252,109 @@ export class Session {
 
   samplerSettings(index: number): SamplerSettings | undefined {
     return this.state.settings[index];
+  }
+
+  /**
+   * Instrument associated with the cursor row: the row's INS value when set,
+   * otherwise the channel's held instrument at that row. Null when unknown.
+   */
+  instrumentAtCursor(): number | null {
+    const song = this.state.song;
+    if (!song) return null;
+    const { channel, order, row } = this.state.cursor;
+    const cell = cellAt(song, channel, order, row);
+    if (cell?.instrument !== null && cell?.instrument !== undefined) {
+      return cell.instrument;
+    }
+    const held = song.channels[channel]?.insTimeline[order]?.[row];
+    return held ?? null;
+  }
+
+  /** Display name of an instrument (the song model is the source of truth). */
+  instrumentName(index: number): string {
+    return this.state.song?.instruments[index]?.name ?? "";
+  }
+
+  /** Renames an instrument in both the song model and the stored project. */
+  setInstrumentName(index: number, name: string): void {
+    const song = this.state.song;
+    const instrument = song?.instruments[index];
+    if (!song || !instrument) return;
+    const next = name.trim();
+    if (!next || next === instrument.name) return;
+    instrument.name = next;
+    const project = this.state.project;
+    let nextProject = project;
+    if (project) {
+      const instrumentNames = project.instrumentNames.slice();
+      while (instrumentNames.length <= index) instrumentNames.push("");
+      instrumentNames[index] = next;
+      nextProject = { ...project, instrumentNames };
+    }
+    this.patch({ project: nextProject, dirty: true });
+    this.markAction();
+  }
+
+  /** Appends a new default instrument; returns its index (or -1). */
+  addInstrument(): number {
+    const song = this.state.song;
+    if (!song) return -1;
+    const index = this.state.settings.length;
+    const settings = this.state.settings.slice();
+    settings.push(defaultSamplerSettings());
+    song.instruments.push({
+      name: `Instrument ${String(index + 1).padStart(2, "0")}`,
+      insType: 2,
+      gameBoy: null,
+      colorRgb: instrumentColor(index),
+    });
+    const project = this.state.project;
+    let nextProject = project;
+    if (project) {
+      const instrumentNames = project.instrumentNames.slice();
+      while (instrumentNames.length < settings.length) {
+        instrumentNames.push(
+          song.instruments[instrumentNames.length]?.name ?? "",
+        );
+      }
+      nextProject = { ...project, instrumentNames };
+    }
+    this.engine?.replaceSettings(settings);
+    this.engine?.updateSequence(sequenceFromSong(song));
+    this.patch({ settings, project: nextProject, dirty: true });
+    this.markAction();
+    return index;
+  }
+
+  /** Removes an instrument and re-targets its pattern references. */
+  deleteInstrument(index: number): boolean {
+    const song = this.state.song;
+    if (!song || !song.instruments[index]) return false;
+    // Keep at least one instrument so downstream code always has a valid 0.
+    if (song.instruments.length <= 1) return false;
+    const settings = this.state.settings.slice();
+    settings.splice(index, 1);
+    song.instruments.splice(index, 1);
+    song.instruments.forEach((instrument, i) => {
+      instrument.colorRgb = instrumentColor(i);
+    });
+    const snapshot = patternSnapshot(song);
+    remapInstrumentsAfterDelete(snapshot, index);
+    applySnapshot(song, snapshot);
+    const project = this.state.project;
+    let nextProject = project;
+    if (project) {
+      const instrumentNames = project.instrumentNames.slice();
+      instrumentNames.splice(index, 1);
+      nextProject = { ...project, instrumentNames };
+    }
+    this.history = [];
+    this.redoStack = [];
+    this.engine?.replaceSettings(settings);
+    this.engine?.updateSequence(sequenceFromSong(song));
+    this.patch({ settings, project: nextProject, dirty: true });
+    this.markAction();
+    return true;
   }
 
   /**
@@ -1249,6 +1386,7 @@ export class Session {
     const next = this.state.settings.slice();
     next[index] = merged;
     this.patch({ settings: next, dirty: true });
+    this.markAction();
   }
 
   /**
@@ -1622,6 +1760,7 @@ export class Session {
       nextProject = { ...project, sourceSamples };
     }
     this.patch({ sampleNames, project: nextProject, dirty: true });
+    this.markAction();
   }
 
   setStatus(status: string): void {
@@ -1642,6 +1781,11 @@ export class Session {
 
   setProject(project: ProjectFile): void {
     this.patch({ project });
+  }
+
+  /** Records the on-disk path of the current project (null when unsaved). */
+  setProjectPath(projectPath: string | null): void {
+    this.patch({ projectPath });
   }
 
   dispose(): void {

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseFurFile } from "@/core/fur/node";
 import {
   applyEdit,
   applySnapshot,
-  buildSongModel,
+  buildSongModelFromProject,
   cellAt,
   patternSnapshot,
   retime,
@@ -23,24 +22,23 @@ import {
   sequenceFromSong,
   waveform,
 } from "@/core/sampler";
-import { fixtureBytes, fixtureText } from "./fixtures";
+import { fixtureSong, fixtureText } from "./fixtures";
 import {
   applyTimingOverrides,
+  defaultProject,
   projectFromJson,
   projectToJson,
   validateProject,
 } from "@/core/project";
 
 function fixture(): SongModel {
-  return buildSongModel(
-    parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur")),
-  );
+  return fixtureSong();
 }
 
 describe("song model", () => {
   it("builds from the bundled fixture", () => {
     const song = fixture();
-    expect(song.meta.name).toBe("flight_school_night_shift");
+    expect(song.meta.name).toBe("aleph_lab01");
     expect(song.channels).toHaveLength(4);
     expect(song.instruments).toHaveLength(10);
 
@@ -50,8 +48,8 @@ describe("song model", () => {
     const ch0 = song.channels[0]!;
     expect(ch0.insTimeline).toHaveLength(ch0.orderList.length);
     expect(ch0.insTimeline[0]).toHaveLength(song.meta.patternLength);
-    expect(ch0.insTimeline[0]![0]).toBe(0);
-    expect(ch0.noteTimeline[0]![0]).not.toBeNull();
+    expect(ch0.noteTimeline[0]).toHaveLength(song.meta.patternLength);
+    expect(ch0.noteTimeline.flat().some((note) => note !== null)).toBe(true);
 
     const rowDur = rowDurationSec(song.meta);
     expect(rowDur).toBeGreaterThan(0);
@@ -148,21 +146,45 @@ describe("song model", () => {
     }
   });
 
-  it("golden-battletrain applies the F0 tempo lane", () => {
-    const song = buildSongModel(
-      parseFurFile(
-        fixtureBytes(
-          "tests/fixtures/golden-battletrain/06-golden_battletrain.fur",
-        ),
-      ),
-    );
-    const flat =
-      song.meta.orderLength *
-      song.meta.patternLength *
-      rowDurationSec(song.meta);
-    const duration = song.rowTimes[song.rowTimes.length - 1]!;
-    expect(duration).toBeLessThan(flat);
-    expect(Math.abs(duration - 94.416349)).toBeLessThan(0.01);
+  it("applies a tempo-lane (F0) effect to row timing", () => {
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.tickRateOverride = 60;
+    project.speedOverride = 6;
+    const emptyEffects = () =>
+      Array.from({ length: 8 }, () => ({ effect: null, value: null }));
+    const tempoCell = {
+      note: null,
+      instrument: null,
+      volume: null,
+      effects: [{ effect: 0xf0, value: 200 }, ...emptyEffects().slice(1)],
+    };
+    project.patternSnapshot = {
+      orderLength: 1,
+      channels: [
+        {
+          orderList: [0],
+          patterns: [
+            [
+              0,
+              Array.from({ length: 64 }, (_, row) =>
+                row === 1
+                  ? tempoCell
+                  : {
+                      note: null,
+                      instrument: null,
+                      volume: null,
+                      effects: emptyEffects(),
+                    },
+              ),
+            ],
+          ],
+        },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    // Baseline 60 Hz / speed 6 => 0.1s; F0 200 sets ~80 Hz => 0.075s.
+    expect(song.rowTimes[2]! - song.rowTimes[1]!).toBeCloseTo(6 / 80, 6);
     for (let i = 1; i < song.rowTimes.length; i++) {
       expect(song.rowTimes[i]!).toBeGreaterThan(song.rowTimes[i - 1]!);
     }
@@ -213,11 +235,10 @@ describe("sampler", () => {
     expect(seq.rows).toHaveLength(
       song.meta.orderLength * song.meta.patternLength,
     );
-    const first = seq.rows[0]![0]!;
-    expect(first.type).toBe("note");
-    if (first.type === "note") {
-      expect(first.channel).toBe(0);
-      expect(first.instrument).toBe(0);
+    const first = seq.rows.flat().find((event) => event.type === "note");
+    expect(first).toBeDefined();
+    if (first && first.type === "note") {
+      expect(first.instrument).toBeGreaterThanOrEqual(0);
     }
   });
 

@@ -191,15 +191,20 @@ describe("TUI overlays", () => {
     unmount();
   });
 
-  it("help lists every command and reports the visible range", () => {
+  it("help lists every command and reports the visible range", async () => {
     const commands = createRegistry().all();
-    const { lastFrame, unmount } = render(
+    const { stdin, lastFrame, unmount } = render(
       <HelpOverlay commands={commands} active height={30} onClose={() => {}} />,
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain(`Lantern commands (${commands.length})`);
     expect(frame).toMatch(/\d+[\u2013-]\d+ of \d+/);
-    expect(frame).toContain("/clear");
+    // The command list continues past the first page; page until /clear shows.
+    for (let i = 0; i < 10 && !(lastFrame() ?? "").includes("/clear"); i++) {
+      stdin.write(" ");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(lastFrame() ?? "").toContain("/clear");
     unmount();
   });
 

@@ -66,6 +66,17 @@ describe("tracker block operations", () => {
     session.undo();
   });
 
+  it("visual selection anchors at the cursor and arrows extend the block", () => {
+    session.setCursor({ order: 0, channel: 3, row: 2, column: 0 });
+    session.clearSelection();
+    session.startSelection();
+    expect(session.selection()).toMatchObject({ rowLo: 2, rowHi: 2 });
+    session.extendSelection({ row: 2 });
+    expect(session.selection()).toMatchObject({ rowLo: 2, rowHi: 4 });
+    session.clearSelection();
+    expect(session.selection()).toBeNull();
+  });
+
   it("inserts and removes orders", async () => {
     const before = session.song!.meta.orderLength;
     expect((await run("insert")).ok).toBe(true);
@@ -263,12 +274,14 @@ describe("file and export commands", () => {
     session.editCell({ note: { kind: "note", note: 65 } });
     session.updateSamplerSetting(1, { attack: 1.234 });
     expect((await run(`save "${target}"`)).ok).toBe(true);
+    expect(session.getState().projectPath).toBe(target);
     const text = await readFile(target, "utf8");
     expect(text).toContain("version");
     expect(text).toContain("patternSnapshot");
 
     const opened = await run(`open "${target}"`);
     expect(opened.ok).toBe(true);
+    expect(session.getState().projectPath).toBe(target);
     expect(session.getState().song).not.toBeNull();
     expect(cellAt(session.song!, 3, 0, 5).note).toMatchObject({
       kind: "note",
@@ -306,6 +319,8 @@ describe("file and export commands", () => {
     const result = await run("new");
     expect(result.ok).toBe(true);
     expect(session.getState().song).not.toBeNull();
+    // A fresh project has no on-disk path (Ctrl+S should prompt).
+    expect(session.getState().projectPath).toBeNull();
   });
 
   it("completes file paths for /open", async () => {

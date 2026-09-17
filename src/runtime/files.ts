@@ -14,17 +14,16 @@ export const SAVE_FILTERS: Record<string, SaveFilter> = {
   mid: { name: "MIDI", extensions: ["mid"] },
   zip: { name: "ZIP archive", extensions: ["zip"] },
   png: { name: "PNG image", extensions: ["png"] },
-  fur: { name: "Furnace module", extensions: ["fur"] },
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
-/** `song.fur` -> `song`. */
+/** `song.lampjson` -> `song`. */
 export function basenameNoExt(filePath: string): string {
   return path.basename(filePath).replace(/\.[^.]+$/, "");
 }
 
-/** `song.fur` -> `fur` (lower-case, no dot). Returns "" when there is none. */
+/** `song.lampjson` -> `lampjson` (lower-case, no dot). Returns "" when there is none. */
 export function extensionOf(filePath: string): string {
   return path.extname(filePath).replace(".", "").toLowerCase();
 }

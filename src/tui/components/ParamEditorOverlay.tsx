@@ -4,7 +4,7 @@ import { DEFAULT_EXPLAINER, type ExplainerText } from "../explainer";
 
 export interface EditorParam {
   label: string;
-  kind: "number" | "toggle" | "enum";
+  kind: "number" | "toggle" | "enum" | "text";
   value: number | boolean | string;
   min?: number;
   max?: number;
@@ -67,6 +67,8 @@ function describeParam(groupTitle: string, param: EditorParam): ExplainerText {
     );
   } else if (param.kind === "toggle") {
     body.push("←→ toggles on/off. Enter types on/off.");
+  } else if (param.kind === "text") {
+    body.push("Enter to type a name.");
   } else {
     body.push(
       `←→ cycles: ${(param.choices ?? []).join(", ")}. Enter types a value.`,
@@ -89,6 +91,7 @@ function clamp(value: number, min?: number, max?: number): number {
 
 function displayValue(param: EditorParam): string {
   if (param.format) return param.format(param.value);
+  if (param.kind === "text") return String(param.value);
   if (param.kind === "toggle") return param.value ? "on" : "off";
   if (param.kind === "enum") return String(param.value) || "-";
   const value = param.value as number;
@@ -114,6 +117,7 @@ const LARGE_STEP_FACTOR = 10;
 
 /** Seed text for the inline value-entry buffer. */
 export function initialEditText(param: EditorParam): string {
+  if (param.kind === "text") return String(param.value);
   if (param.kind === "toggle") return param.value ? "on" : "off";
   if (param.kind === "enum") return String(param.value);
   const value = param.value as number;
@@ -126,6 +130,7 @@ export function parseEditText(
   text: string,
 ): number | boolean | string | null {
   const trimmed = text.trim();
+  if (param.kind === "text") return trimmed === "" ? null : trimmed;
   if (param.kind === "number") {
     if (trimmed === "") return null;
     const value = Number(trimmed);
@@ -280,6 +285,8 @@ export function ParamEditorOverlay({
       const next =
         (index + direction + choices.length) % Math.max(choices.length, 1);
       param.set(choices[next] ?? param.value);
+    } else if (param.kind === "text") {
+      return;
     } else {
       const step = (param.step ?? 1) * (large ? LARGE_STEP_FACTOR : 1);
       const raw = (param.value as number) + step * direction;

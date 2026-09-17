@@ -1,4 +1,4 @@
-import type { PatternCell } from "@/core/fur/types";
+import type { PatternCell } from "@/core/songTypes";
 import { noteToFreq, noteToName } from "@/core/pitch";
 import { cellAt, type SongModel } from "@/core/songModel";
 import {
@@ -22,7 +22,7 @@ export interface ExplainerText {
 
 export const DEFAULT_EXPLAINER: ExplainerText = {
   title: "EXPLAINER",
-  body: "Move the cursor over a pattern cell to see what it means. Effect columns explain the Furnace effect code in place, and open menus explain the highlighted setting.",
+  body: "Move the cursor over a pattern cell to see what it means. Effect columns explain the effect code in place, and open menus explain the highlighted setting.",
 };
 
 const CHANNEL_ROLES = [
@@ -51,7 +51,7 @@ function instrumentDescription(song: SongModel, index: number): string {
 export function patternsExplain(song: SongModel): ExplainerText {
   return {
     title: "Patterns — the actual note data",
-    body: `All four channels at one order position, like Furnace's own view. Each has its own order list (${song.meta.orderLength} positions) of ${song.meta.patternLength}-row patterns.\n\nRow shading follows this song's highlights (${song.meta.highlightA}/${song.meta.highlightB}). OFF = note off; ... / .. / .... = empty note / ins-vol / effect.`,
+    body: `All four channels at one order position, like the tracker's own view. Each has its own order list (${song.meta.orderLength} positions) of ${song.meta.patternLength}-row patterns.\n\nRow shading follows this song's highlights (${song.meta.highlightA}/${song.meta.highlightB}). OFF = note off; ... / .. / .... = empty note / ins-vol / effect.`,
   };
 }
 
@@ -99,7 +99,7 @@ export function instrumentExplain(
         } every ${gb.envelopeLength} step(s). Sound length ${gb.soundLength} (64 = held). Software envelope: ${
           gb.softwareEnvelope ? "yes" : "no"
         }.`
-      : "A Furnace instrument.",
+      : "A sampler / Spectral / Percussion instrument. Rename it from the Sampler menu's Name parameter; a adds a new instrument and d deletes the selected one (with confirmation).",
   };
 }
 

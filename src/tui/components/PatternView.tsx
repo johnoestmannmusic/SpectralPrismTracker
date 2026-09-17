@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import type { PatternCell } from "@/core/fur/types";
+import type { PatternCell } from "@/core/songTypes";
 import { cellAt } from "@/core/songModel";
 import { flatColumnsForChannel, globalColumnIndex } from "@/core/tracker";
 import {

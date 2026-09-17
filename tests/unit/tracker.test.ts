@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSongModel, cellAt, type SongModel } from "@/core/songModel";
-import { parseFurFile } from "@/core/fur/node";
+import { cellAt, type SongModel } from "@/core/songModel";
 import {
   adjustCell,
   adjustNote,
@@ -21,12 +20,10 @@ import {
   writeValue,
 } from "@/core/tracker";
 import { patternSnapshot } from "@/core/songModel";
-import { fixtureBytes } from "./fixtures";
+import { fixtureSong } from "./fixtures";
 
 function fixture(): SongModel {
-  return buildSongModel(
-    parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur")),
-  );
+  return fixtureSong();
 }
 
 function emptyCell() {
@@ -131,9 +128,8 @@ describe("tracker helpers", () => {
 
   it("remaps INS cells when an instrument is deleted", () => {
     const song = fixture();
-    const pattern = song.channels[0]!.patterns.get(
-      song.channels[0]!.orderList[0]!,
-    )!;
+    const patternIndex = song.channels[0]!.orderList[0]!;
+    const pattern = song.channels[0]!.patterns.get(patternIndex)!;
     // Reference instruments 0, 2 and 3 somewhere in the pattern.
     pattern.rows[0]!.instrument = 0;
     pattern.rows[1]!.instrument = 2;
@@ -142,7 +138,9 @@ describe("tracker helpers", () => {
 
     const snap = patternSnapshot(song);
     remapInstrumentsAfterDelete(snap, 2);
-    const rows = snap.channels[0]!.patterns[0]![1];
+    const rows = snap.channels[0]!.patterns.find(
+      ([index]) => index === patternIndex,
+    )![1];
     expect(rows[0]!.instrument).toBe(0);
     expect(rows[1]!.instrument).toBeNull(); // deleted
     expect(rows[2]!.instrument).toBe(2); // shifted down from 3
@@ -151,15 +149,16 @@ describe("tracker helpers", () => {
 
   it("re-assigns INS cells to another instrument on delete", () => {
     const song = fixture();
-    const pattern = song.channels[0]!.patterns.get(
-      song.channels[0]!.orderList[0]!,
-    )!;
+    const patternIndex = song.channels[0]!.orderList[0]!;
+    const pattern = song.channels[0]!.patterns.get(patternIndex)!;
     pattern.rows[0]!.instrument = 2;
     pattern.rows[1]!.instrument = 3;
     const snap = patternSnapshot(song);
     // Delete instrument 2, re-assign its notes to instrument 4.
     reassignInstrument(snap, 2, 4);
-    const rows = snap.channels[0]!.patterns[0]![1];
+    const rows = snap.channels[0]!.patterns.find(
+      ([index]) => index === patternIndex,
+    )![1];
     expect(rows[0]!.instrument).toBe(3); // 4 shifts down to 3
     expect(rows[1]!.instrument).toBe(2); // 3 shifts down to 2
   });

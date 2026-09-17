@@ -1,4 +1,4 @@
-import type { NoteValue, PatternCell } from "./fur/types";
+import type { NoteValue, PatternCell } from "./songTypes";
 import { cloneCell } from "./songModel";
 import { applyEdit, type PatternSnapshot, type SongModel } from "./songModel";
 

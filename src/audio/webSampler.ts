@@ -57,9 +57,23 @@ export class Voice {
       return;
     }
     const level = this.levelAt(when);
-    this.gain.gain.cancelScheduledValues(when);
-    this.gain.gain.setValueAtTime(level, when);
-    this.gain.gain.linearRampToValueAtTime(0, when + fade);
+    const param = this.gain.gain as AudioParam & {
+      cancelAndHoldAtTime?: (cancelTime: number) => void;
+    };
+    if (typeof param.cancelAndHoldAtTime === "function") {
+      // Preserve the in-flight envelope up to `when`. A plain
+      // cancelScheduledValues() drops the decay ramp, so the gain jumps back to
+      // the attack level until `when` (heard as the previous note's volume
+      // coming back up when the next note is scheduled ahead of time).
+      param.cancelAndHoldAtTime(when);
+      // node-web-audio-api mis-schedules a ramp added straight after the hold;
+      // re-anchor the held value at `when` before fading out.
+      param.linearRampToValueAtTime(level, when);
+    } else {
+      param.cancelScheduledValues(when);
+      param.setValueAtTime(level, when);
+    }
+    param.linearRampToValueAtTime(0, when + fade);
     try {
       this.source.stop(when + fade + 0.02);
     } catch {
@@ -138,7 +152,7 @@ export class Voice {
 }
 
 export function buildVoice(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   settings: SamplerSettings,
   instrument: number,

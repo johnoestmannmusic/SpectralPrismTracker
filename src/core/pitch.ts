@@ -1,4 +1,4 @@
-import type { NoteValue } from "./fur/types";
+import type { NoteValue } from "./songTypes";
 
 const NOTE_NAMES = [
   "C-",
@@ -15,7 +15,7 @@ const NOTE_NAMES = [
   "B-",
 ];
 
-/** Furnace's raw byte for its displayed "A-5" (scientific A4, 440 Hz). */
+/** The raw byte for the tracker's displayed "A-5" (scientific A4, 440 Hz). */
 export const A_REF_NOTE = 129;
 
 /** Default note EDIT MODE starts a freshly entered note at. */

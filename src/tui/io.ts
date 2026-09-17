@@ -6,20 +6,15 @@ import {
   wavPcm16,
   zipStore,
 } from "@/core/export";
-import { parseFurFile } from "@/core/fur/node";
 import { writeMidi } from "@/core/midi";
 import { defaultProject, projectFromJson, projectToJson } from "@/core/project";
 import type { ProjectFile } from "@/core/project";
 import { defaultSamplerSettings, sequenceFromSong } from "@/core/sampler";
 import { applyMasterFxOffline } from "@/audio/offline";
+import { recordLastProject } from "@/runtime/config";
 import { listSourceSamples } from "@/runtime/assets";
 import { coverPngBytes } from "@/runtime/cover";
-import {
-  basenameNoExt,
-  readBytesSafe,
-  readTextSafe,
-  writeBytesSafe,
-} from "@/runtime/files";
+import { basenameNoExt, readTextSafe, writeBytesSafe } from "@/runtime/files";
 import type { LoadedSong } from "@/shared/types";
 import { buildSteps } from "@/core/stepthrough";
 import type { Session } from "./session";
@@ -90,46 +85,28 @@ export async function loadedSongFromProjectText(
   };
 }
 
-/** Opens a `.lampjson` or `.fur` file into the session. */
+/** Opens a `.lampjson` project file into the session. */
 export async function openPath(
   session: Session,
   filePath: string,
 ): Promise<IoResult> {
-  const lower = filePath.toLowerCase();
-  if (lower.endsWith(".lampjson")) {
-    const text = await readTextSafe(filePath);
-    if (!text.ok) return { ok: false, error: text.error };
-    try {
-      const loaded = await loadedSongFromProjectText(text.value);
-      await session.load(loaded);
-      return { ok: true, message: `Opened ${filePath}`, path: filePath };
-    } catch (error) {
-      return { ok: false, error: `Cannot parse project: ${String(error)}` };
-    }
+  if (!filePath.toLowerCase().endsWith(".lampjson")) {
+    return {
+      ok: false,
+      error: `Unsupported file "${filePath}" (expected .lampjson)`,
+    };
   }
-  if (lower.endsWith(".fur")) {
-    const bytes = await readBytesSafe(filePath);
-    if (!bytes.ok) return { ok: false, error: bytes.error };
-    try {
-      const raw = parseFurFile(bytes.value);
-      const bundled = await bundledSamples();
-      await session.load({
-        raw,
-        furBytes: bytes.value,
-        project: projectToJson(
-          withSampleNames(defaultProject(), bundled.names),
-        ),
-        samples: bundled.bytes,
-      });
-      return { ok: true, message: `Opened ${filePath}`, path: filePath };
-    } catch (error) {
-      return { ok: false, error: `Cannot parse .fur: ${String(error)}` };
-    }
+  const text = await readTextSafe(filePath);
+  if (!text.ok) return { ok: false, error: text.error };
+  try {
+    const loaded = await loadedSongFromProjectText(text.value);
+    await session.load(loaded);
+    session.setProjectPath(filePath);
+    await recordLastProject(filePath);
+    return { ok: true, message: `Opened ${filePath}`, path: filePath };
+  } catch (error) {
+    return { ok: false, error: `Cannot parse project: ${String(error)}` };
   }
-  return {
-    ok: false,
-    error: `Unsupported file "${filePath}" (expected .lampjson or .fur)`,
-  };
 }
 
 /** Writes the project's stepthrough recipe as JSON for automation. */
@@ -191,6 +168,8 @@ export async function saveProject(
   if (!written.ok) return { ok: false, error: written.error };
   session.setProject(project);
   session.setStatus(`Saved ${written.value}`);
+  session.setProjectPath(written.value);
+  await recordLastProject(written.value);
   return { ok: true, message: `Saved ${written.value}`, path: written.value };
 }
 
@@ -358,27 +337,6 @@ export async function exportSamplesZip(
     ? filePath
     : `${filePath}.zip`;
   const written = await writeBytesSafe(target, bytes);
-  if (!written.ok) return { ok: false, error: written.error };
-  session.setStatus(`Exported ${written.value}`);
-  return {
-    ok: true,
-    message: `Exported ${written.value}`,
-    path: written.value,
-  };
-}
-
-/** Saves the original `.fur` bytes when the song came from a Furnace module. */
-export async function exportFur(
-  session: Session,
-  filePath: string,
-  furBytes: Uint8Array | null,
-): Promise<IoResult> {
-  if (!furBytes)
-    return { ok: false, error: "This song has no original .fur data" };
-  const target = filePath.toLowerCase().endsWith(".fur")
-    ? filePath
-    : `${filePath}.fur`;
-  const written = await writeBytesSafe(target, furBytes);
   if (!written.ok) return { ok: false, error: written.error };
   session.setStatus(`Exported ${written.value}`);
   return {

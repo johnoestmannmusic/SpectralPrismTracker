@@ -9,6 +9,7 @@ import {
 } from "@/core/spectral";
 import { defaultSamplerSettings } from "@/core/sampler";
 import type { AudioClip } from "@/core/dsp";
+import { installWebAudioGlobals } from "@/runtime/audio";
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -276,5 +277,48 @@ describe("buildVoice one-shot Spectral envelope", () => {
     } finally {
       setSpectralWasmAvailable(false);
     }
+  });
+});
+
+describe("Voice.release envelope", () => {
+  it("preserves the decay instead of jumping back to full level", async () => {
+    installWebAudioGlobals();
+    const sr = 44_100;
+    const ctx = new OfflineAudioContext(2, sr, sr);
+    const buffer = ctx.createBuffer(1, sr, sr);
+    buffer.getChannelData(0).fill(1);
+
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.attack = 0.005;
+    settings.decay = 0.83;
+    settings.sustain = 0;
+    settings.release = 0.15;
+    settings.looping = true;
+    settings.pan = -1; // full left, so channel 0 is the raw envelope
+
+    const voice = buildVoice(
+      ctx,
+      buffer,
+      settings,
+      0,
+      0,
+      1,
+      1,
+      0,
+      ctx.destination,
+    );
+    // Scheduler lookahead releases the voice ahead of the next note.
+    voice.release(0.6, 0.008);
+
+    const out = await ctx.startRendering();
+    const d = out.getChannelData(0);
+    const at = (t: number) => d[Math.floor(t * sr)]!;
+    // Original ADSR decay: 1 at 0.005s down to 0 at 0.835s.
+    expect(at(0.3)).toBeCloseTo(0.645, 2);
+    expect(at(0.5)).toBeCloseTo(0.404, 2);
+    // Holds the value at the release time, then fades out.
+    expect(at(0.6)).toBeCloseTo(0.283, 2);
+    expect(at(0.62)).toBeCloseTo(0, 2);
   });
 });

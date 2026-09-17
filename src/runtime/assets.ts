@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parseFurFile } from "../core/fur/node";
 import type { LoadedSong } from "../shared/types";
 
 /** Options controlling where bundled assets are found. */
@@ -117,9 +116,7 @@ export async function listSourceSamples(
 }
 
 /**
- * Loads the bundled default song. The `.fur` is optional: a project-only song
- * loads without it, reconstructing its model from the project's pattern
- * snapshot.
+ * Loads the bundled default song from its project file plus Source Samples.
  */
 export async function loadDefaultSong(
   options: AssetRootOptions = {},
@@ -140,30 +137,13 @@ export async function loadDefaultSong(
     return { error: `Cannot find the bundled project assets in ${dir}` };
   }
 
-  const [samples, furBytes] = await Promise.all([
-    Promise.all(
-      [0, 1, 2, 3, 4, 5].map((i) =>
-        readBytesIfPresent(path.join(dir, "SourceSamples", `${i}.ogg`)),
-      ),
+  const samples = await Promise.all(
+    [0, 1, 2, 3, 4, 5].map((i) =>
+      readBytesIfPresent(path.join(dir, "SourceSamples", `${i}.ogg`)),
     ),
-    readBytesIfPresent(path.join(dir, "flight_school_night_shift.fur")),
-  ]);
+  );
 
-  let raw;
-  if (furBytes) {
-    try {
-      raw = parseFurFile(furBytes);
-    } catch (error) {
-      return { error: `Cannot parse bundled .fur: ${String(error)}` };
-    }
-  }
-
-  return {
-    raw,
-    furBytes: furBytes ?? undefined,
-    project,
-    samples,
-  };
+  return { project, samples };
 }
 
 function isMissing(error: unknown): boolean {

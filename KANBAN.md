@@ -2,6 +2,37 @@
 
 <!-- Source of truth for project coordination. Managed by the KANBAN-MANAGE tool; safe to edit by hand. -->
 
+## Project overview
+
+**Lantern** is a standalone terminal music tracker/sampler. It is its own format and engine — it does not read or write any external tracker format. Projects are `.lampjson` (version 1 JSON) with a pattern snapshot and Source Sample references.
+
+**What it does**
+- 4-channel Game Boy-style pattern tracker (NOTE / INS / VOL / FX per channel, multiple FX columns) with playback, follow mode, block selection, clipboard, transpose, interpolation and order/pattern management.
+- Sampler + Spectral + Percussion synthesis per instrument, plus a mixer and master FX (delay/reverb), all edited from tabbed menus.
+- Song info, Source Samples (with waveform previews), cover art, WAV/MIDI/ZIP/PNG export.
+- A Stepthrough tutorial (`/stepthrough`) that rebuilds the bundled project as a navigable recipe, and a live control socket for scripts/agents.
+
+**Architecture**
+- `src/core/` — framework-free domain: `songModel` (builds a playable model from a project snapshot), `tracker` edit ops, `project` (`.lampjson` serde), `sampler`/`spectral`/`percussion`/`dsp`, `masterFx`, `timing`, `export`, `stepthrough`, `coverArt`. No file-format parser.
+- `src/audio/` — `WebAudioBackend` over `node-web-audio-api` + `webSampler`; `src/wasm/` — the Prism DSP via a Node worker thread (optional; falls back to plain samples).
+- `src/tui/` — Ink UI. `session.ts` is the single action surface (state + every mutation); `commands/` is the slash-command registry (fuzzy + Tab completion) that both the UI and the control socket drive; components render tracker/menus/explainer/status.
+- `src/runtime/` — asset loading, path/file IO, and `config.ts` (user config). `src/control/` — Unix-socket control channel. `src/shared/` — cross-layer types.
+
+**Run / test**
+- `npm run dev:tui` (build + run), `npm run start:tui`, `npm test`, `npm run typecheck`, `npm run build:tui`.
+- `npm run run:script -- <file.lmpscript>` drives the running app over the control socket; see `examples/`.
+
+**Conventions**
+- Put behaviour in `Session` (and pure helpers in `src/core`) and expose it as a command; the TUI and scripts then share one implementation.
+- Keep `src/core` free of Node/DOM/Ink imports so it stays testable.
+- The command registry is the automation contract: structured results, no Ink coupling.
+
+**Persistence / startup**
+- User config: `~/.config/lantern/config.json` (`LANTERN_CONFIG` or `XDG_CONFIG_HOME` override). Stores `lastProject` and `defaultOpen`.
+- Autosave: every 15 mutating actions the live project is written to `<config dir>/backup.lmpjson`; `/restore [path]` reloads it. Navigation/transport/selection do not count.
+- Startup: `defaultOpen.file` (pinned file) > `off` (always bundled default) > `lastProject` > bundled default. `/default-open-override <file|off|last>` controls it; open/save record the last project.
+- `/open` and `/save` are `.lampjson` only.
+
 ## Features
 
 ### FEAT-17 — Terminal Lantern — TUI migration
@@ -13,7 +44,7 @@
 - kind: epic
 
 **Plan summary**
-Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
 
 Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
 
@@ -39,6 +70,252 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 **Status (2026-09-17) — TUI migration plan complete**
 `npm run dev:tui` builds and runs the terminal app. All cards on this plan are Implemented: FEAT-18 Node runtime/IO, FEAT-19 node-web-audio-api shim, FEAT-20 prism worker thread, FEAT-21 Ink shell (persistent tracker + song info), FEAT-22 slash-command engine (fuzzy + Tab), FEAT-23 tracker editing (selection/clipboard/transpose/order ops), FEAT-24 transport, FEAT-25 mixer overlay, FEAT-26 open/new/export, FEAT-27 sample browser + waveform, FEAT-28 packaging, FEAT-29 tests, FEAT-30 Electron/React-DOM removal, FEAT-31 sampler/spectral/percussion/master-FX editors + headless cover art, FEAT-32 live control socket + `.lmpscript` runner. Verified by 23 test files / 144 tests, a real control-socket E2E (`examples/control-smoke.lmpscript`) and an interactive pty smoke. Remaining possible future work: FEAT-15 (mecha/power-suit cover *designer*, archived) and deeper modulation-route authoring in the TUI.
 
+### FEAT-66 — Furnace/.fur removal, autosave + /restore, startup auto-open
+- priority: high
+- tags: plan-furnace-fur-removal-autosave-restore-startup-auto-open, epic
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: epic
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Cards**
+- FEAT-67 — Furnace removal 1/3 — relocate shared song types to a neutral core module
+- FEAT-68 — Furnace removal 2/3 — delete the parser, RawFurModule, fixtures and parser tests
+- FEAT-69 — Furnace removal 3/3 — strip .fur from IO, commands, session state and UI text
+- FEAT-70 — Runtime config file under ~/.config/lantern/config.json
+- FEAT-71 — Autosave backup.lmpjson every 15 actions + /restore
+- FEAT-72 — Startup auto-open of last project + /default-open-override
+
+### FEAT-78 — Game Boy removal, BPM + highlight timing, editable /info
+- priority: critical
+- tags: plan-game-boy-removal-bpm-highlight-timing-editable-info, epic
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: epic
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Cards**
+- FEAT-79 — Core timing model: BPM + beat/bar highlights
+- FEAT-85 — Redefine timing FX as two BPM up/down effects
+- FEAT-81 — Remove the Game Boy model surface
+- FEAT-82 — Editable Song Info menu + /info opens it
+- FEAT-83 — Stepthrough timing chapter uses BPM/highlights
+- FEAT-84 — Final Game Boy scrub + docs/overview update
+- FEAT-80 — Remove timing FX from the tracker catalog (archived — superseded by FEAT-85)
+
+### FEAT-79 — Core timing model: BPM + beat/bar highlights
+- priority: critical
+- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, core
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Collapse the timing model to one tempo (bpm) plus row highlighting. Row duration = 60 / (bpm * beatRows), where beatRows = meta.highlightA (rows per beat) and barRows = meta.highlightB (rows per bar). Delete tickRate, speedPattern and virtualTempo from the timing path. Keep only the two BPM up/down timing FX (FEAT-85) and a constant TICKS_PER_ROW so the 01/02 pitch-slide maths is unchanged.
+
+**Architecture**
+src/core/songModel.ts: SongMeta drops system/formatVersion/tickRate/speedPattern/virtualTempo and gains bpm; ProjectSongSource drops tickRateOverride/speedOverride/virtualTempoOverride and gains bpmOverride; buildSongModelFromProject reads bpmOverride (default 150 or 120) and highlight overrides, then buildRowTiming. src/core/timing.ts: rowDurationSec(meta) = 60/(bpm*max(highlightA,1)); buildRowTiming walks rows applying the two BPM up/down FX (FEAT-85) to a running bpm and returns starts from rowDur = 60/(bpm*highlightA) and ticks[i]=TICKS_PER_ROW (export const TICKS_PER_ROW = 6). src/core/project.ts: ProjectFile/defaultProject/projectFromValue/projectToValue swap the three override fields for bpmOverride; projectFromValue migrates legacy projects by computing bpm = 60*tickRate/(speed*highlightA) when bpmOverride is absent. src/tui/explainer.ts rowExplain and src/tui/components/SongHeader.tsx print BPM/beat/bar instead of Hz/speed. src/tui/session.ts snapshot() reports bpm. src/tui/commands/builtins.ts /info data reports bpm.
+
+**Key decisions**
+- Keep the *Override field naming for consistency (add bpmOverride, keep highlightAOverride/highlightBOverride).
+- Migration formula bpm = 60 * tickRate / (speed * highlightA), clamped to a sane range (20-999).
+- Keep TICKS_PER_ROW = 6 so pitch slides sound the same.
+- patternLength/orderLength/tuningA4 are not tempo and stay.
+
+**Alternatives considered**
+- Store a plain bpm field and drop the *Override names (rejected: more format churn).
+- Redefine 01/02 slides as per-row instead of per-tick (rejected: changes existing slide amounts).
+- Keep virtual tempo as a hidden multiplier (rejected: user wants only BPM).
+
+**Open questions**
+- Pick the new default BPM for defaultProject()/no-override songs (suggest 150 to match today's 60Hz/speed6/beat4, or 120 for a rounder default).
+
+**Acceptance criteria**
+- No live core code reads tickRate/speedPattern/virtualTempo except the legacy migration; rg confirms.
+- The two BPM up/down FX adjust row timing (unit-tested).
+- rowDurationSec/bpm maths covered by unit tests; the bundled asset migrates and plays at the same speed as before.
+- MIDI export tests still pass (tempo comes from rowTimes).
+- typecheck + full test suite green.
+
+### FEAT-81 — Remove the Game Boy model surface
+- priority: high
+- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, core, cleanup
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Delete every remaining Game Boy type/field/string now that the model is a standalone sampler tracker.
+
+**Architecture**
+src/core/songTypes.ts: remove GameBoyParams, Instrument, Wavetable, ChipDef (and any now-unused exports). src/core/songModel.ts: InstrumentInfo drops insType/gameBoy; SongModel drops wavetables/chips. src/tui/session.ts addInstrument and snapshot(): drop insType/gameBoy/system/tickRate. src/tui/explainer.ts: replace the Game Boy channel roles (Pulse/Wave/Noise) with generic per-channel descriptions, and delete the gameBoy branch in instrumentDescription/instrumentExplain. src/tui/components/SongHeader.tsx already stops printing system via the timing card. src/tui/commands/builtins.ts /info drops system. Remove ChipDef/chips from any export/cover path (none currently use them).
+
+**Key decisions**
+- InstrumentInfo keeps only name + colorRgb (plus whatever playback needs).
+- Keep NoteValue's macroRelease/rawFreq for now (they are note-event kinds, not Game Boy UI), but scrub their explainer text.
+
+**Alternatives considered**
+- Also remove the macroRelease/rawFreq note kinds (rejected for this pass: broad player/format churn; can be a follow-up).
+
+**Depends on**
+- Core timing model: BPM + beat/bar highlights
+
+**Acceptance criteria**
+- rg -i 'game ?boy|gameboy|chipId|insType|wavetable|GAME_BOY' over src tests returns nothing.
+- typecheck + full test suite green.
+
+### FEAT-82 — Editable Song Info menu + /info opens it
+- priority: high
+- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, tui, menu, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Make /info open the existing 'song' overlay as an editable menu. Reuse ParamEditorOverlay (already supports text/number/enum with enter-to-type, scrolling and the explainer) by adding songInfoGroups(session). The stepthrough Song chapter keeps the read-only SongInfoPanel.
+
+**Architecture**
+src/tui/editors.tsx: export songInfoGroups(session): EditorGroup[] with groups Song (Title, Artist, Album, Comments), Credits (Music license, Code license, Source link, Website link), Timing (BPM, Beat highlight rows, Bar highlight rows). src/tui/session.ts: setSongMeta(field, value), setBpm(bpm), setHighlight(a, b) - patch song.meta + project, retime(song), engine.updateSequence(sequenceFromSong(song)), refresh duration, markAction. src/tui/App.tsx: activeOverlay === 'song' renders ParamEditorOverlay when !stepMode (title 'Song Info', onPreview undefined, height viewportRows), otherwise the existing SongInfoPanel for stepthrough. src/tui/commands/builtins.ts: /info calls ctx.openOverlay?.('song') and still returns the structured data (name/bpm/patternLength/...). Update menuContext hints and HelpOverlay.
+
+**Key decisions**
+- Reuse ParamEditorOverlay rather than write a bespoke overlay (less code, consistent keyboard model).
+- BPM/beat/bar live in the Timing group of the same menu, per the request.
+- Editing BPM/highlights re-times the song immediately (rowTimes + engine sequence) and marks the project dirty/autosaveable.
+
+**Alternatives considered**
+- Make SongInfoPanel itself interactive (rejected: duplicates ParamEditorOverlay).
+- Separate /timing command/menu (rejected: user wants timing inside /info).
+
+**Open questions**
+- Should Bar highlight auto-clamp to a multiple of Beat highlight, or allow any value?
+
+**Depends on**
+- Core timing model: BPM + beat/bar highlights
+- Remove the Game Boy model surface
+
+**Acceptance criteria**
+- /info opens a menu listing Title/Artist/Album/Comments/licences/links and BPM/Beat/Bar; edits persist through Ctrl+S/autosave.
+- Changing BPM updates the SongHeader tempo, row timing, playhead and MIDI/export timing.
+- Stepthrough still renders the read-only SongInfoPanel with highlights.
+- typecheck + tests green (add a session test for the new setters and a component test for the menu).
+
+### FEAT-83 — Stepthrough timing chapter uses BPM/highlights
+- priority: medium
+- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, stepthrough, tutorial
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Retarget the generated timing step from tickRate/speed to bpm/highlightA/highlightB so the tutorial rebuilds the same project under the new model.
+
+**Architecture**
+src/core/stepthrough.ts: StepAction 'timing' kind swaps tickRate/speed for bpm; generator reads project.bpmOverride/highlightAOverride/highlightBOverride; applyBuildStep writes target.project.bpmOverride and target.song.meta.bpm and re-times (retime). SongInfoPanel highlight labels become 'Timing'/'BPM'/'Beat'/'Bar' as appropriate. blankTarget clears the new overrides.
+
+**Key decisions**
+- One timing step covering bpm + both highlights (as today).
+
+**Alternatives considered**
+- Emit separate BPM and highlight steps (rejected: more noise).
+
+**Depends on**
+- Core timing model: BPM + beat/bar highlights
+- Editable Song Info menu + /info opens it
+
+**Acceptance criteria**
+- Generated recipe includes a BPM/timing step; applying it reproduces the project's row timing.
+- stepthrough tests updated and green.
+
+### FEAT-84 — Final Game Boy scrub + docs/overview update
+- priority: low
+- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, docs, cleanup, kanban
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Sweep any stragglers after the code changes and update documentation so future agents see a Game Boy-free project.
+
+**Architecture**
+KANBAN.md: rewrite the three Game Boy mentions (project overview line 10, the FEAT-73 description, and the FEAT-67 architecture note) to '4-channel tracker' / neutral wording; confirm the timing section of the overview now says BPM + beat/bar highlighting. Check assets/ and comments for stragglers. Record the new timing model and the /info menu in the Project overview.
+
+**Key decisions**
+- Scrub all live KANBAN.md mentions (including historical cards' wording) since the user asked to remove all references.
+
+**Alternatives considered**
+- Leave historical Implemented card text untouched (rejected: user asked for all references removed).
+
+**Depends on**
+- Remove the Game Boy model surface
+- Editable Song Info menu + /info opens it
+
+**Acceptance criteria**
+- rg -i 'game ?boy|gameboy' over the repo (excl. node_modules/dist/.git) returns nothing.
+- Project overview documents BPM + highlights and the /info menu.
+
+### FEAT-85 — Redefine timing FX as two BPM up/down effects
+- priority: high
+- tags: tracker, effects, timing, bpm, plan-game-boy-removal-bpm-highlight-timing-editable-info
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+Keep the timing FX (do NOT remove them), but disconnect them from the old Game Boy timing system and reduce the whole timing-effect family to exactly two BPM-based effects:
+
+- 09 xx — Tempo up: increase the current BPM by xx.
+- 0A xx — Tempo down: decrease the current BPM by xx.
+
+(Exact codes to confirm; suggested 09 up / 0A down. This replaces 09 Set Speed 1, 0F Set Speed 2, F0/C0-C3 tick-rate and FD/FE virtual-tempo.)
+
+Semantics: the effect value is a BPM delta, applied on its own row, relative to the running BPM (base meta.bpm plus any prior adjustments). Clamp the running BPM to a sane minimum (e.g. 20) and maximum. Row duration for that row and onward uses the adjusted BPM: rowDur = 60 / (bpm * highlightA).
+
+Files: src/core/tracker.ts FX_CATALOG (list only 01/02 pitch slides + these two timing entries, with labels like "09xx Tempo up" / "0Axx Tempo down"); src/core/timing.ts buildRowTiming (interpret only the two codes; drop F0/C0-C3/09/0F/FD/FE handling); src/tui/explainer.ts cellExplain wording; stepthrough/tracker tests. FEAT-79 (core timing) must keep buildRowTiming applying these two effects.
+
+This card replaces the now-archived FEAT-80 ("Remove timing FX"). Part of epic FEAT-78 / plan game-boy-removal-bpm-highlight-timing-editable-info.
+
 ## Bugs
 
 ## In Progress
@@ -46,6 +323,332 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 ## Blocked
 
 ## Implemented
+
+### FEAT-77 — Ctrl+S saves the current project
+- priority: medium
+- tags: tui, keyboard, io, save, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Ctrl+S saves the current project.
+
+- SessionState gained `projectPath` (set by io.openPath/saveProject, cleared by applyLoaded/new/restore) plus `setProjectPath`.
+- App tracker key handler on Ctrl+S: if `projectPath` is known, runs `/save "<path>"` (same command path as the command bar); otherwise opens the palette prefilled with `/save ` so a new/unsaved project can be named.
+- HelpOverlay documents Ctrl+S.
+
+Verified live in a pty: with a saved project, Ctrl+S rewrites the file; with no path, Ctrl+S opens the `/save ` prompt. Tests assert the projectPath lifecycle (save/open set it, /new clears it). 205 tests pass.
+
+### BUG-16 — Note release made the previous note jump back to full volume
+- priority: high
+- tags: audio, sampler, bug, release, web-audio
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Order 01 rows 5-6: notes on channels 2-4 (Instrument 2) appeared to raise the volume of the previous notes ~0.1s before the new note.
+
+Root cause: the sequencer looks 0.15s ahead, so at ~row 5 it schedules the row-6 note and calls `Voice.release(when, 0.008)` on the previous voice with `when` in the future. `release()` used `gain.gain.cancelScheduledValues(when)`, which removes the in-flight ADSR decay ramp; the parameter then holds the attack-ramp value (full level) from the release scheduling until `when`, then jumps to the computed level and fades. Hence the previous note's volume "came back up" before the new note.
+
+Fix (`src/audio/webSampler.ts` `Voice.release`): use `cancelAndHoldAtTime(when)` when available to preserve the envelope value at `when`, then re-anchor with `linearRampToValueAtTime(level, when)` (node-web-audio-api mis-schedules a ramp added directly after the hold), then ramp to 0 over the fade. Fall back to the old cancel+set when the API is absent.
+
+Verified with an OfflineAudioContext render: old code gave gain 1.0/1.0/1.0 at 0.3/0.5/0.6s; fixed code gives 0.645/0.404/0.283 (the correct decay), fading to 0 after. Also affects audition previews (release scheduled ahead of time).
+
+### FEAT-76 — Channel + master volume meters in the Explainer panel (red on clip)
+- priority: medium
+- tags: tui, explainer, meters, audio, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Live CH1–CH4 + master peak meters at the bottom of the persistent Explainer panel; the panel is shortened by the meter block and the meters turn red (with a CLIP marker) at/above full scale.
+
+- ExplainerPanel gained an optional `session` prop; it polls `session.meterLevels()` every 100ms (local state, so only the panel re-renders) and renders `levels` + five MeterRows (CH1..CH4, MAS) pinned below a flexGrow body.
+- `isClipping(level)` = level >= 1; clipping rows are red/bold with a "CLIP" marker, otherwise green.
+- App renders the panel with `height={explainerHeight}` where `explainerHeight = contentHeight - 6`, and `alignSelf="flex-start"` on the panel so the shrink is honoured (panel is now shorter than the tracker).
+- Bar width scales with panel width so the CLIP marker never wraps.
+
+Verified live in a pty: meters show live values while playing (CH4 0.67, MAS 0.69) and the panel is shorter. Unit tests cover isClipping and the meter/CLIP rendering. 204 tests pass.
+
+### FEAT-75 — v jumps to the cursor cell's instrument editor (mode-aware tab)
+- priority: medium
+- tags: tui, tracker, instruments, keyboard, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Pressing `v` on a tracker cell jumps straight to the associated instrument's editor, choosing the tab by active mode: Percussion > Spectral > Sampler.
+
+- `Session.instrumentAtCursor()`: returns the row's INS value when set, else the channel's held instrument (insTimeline[order][row]).
+- `editors.tsx` `instrumentTabFor(settings)`: percussion.enabled -> "percussion", else spectral.enabled -> "spectral", else "sampler".
+- App tracker key handler on `v`: resolves the index (clamped to instrument count), setEditInstrument, returnToList=false (Esc returns to the tracker), setOverlay(instrumentTabFor(settings)).
+- HelpOverlay documents `v`.
+
+Verified live in a pty: `v` on the bundled song opened "Spectral — StringSynth 1" (the instrument had Spectral on). Unit tests cover instrumentAtCursor and instrumentTabFor routing. 203 tests pass.
+
+### FEAT-74 — Instruments panel: add/delete with confirm, and rename in Sampler menu
+- priority: high
+- tags: tui, instruments, sampler, ux, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Instruments panel needs add/delete (delete with an "Are you sure?" prompt), and the Sampler menu needs an instrument-name parameter as its first entry.
+
+Approach:
+- Session gains the single action surface: `instrumentName(index)`, `setInstrumentName(index, name)`, `addInstrument()` (appends a defaultSamplerSettings + InstrumentInfo + name), `deleteInstrument(index)` (remaps INS cells via remapInstrumentsAfterDelete on a patternSnapshot, drops settings/song.instruments/project.instrumentNames, recomputes instrumentColor, calls engine.replaceSettings + updateSequence). Deleting the last instrument is refused.
+- ParamEditorOverlay gains a "text" param kind (display/initial/parse/describe; left/right is a no-op, Enter types).
+- editors.tsx `samplerGroups` adds an "Instrument" group whose first/only param is "Name" (kind text), placed before the Waveform group so it is the first parameter in the Sampler menu.
+- InstrumentsOverlay: `a` adds an instrument, `d`/Delete opens an inline "Delete instrument NN? y/n" confirm; y deletes, n/Esc cancels. Clamp selection after delete. Hint line updated.
+- Commands `/addinstrument` and `/delinstrument [index]` expose the same Session actions for the control socket; the interactive confirm stays in the panel.
+- instrumentExplain hint updated.
+
+Acceptance: add appends an instrument and it is editable; delete asks for confirmation and remaps pattern INS references; rename from the Sampler menu's first param persists into the saved project; typecheck/tests/build green.
+
+### FEAT-73 — Program overview in KANBAN.md + delete legacy manage/KANBAN-old.md
+- priority: low
+- tags: docs, cleanup, kanban, fur-removal
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Moving forward, the project is its own standalone sampler tracker with no Furnace integration.
+
+Actions:
+1. Delete manage/KANBAN-old.md (historical pre-TUI backlog) — no longer a source of truth.
+2. Add a "Project overview" section near the top of KANBAN.md for future agents: what Lantern is (Node/TypeScript/Ink terminal sampler tracker; 4-channel Game Boy-style patterns, sampler + spectral/percussion synthesis, mixer/master FX, project IO, stepthrough tutorial, control socket), the architecture map (src/core framework-agnostic model/parser-free, src/audio node-web-audio-api, src/tui Ink UI, src/runtime config/IO, src/control socket, src/wasm prism DSP), how to build/test/run (npm run dev:tui, npm test, npm run typecheck), key conventions (Session is the single action surface; commands registry drives TUI + scripts; project files are .lampjson) and the persistence model (config at ~/.config/lantern/config.json, autosave backup.lmpjson, /restore).
+
+Acceptance: manage/KANBAN-old.md is gone; KANBAN.md has an accurate, concise overview that lets a new agent orient without reading src; no Furnace/.fur mentions remain in live docs.
+
+### FEAT-72 — Startup auto-open of last project + /default-open-override
+- priority: medium
+- tags: fur-removal, persistence, config, autosave, ux, plan-furnace-fur-removal-autosave-restore-startup-auto-open, startup, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: card
+- parent: FEAT-66
+
+**Plan:** Furnace/.fur removal, autosave + /restore, startup auto-open _(#plan-furnace-fur-removal-autosave-restore-startup-auto-open)_
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Approach**
+Resolve which file to open at startup from the config, open it, and record every successfully opened/saved project as lastProject. Add a command to pin a default file, restore 'last', or turn auto-open off.
+
+**Architecture**
+src/runtime/config.ts (card 4) stores lastProject and defaultOpen. New src/tui/startup.ts exports resolveStartupProject(config): returns a path or null with precedence defaultOpen.file > defaultOpen 'off' => null > lastProject > null. main.tsx: after WASM init, read config, resolve; if a path is returned call openPath(session, path) and on failure setError + fall back to session.init() (bundled default); else session.init(). Record last project: openPath() success and saveProject() success call recordLastProject(path). /default-open-override command in builtins: bare shows current mode; 'off' sets {mode:'off'}; 'last' sets {mode:'last'}; otherwise treat the arg as a path ({mode:'file', path}) after checking it exists. Returns status.
+
+**Key decisions**
+- Precedence: explicit default file > off > last-opened > bundled default.
+- off means always start from the bundled default (auto-open disabled entirely).
+- CLI positional argv is out of scope unless trivial; config only.
+
+**Alternatives considered**
+- Only remember last-opened and skip the override (rejected: user explicitly asked for the override command).
+- Store an absolute vs relative path (use the path as given, resolved to absolute on save).
+
+**Open questions**
+- Should /new clear lastProject or leave it? Decision: leave it; unsaved new projects do not update it.
+- Should opening a missing default file fall back silently or surface an error? Decision: surface via setError and fall back to bundled.
+
+**Depends on**
+- Runtime config file under ~/.config/lantern/config.json
+
+**Acceptance criteria**
+- Startup opens defaultOpen.file when set; opens lastProject when defaultOpen is 'last'/unset; opens bundled default when 'off' or nothing recorded.
+- open and save both record lastProject.
+- /default-open-override <file|off|last> persists and reports; bare invocation reports the current mode.
+- Unit tests for resolveStartupProject precedence and config round-trip; pty smoke confirms the last project reopens.
+
+### FEAT-71 — Autosave backup.lmpjson every 15 actions + /restore
+- priority: high
+- tags: fur-removal, persistence, config, autosave, ux, plan-furnace-fur-removal-autosave-restore-startup-auto-open, backup, commands, session
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: card
+- parent: FEAT-66
+
+**Plan:** Furnace/.fur removal, autosave + /restore, startup auto-open _(#plan-furnace-fur-removal-autosave-restore-startup-auto-open)_
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Approach**
+Count mutating session actions centrally, and every 15th action write the live project to a backup file. /restore reloads it. Keep Session free of Node fs by exposing an autosave hook that main.tsx wires to the IO layer.
+
+**Architecture**
+Session: private actionCount; private autosaveHook: (() => void) | null; setAutosaveHook(fn); private markAction() increments and, at the threshold (const AUTOSAVE_EVERY = 15), calls the hook and resets. Call markAction() from every mutating action: commit(), applyEntries() (undo/redo), adjustValue/clearCell/noteOff/applyLastValue/transposeSelection/interpolateSelection/pasteSelection/cutSelection, insertPattern(At)/removePattern(At)/moveOrder/setOrderPatternNumber/clearAllPatterns, updateSamplerSetting, updateSampleInfo, setChannelMute/toggleChannelMute/setChannelVolume/setMasterVolume/setMasterFx/patchMasterFx. Navigation, selection, transport, setReference and setStep do NOT count. New src/tui/autosave.ts: backupPath() = path.join(configDir(), 'backup.lmpjson'); saveBackup(session) = projectToJson(session.buildProjectFile(), true) written atomically; restoreBackup(session) reads via loadedSongFromProjectText + session.load. main.tsx calls session.setAutosaveHook(() => void saveBackup(session)). Add /restore [path] to builtins (default backupPath) returning status 'Restored backup from ...' or a clear error. Expose lastBackupAt via /status rather than spamming the status bar.
+
+**Key decisions**
+- Backup lives in the config directory (~/.config/lantern/backup.lmpjson) so /restore works regardless of cwd.
+- Threshold is a named constant (15) for easy change and tests.
+- Autosave is quiet; /restore reports explicitly.
+
+**Alternatives considered**
+- Backup next to the project file (rejected: no project path for /new, and cwd-relative paths are fragile).
+- Autosave on a timer (rejected: user asked for action count).
+- Put the write in Session (rejected: Session is framework/fs-agnostic by design).
+
+**Open questions**
+- Should /restore also be exposed non-interactively via the control socket? (It will be, automatically, via the command registry.)
+
+**Depends on**
+- Runtime config file under ~/.config/lantern/config.json
+
+**Acceptance criteria**
+- Exactly 15 mutating actions triggers one backup write and resets the counter (unit-tested with a fake hook).
+- saveBackup + restoreBackup round-trips edited notes/settings (test).
+- /restore reports ok and loads the backup; missing/corrupt backup reports an error.
+
+### FEAT-70 — Runtime config file under ~/.config/lantern/config.json
+- priority: medium
+- tags: fur-removal, persistence, config, autosave, ux, plan-furnace-fur-removal-autosave-restore-startup-auto-open, runtime
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: card
+- parent: FEAT-66
+
+**Plan:** Furnace/.fur removal, autosave + /restore, startup auto-open _(#plan-furnace-fur-removal-autosave-restore-startup-auto-open)_
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Approach**
+Add a small, dependency-free config module used by both autosave and startup auto-open. Read lazily, write atomically, tolerate missing/malformed files.
+
+**Architecture**
+New src/runtime/config.ts: configPath() resolves LANTERN_CONFIG env -> $XDG_CONFIG_HOME/lantern/config.json -> path.join(os.homedir(), '.config', 'lantern', 'config.json'). Interface LanternConfig { lastProject?: string | null; defaultOpen?: { mode: 'last' } | { mode: 'off' } | { mode: 'file'; path: string } }. readConfig(): Promise<LanternConfig> returns {} on ENOENT/parse error. writeConfig(patch): merges then writes a temp file and renames (or reuse writeBytesSafe semantics). recordLastProject(path). Also export configDir() so the autosave card can place backup.lmpjson alongside it. Path resolution helpers exported for tests.
+
+**Key decisions**
+- Single JSON file, not a directory of files.
+- XDG-style path with an env override so tests and packaged runs are hermetic.
+
+**Alternatives considered**
+- Store config in cwd (rejected: cwd varies; startup state would be lost).
+- Use a TOML/ini format (rejected: JSON already used everywhere).
+
+**Acceptance criteria**
+- Config path respects LANTERN_CONFIG and XDG_CONFIG_HOME.
+- Malformed JSON does not throw; it falls back to defaults.
+- Round-trip read/write covered by tests.
+
+### FEAT-69 — Furnace removal 3/3 — strip .fur from IO, commands, session state and UI text
+- priority: medium
+- tags: fur-removal, persistence, config, autosave, ux, plan-furnace-fur-removal-autosave-restore-startup-auto-open, io, commands, docs, cleanup
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: card
+- parent: FEAT-66
+
+**Plan:** Furnace/.fur removal, autosave + /restore, startup auto-open _(#plan-furnace-fur-removal-autosave-restore-startup-auto-open)_
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Approach**
+Remove all remaining .fur/Furnace surfaces: opening, exporting, state, filters and prose.
+
+**Architecture**
+src/shared/types.ts: drop raw and furBytes from LoadedSong. src/runtime/assets.ts: stop reading flight_school_night_shift.fur and drop parseFurFile; loadDefaultSong returns { project, samples }. src/runtime/files.ts: drop the fur entry from SAVE_FILTERS. src/tui/io.ts: drop parseFurFile import, the .fur branch in openPath, exportFur, and the unsupported-file message. src/tui/session.ts: drop furBytes from SessionState/initialState/applyLoaded. src/tui/commands/builtins.ts: /open description '.lampjson only', remove fur from /export choices and its handler branch. Scrub comments/strings in src/core/pitch.ts, songModel.ts, project.ts and src/tui/explainer.ts ('Furnace' -> 'tracker' or removed).
+
+**Key decisions**
+- Historical docs (manage/KANBAN-old.md) and archived KANBAN cards are not rewritten; only live source/asset/test/markdown docs are scrubbed.
+- The .lampjson save filter remains.
+
+**Alternatives considered**
+- Keep fur as a hidden export (rejected: user wants no integration).
+
+**Open questions**
+- Should the historical manage/KANBAN-old.md also be scrubbed, or is it acceptable as an archive?
+
+**Depends on**
+- Furnace removal 2/3 — delete the parser, RawFurModule, fixtures and parser tests
+
+**Acceptance criteria**
+- rg -in 'furnace|\.fur\b' src tests assets KANBAN.md returns no live references (manage/KANBAN-old.md excluded by decision).
+- /open rejects .fur; /export offers only wav|mid|zip|png.
+- npm run typecheck and npm test green.
+
+### FEAT-68 — Furnace removal 2/3 — delete the parser, RawFurModule, fixtures and parser tests
+- priority: high
+- tags: fur-removal, persistence, config, autosave, ux, plan-furnace-fur-removal-autosave-restore-startup-auto-open, core, tests, cleanup
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: card
+- parent: FEAT-66
+
+**Plan:** Furnace/.fur removal, autosave + /restore, startup auto-open _(#plan-furnace-fur-removal-autosave-restore-startup-auto-open)_
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Approach**
+Delete src/core/fur/ entirely (parse/reader/blocks/error/node) and remove RawFurModule and buildSongModel(raw: RawFurModule) from songModel.ts. Delete the two .fur fixtures and tests/unit/fur.test.ts. Rewrite the tests that built songs by parsing .fur (core.test.ts, tracker.test.ts, export.test.ts) to build the same SongModel from a project snapshot via buildSongModelFromProject.
+
+**Architecture**
+Extend the existing tests/unit/fixtures.ts with fixtureSong() -> buildSongModelFromProject(projectFromJson(fixtureText('assets/lmp-default-proj.lampjson'))). Replace parseFurFile(...) call sites in tests/unit/{core,tracker,export}.test.ts. For tests needing a tiny known pattern, add an inline PatternSnapshot fixture in the same file rather than a .fur. Check the timing/audio golden tests (audio-golden, loop-length, modulation, tracker) for .fur-derived expectations and regenerate goldens only if the project-built model diverges; the production default load already uses buildSongModelFromProject because assets/ has no .fur.
+
+**Key decisions**
+- Build fixture songs from the bundled project snapshot, matching the production default-load path.
+- Delete the parser tests rather than porting them — there is no parser to test.
+
+**Alternatives considered**
+- Keep buildSongModel(raw) for tests (rejected: user asked for full removal of RawFurModule).
+- Commit a converted .lampjson fixture of each .fur (rejected: the bundled project already serves this purpose).
+
+**Open questions**
+- Confirm the audio golden JSONs were generated from a project-built or .fur-built model; if the latter, regenerate and record why.
+
+**Depends on**
+- Furnace removal 1/3 — relocate shared song types to a neutral core module
+
+**Acceptance criteria**
+- No src/core/fur/ files remain and no *.fur fixtures exist under tests/.
+- buildSongModel(raw) and RawFurModule no longer exist.
+- npm run typecheck and npm test green.
+
+### FEAT-67 — Furnace removal 1/3 — relocate shared song types to a neutral core module
+- priority: high
+- tags: fur-removal, persistence, config, autosave, ux, plan-furnace-fur-removal-autosave-restore-startup-auto-open, core, refactor, types
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: card
+- parent: FEAT-66
+
+**Plan:** Furnace/.fur removal, autosave + /restore, startup auto-open _(#plan-furnace-fur-removal-autosave-restore-startup-auto-open)_
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Approach**
+Move every model/type definition out of src/core/fur/types.ts into a new src/core/songTypes.ts. The parser files temporarily import from ../songTypes so nothing else changes in this step. This decouples the shared NoteValue/PatternCell/SongModel vocabulary from the Furnace directory before the parser is deleted.
+
+**Architecture**
+New src/core/songTypes.ts holds: NoteValue, EffectSlot, PatternCell, Pattern, GameBoyParams, Instrument, Wavetable, ChipDef, SongInfo, Subsong, AssetDir, GAME_BOY_CHIP_ID, emptyEffectSlot(), emptyPatternCell(). RawFurModule moves across temporarily (removed in card 2). Update every importer: src/core/{pitch,midi,tracker,stepthrough,sampler,songModel,project}.ts, src/shared/types.ts, src/tui/{session,format,explainer}.ts, src/tui/components/PatternView.tsx, and the parser files src/core/fur/{parse,reader,blocks}.ts. Point imports directly at the new module; no re-export shim.
+
+**Key decisions**
+- Use src/core/songTypes.ts (not pattern.ts) because it covers cells, instruments and song metadata.
+- Do the move as a pure move in one commit so the diff is reviewable, even if RawFurModule is short-lived.
+
+**Alternatives considered**
+- Inline the types into songModel.ts (rejected: would create a large import cycle surface).
+- Leave types.ts and rename the directory (rejected: still ties core vocabulary to a Furnace-named path).
+
+**Acceptance criteria**
+- rg -n 'fur/types|core/fur' src tests shows only parser-internal imports inside src/core/fur/.
+- npm run typecheck clean.
+- npm test green with no test edits in this card.
+
+### BUG-15 — Shift+arrows selection swallowed by terminal scrollback; e-copy, r-paste, t-cut
+- priority: high
+- tags: tui, tracker, selection, keyboard, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Block selection was only reachable via Shift+arrows (App.tsx) and /select. Many terminals capture Shift+arrows for window scrollback, so users could not highlight a block.
+
+Fix: terminal-safe visual selection mode bound to `e`. Pressing `e` anchors a selection at the cursor (Session.startSelection); while active, plain arrows/PageUp/Down/Ctrl+arrows call extendSelection instead of moveCursor. Pressing `e` again copies the block to the clipboard and ends the selection; `t` cuts the highlighted block; `r` pastes the clipboard at the cursor and `Shift+R` flood-pastes to the end of the pattern. Each action sets a StatusBar notification (e.g. "Copied 3 rows × 2 cols", "Cut 2 rows × 1 cols to clipboard", "Pasted from clipboard", "Flood-pasted to end of pattern", "Clipboard is empty", "Nothing highlighted to cut"). Esc clears and exits; the mode resets when any overlay/help/palette/stepthrough opens. The Ctrl+Shift+C/X/V/F clipboard bindings and /copy /cut /paste now also report status. Shift+arrows kept as a fallback. Help text and /select descriptions updated. Added a Session unit test (visual anchor + extend); verified live in a pty that Copied/Pasted/Cut/Flood-pasted notifications appear and 192 tests pass.
 
 ### FEAT-65 — UX batch: z/x menu keys, sampler preview, signal chain, clipboard keys, z audition
 - priority: high
@@ -1904,6 +2507,41 @@ src/core/spectral.ts (SpectralParamId + registry, ModRoute type, defaults, track
 - JSON round-trip unit test passes; a legacy project with no `modulation` field yields an unchanged render.
 
 ## Archived
+
+### FEAT-80 — Remove timing FX from the tracker catalog
+- priority: high
+- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, tracker, effects, cleanup
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Drop the timing effects now that BPM is the only tempo control: 09 (Set Speed 1), 0F (Set Speed 2), F0 / C0-C3 (tick rate), FD/FE (virtual tempo). Keep 01/02 pitch slides and the rest.
+
+**Architecture**
+src/core/tracker.ts: FX_CATALOG keeps only non-timing entries. src/core/timing.ts no longer interprets those codes (already simplified by the timing card). src/tui/explainer.ts cellExplain already falls back to 'effect 0xNN - not documented'; adjust the wording if needed. src/tui/commands/builtins.ts/tracker tests updated. Decide whether to strip those effect slots from existing saved projects during migration or leave them inert (recommend leave inert and document).
+
+**Key decisions**
+- Leave legacy timing-effect cells in place but inert; saving preserves them so nothing is silently destroyed.
+- 01/02 remain documented and functional.
+
+**Alternatives considered**
+- Actively strip the legacy effect slots on load (rejected: destructive and unnecessary).
+
+**Depends on**
+- Core timing model: BPM + beat/bar highlights
+
+**Acceptance criteria**
+- FX_CATALOG no longer lists any timing code.
+- buildRowTiming ignores 09/0F/F0/C0-C3/FD/FE.
+- tracker/explainer tests updated; typecheck + tests green.
 
 ### FEAT-15 — Cover Art editor — mecha/power-suit part designer
 - priority: medium

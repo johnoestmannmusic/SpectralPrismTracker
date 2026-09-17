@@ -1,4 +1,4 @@
-import type { PatternCell } from "./fur/types";
+import type { PatternCell } from "./songTypes";
 import { defaultMasterFx, type MasterFxSettings } from "./masterFx";
 import type { ProjectFile } from "./project";
 import { defaultSamplerSettings, type SamplerSettings } from "./sampler";

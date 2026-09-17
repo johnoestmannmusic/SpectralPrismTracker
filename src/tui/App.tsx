@@ -38,6 +38,7 @@ import {
   type EditorGroup,
 } from "./components/ParamEditorOverlay";
 import {
+  instrumentTabFor,
   masterFxGroups,
   percussionGroups,
   samplerGroups,
@@ -76,6 +77,13 @@ const NOTE_KEYS: Record<string, number> = {
   ",": 12,
   ".": 14,
 };
+
+/** "N rows × M cols" for the current block selection, or null when none. */
+function selectionSummary(session: Session): string | null {
+  const rect = session.selection();
+  if (!rect) return null;
+  return `${rect.rowHi - rect.rowLo + 1} rows × ${rect.colHi - rect.colLo + 1} cols`;
+}
 
 function stepChapterId(id: string): string {
   return id.split(".")[0] ?? "";
@@ -156,6 +164,8 @@ export function App({ session }: Props) {
   const [editInstrument, setEditInstrument] = useState(0);
   /** When true, closing the editor returns to the instrument list. */
   const [returnToList, setReturnToList] = useState(false);
+  /** Visual selection mode: plain arrows extend a block anchored at the cursor. */
+  const [selectMode, setSelectMode] = useState(false);
   const [menuExplainer, setMenuExplainer] =
     useState<ExplainerText>(DEFAULT_EXPLAINER);
   /** Active STEPTHROUGH session: the recipe plus the model snapshot it grows. */
@@ -452,8 +462,69 @@ export function App({ session }: Props) {
         setHelpOpen(true);
         return;
       }
+      // Visual selection mode (`e`): a terminal-safe alternative to
+      // Shift+arrows, which many terminals capture for scrollback. Pressing `e`
+      // starts the selection; arrows extend it; pressing `e` again copies the
+      // block and ends the selection. `t` cuts it, `r` pastes the clipboard.
+      if (char === "e" || char === "E") {
+        if (selectMode) {
+          const summary = selectionSummary(session);
+          if (session.copySelection()) {
+            session.clearSelection();
+            setSelectMode(false);
+            session.setStatus(summary ? `Copied ${summary}` : "Copied");
+          } else {
+            setSelectMode(false);
+            session.setStatus("Nothing highlighted to copy");
+          }
+        } else {
+          session.startSelection();
+          setSelectMode(true);
+          session.setStatus(
+            "Selection mode: arrows extend · e copy · t cut · esc clear",
+          );
+        }
+        return;
+      }
+      if (char === "r" || char === "R") {
+        const flood = char === "R";
+        session.clearSelection();
+        setSelectMode(false);
+        session.setStatus(
+          session.pasteSelection(flood)
+            ? flood
+              ? "Flood-pasted to end of pattern"
+              : "Pasted from clipboard"
+            : "Clipboard is empty",
+        );
+        return;
+      }
+      if (char === "t" || char === "T") {
+        const summary = selectionSummary(session);
+        if (summary && session.cutSelection()) {
+          session.clearSelection();
+          setSelectMode(false);
+          session.setStatus(`Cut ${summary} to clipboard`);
+        } else {
+          session.setStatus("Nothing highlighted to cut");
+        }
+        return;
+      }
+      // v: jump straight to the cursor row's instrument settings, on the tab
+      // matching its active mode (percussion > spectral > sampler).
+      if (char === "v") {
+        const count = state.song?.instruments.length ?? 0;
+        if (count === 0) return;
+        const found = session.instrumentAtCursor();
+        const index = Math.min(Math.max(found ?? 0, 0), count - 1);
+        setEditInstrument(index);
+        setReturnToList(false);
+        setOverlay(instrumentTabFor(state.settings[index]));
+        return;
+      }
       if (key.escape) {
         session.clearSelection();
+        setSelectMode(false);
         return;
       }
 
@@ -466,25 +537,58 @@ export function App({ session }: Props) {
         session.redo();
         return;
       }
+      // Ctrl+S: save to the current project path, or prompt for a path (a new
+      // unsaved project has none).
+      if (key.ctrl && char === "s") {
+        const target = state.projectPath;
+        if (target) {
+          void runCommand(`/save "${target}"`);
+        } else {
+          setPaletteOpen(true);
+          setInput("/save ");
+        }
+        return;
+      }
       // Clipboard. Ctrl+Shift+C/X/V (undefined Ctrl+Shift+F for flood) so that
       // plain Ctrl+C stays available to quit the app, and the uppercase note
       // keys (X/C/V) keep working.
       const ctrlShift = (letter: string) =>
         key.ctrl && key.shift && char?.toLowerCase() === letter;
       if (ctrlShift("c")) {
-        session.copySelection();
+        const summary = selectionSummary(session);
+        session.setStatus(
+          session.copySelection()
+            ? summary
+              ? `Copied ${summary}`
+              : "Copied"
+            : "Nothing highlighted to copy",
+        );
         return;
       }
       if (ctrlShift("x") || (key.ctrl && char === "x")) {
-        session.cutSelection();
+        const summary = selectionSummary(session);
+        session.setStatus(
+          session.cutSelection()
+            ? `Cut ${summary ?? "selection"} to clipboard`
+            : "Nothing highlighted to cut",
+        );
+        if (summary) session.clearSelection();
         return;
       }
       if (ctrlShift("v") || (key.ctrl && char === "v")) {
-        session.pasteSelection(false);
+        session.setStatus(
+          session.pasteSelection(false)
+            ? "Pasted from clipboard"
+            : "Clipboard is empty",
+        );
         return;
       }
       if (ctrlShift("f")) {
-        session.pasteSelection(true);
+        session.setStatus(
+          session.pasteSelection(true)
+            ? "Flood-pasted to end of pattern"
+            : "Clipboard is empty",
+        );
         return;
       }
       if (key.ctrl && char === "a") {
@@ -493,19 +597,23 @@ export function App({ session }: Props) {
       }
       // Ctrl+arrows: jump 16 rows (wrapping orders) / jump channel (NOTE).
       if (key.ctrl && key.upArrow) {
-        session.moveCursor({ row: -16 });
+        if (key.shift || selectMode) session.extendSelection({ row: -16 });
+        else session.moveCursor({ row: -16 });
         return;
       }
       if (key.ctrl && key.downArrow) {
-        session.moveCursor({ row: 16 });
+        if (key.shift || selectMode) session.extendSelection({ row: 16 });
+        else session.moveCursor({ row: 16 });
         return;
       }
       if (key.ctrl && key.leftArrow) {
-        session.moveCursor({ channel: -1 });
+        if (key.shift || selectMode) session.extendSelection({ channel: -1 });
+        else session.moveCursor({ channel: -1 });
         return;
       }
       if (key.ctrl && key.rightArrow) {
-        session.moveCursor({ channel: 1 });
+        if (key.shift || selectMode) session.extendSelection({ channel: 1 });
+        else session.moveCursor({ channel: 1 });
         return;
       }
       // Ctrl+Space: terminals send NUL, which Ink reports as ctrl+`.
@@ -519,32 +627,32 @@ export function App({ session }: Props) {
         return;
       }
       if (key.upArrow) {
-        if (key.shift) session.extendSelection({ row: -1 });
+        if (key.shift || selectMode) session.extendSelection({ row: -1 });
         else session.moveCursor({ row: -1 });
         return;
       }
       if (key.downArrow) {
-        if (key.shift) session.extendSelection({ row: 1 });
+        if (key.shift || selectMode) session.extendSelection({ row: 1 });
         else session.moveCursor({ row: 1 });
         return;
       }
       if (key.leftArrow) {
-        if (key.shift) session.extendSelection({ column: -1 });
+        if (key.shift || selectMode) session.extendSelection({ column: -1 });
         else session.moveCursor({ column: -1 });
         return;
       }
       if (key.rightArrow) {
-        if (key.shift) session.extendSelection({ column: 1 });
+        if (key.shift || selectMode) session.extendSelection({ column: 1 });
         else session.moveCursor({ column: 1 });
         return;
       }
       if (key.pageUp) {
-        if (key.shift) session.extendSelection({ order: -1 });
+        if (key.shift || selectMode) session.extendSelection({ order: -1 });
         else session.moveCursor({ order: -1 });
         return;
       }
       if (key.pageDown) {
-        if (key.shift) session.extendSelection({ order: 1 });
+        if (key.shift || selectMode) session.extendSelection({ order: 1 });
         else session.moveCursor({ order: 1 });
         return;
       }
@@ -611,6 +719,14 @@ export function App({ session }: Props) {
     },
     { isActive: overlay === "none" && !helpOpen && !stepMode },
   );
+
+  // Visual selection only applies to the tracker; leaving it (or opening any
+  // overlay/help/palette) drops the mode so arrows behave normally on return.
+  useEffect(() => {
+    if (overlay !== "none" || helpOpen || paletteOpen || stepMode) {
+      setSelectMode(false);
+    }
+  }, [overlay, helpOpen, paletteOpen, stepMode]);
 
   // Audition each step against the growing project (debounced). A tick after
   // the engine re-sync forces the editor waveforms to redraw from the new
@@ -711,6 +827,8 @@ export function App({ session }: Props) {
   const showPanel = stepMode !== null || showExplainer;
   const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
   const contentHeight = viewportRows + 2;
+  // The explainer reserves the bottom ~6 rows for the channel/master meters.
+  const explainerHeight = Math.max(6, contentHeight - 6);
   const contentWidth = columns - (showPanel ? panelWidth : 0);
 
   const activeOverlay: Overlay = currentStep
@@ -931,7 +1049,8 @@ export function App({ session }: Props) {
           <ExplainerPanel
             content={explainer}
             width={panelWidth}
-            height={contentHeight}
+            height={explainerHeight}
+            session={session}
           />
         ) : null}
       </Box>

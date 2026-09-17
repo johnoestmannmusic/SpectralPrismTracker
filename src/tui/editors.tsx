@@ -103,6 +103,20 @@ const sourceValue = (index: number | null): string =>
 const parseSource = (value: string): number | null =>
   value === "none" ? null : Number(value);
 
+export type InstrumentTab = "sampler" | "spectral" | "percussion";
+
+/**
+ * Editor tab that matches an instrument's active mode: Percussion beats
+ * Spectral beats plain Sampler.
+ */
+export function instrumentTabFor(
+  settings: SamplerSettings | undefined,
+): InstrumentTab {
+  if (settings?.spectral.percussion.enabled) return "percussion";
+  if (settings?.spectral.enabled) return "spectral";
+  return "sampler";
+}
+
 /** Sampler/instrument editor groups. */
 export function samplerGroups(
   session: Session,
@@ -124,6 +138,18 @@ export function samplerGroups(
         : [];
 
   return [
+    {
+      title: "Instrument",
+      params: [
+        {
+          label: "Name",
+          kind: "text",
+          value: session.instrumentName(index),
+          set: (v) => session.setInstrumentName(index, String(v)),
+          explain: "The instrument's display name, stored in the project.",
+        },
+      ],
+    },
     {
       title: `Waveform (${s.sourceIndex === null ? "no source" : `src ${s.sourceIndex}`})`,
       graph: (

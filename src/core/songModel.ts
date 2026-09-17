@@ -4,10 +4,9 @@ import type {
   NoteValue,
   Pattern,
   PatternCell,
-  RawFurModule,
   Wavetable,
-} from "./fur/types";
-import { emptyPatternCell } from "./fur/types";
+} from "./songTypes";
+import { emptyPatternCell } from "./songTypes";
 import { buildRowTiming } from "./timing";
 
 export interface SongMeta {
@@ -37,7 +36,7 @@ export interface Channel {
   index: number;
   effectColumns: number;
   orderList: number[];
-  /** Keyed by Furnace pattern index (not guaranteed dense). */
+  /** Keyed by pattern index (not guaranteed dense). */
   patterns: Map<number, Pattern>;
   /** insTimeline[order][row] -> instrument index, held across sustains. */
   insTimeline: (number | null)[][];
@@ -118,9 +117,9 @@ function buildInstrumentTimeline(
     for (let r = 0; r < patternLength; r++) {
       const cell = pat?.rows[r];
       if (cell && cell.instrument !== null) {
-        // Furnace keeps the channel's instrument across note-offs; only a new
-        // instrument value changes it. (Clearing it on OFF made notes after an
-        // OFF play with no instrument, i.e. silently.)
+        // The tracker keeps the channel's instrument across note-offs; only a
+        // new instrument value changes it. (Clearing it on OFF made notes after
+        // an OFF play with no instrument, i.e. silently.)
         current = cell.instrument;
       }
       row.push(current);
@@ -152,69 +151,7 @@ export function instrumentColor(index: number): [number, number, number] {
   return hslToRgb((index * 137.508) % 360, 65, 55);
 }
 
-export function buildSongModel(raw: RawFurModule): SongModel {
-  const subsong = raw.subsongs[0]!;
-
-  const channels: Channel[] = [];
-  for (let ch = 0; ch < raw.info.totalChannels; ch++) {
-    const patterns = new Map<number, Pattern>();
-    for (const p of subsong.patterns) {
-      if (p.channel === ch) patterns.set(p.index, p);
-    }
-    const channel: Channel = {
-      index: ch,
-      effectColumns: subsong.effectColumns[ch] ?? 1,
-      orderList: (subsong.orders[ch] ?? []).slice(),
-      patterns,
-      insTimeline: [],
-      noteTimeline: [],
-    };
-    channel.insTimeline = buildInstrumentTimeline(
-      channel,
-      subsong.patternLength,
-    );
-    channel.noteTimeline = buildNoteTimeline(channel, subsong.patternLength);
-    channels.push(channel);
-  }
-
-  const instruments: InstrumentInfo[] = raw.instruments.map((ins, i) => ({
-    name: ins.name,
-    insType: ins.insType,
-    gameBoy: ins.gameBoy,
-    colorRgb: hslToRgb((i * 137.508) % 360, 65, 55),
-  }));
-
-  const song: SongModel = {
-    meta: {
-      name: raw.info.name,
-      author: raw.info.author,
-      system: raw.info.system,
-      tuningA4: raw.info.tuningA4,
-      formatVersion: raw.formatVersion,
-      tickRate: subsong.ticksPerSecond,
-      speedPattern: subsong.speedPattern.slice(),
-      patternLength: subsong.patternLength,
-      orderLength: subsong.orderLength,
-      highlightA: subsong.highlightA,
-      highlightB: subsong.highlightB,
-      comment: subsong.comment,
-      virtualTempo: [subsong.virtualTempoNum, subsong.virtualTempoDen],
-    },
-    channels,
-    instruments,
-    wavetables: raw.wavetables,
-    chips: raw.info.chips,
-    rowTimes: [],
-    rowTicks: [],
-  };
-
-  const timing = buildRowTiming(song);
-  song.rowTimes = timing.starts;
-  song.rowTicks = timing.ticks;
-  return song;
-}
-
-/** Minimal project shape needed to reconstruct a song without a `.fur`. */
+/** Minimal project shape needed to reconstruct a song. */
 export interface ProjectSongSource {
   songTitle?: string;
   artist?: string;
@@ -229,9 +166,9 @@ export interface ProjectSongSource {
 }
 
 /**
- * Builds a playable `SongModel` purely from a Project file — used for songs
- * that ship as a project + Source Samples with no Furnace `.fur` (and so no
- * CHIP MODE). Pattern length defaults to 64 rows.
+ * Builds a playable `SongModel` purely from a project — the only song source
+ * now that there is no external module format. Pattern length defaults to 64
+ * rows.
  */
 export function buildSongModelFromProject(
   project: ProjectSongSource,
@@ -248,14 +185,21 @@ export function buildSongModelFromProject(
     let effectColumns = 1;
     if (snap) {
       for (const [index, rows] of snap.patterns) {
+        // Project snapshots store only populated rows; pad back to the full
+        // pattern length so every row index is addressable (the parser-built
+        // model was always dense).
+        const dense = rows.map(cloneCell);
+        while (dense.length < patternLength) {
+          dense.push(cloneCell(emptyPatternCell()));
+        }
         patterns.set(index, {
           subsong: 0,
           channel: ch,
           index,
           name: "",
-          rows: rows.map(cloneCell),
+          rows: dense,
         });
-        for (const cell of rows) {
+        for (const cell of dense) {
           for (let e = 0; e < cell.effects.length; e++) {
             const slot = cell.effects[e]!;
             if (slot.effect !== null || slot.value !== null)

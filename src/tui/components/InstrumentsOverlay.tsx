@@ -35,6 +35,7 @@ export function InstrumentsOverlay({
   const live = useSession(session);
   const state = stateOverride ?? live;
   const [index, setIndex] = useState(0);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const instruments = state.song?.instruments ?? [];
   const selected = Math.min(index, Math.max(instruments.length - 1, 0));
@@ -68,8 +69,39 @@ export function InstrumentsOverlay({
 
   useInput(
     (char, key) => {
+      if (confirmDelete) {
+        if (char === "y" || key.return) {
+          const deleting = selected;
+          if (session.deleteInstrument(deleting)) {
+            setIndex((value) =>
+              Math.max(0, Math.min(value, instruments.length - 2)),
+            );
+          } else {
+            session.setStatus("Cannot delete the only instrument");
+          }
+          setConfirmDelete(false);
+          return;
+        }
+        if (char === "n" || key.escape || char === "x" || char === "q") {
+          setConfirmDelete(false);
+        }
+        return;
+      }
       if (key.escape || char === "q" || char === "x") {
         onClose();
+        return;
+      }
+      if (char === "a") {
+        const added = session.addInstrument();
+        if (added >= 0) setIndex(added);
+        return;
+      }
+      if (char === "d" || key.delete) {
+        if (instruments.length <= 1) {
+          session.setStatus("Cannot delete the only instrument");
+        } else {
+          setConfirmDelete(true);
+        }
         return;
       }
       if (key.upArrow) {
@@ -124,12 +156,18 @@ export function InstrumentsOverlay({
         Instruments
       </Text>
       <Text dimColor wrap="truncate-end">
-        ↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute ·
-        p preview · esc close
+        ↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · a add ·
+        d delete · m mute · p preview · esc close
         {instruments.length > visible
           ? ` · ${start + 1}-${Math.min(start + visible, instruments.length)}/${instruments.length}`
           : ""}
       </Text>
+      {confirmDelete && instruments[selected] ? (
+        <Text color="red" bold>
+          Delete instrument {String(selected).padStart(2, "0")} “
+          {instruments[selected]!.name}”? Are you sure? (y/n)
+        </Text>
+      ) : null}
       <Box flexDirection="column">
         {instruments.length === 0 ? (
           <Text dimColor>(no instruments)</Text>

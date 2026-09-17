@@ -9,12 +9,10 @@ import {
 } from "@/core/export";
 import { makeClip } from "@/core/spectral";
 import { clipDuration, clipLen } from "@/core/dsp";
-import { buildSongModel } from "@/core/songModel";
-import { parseFurFile } from "@/core/fur/node";
 import { writeMidi } from "@/core/midi";
 import { defaultSamplerSettings } from "@/core/sampler";
 import { renderSamplerMix } from "@/core/export";
-import { fixtureBytes } from "./fixtures";
+import { fixtureSong } from "./fixtures";
 
 function ascii(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.subarray(start, start + length));
@@ -81,11 +79,7 @@ describe("ZIP export", () => {
 
 describe("MIDI export", () => {
   it("writes a format-1 SMF with one tempo track and one track per channel", () => {
-    const song = buildSongModel(
-      parseFurFile(
-        fixtureBytes("tests/fixtures/flight_school_night_shift.fur"),
-      ),
-    );
+    const song = fixtureSong();
     const bytes = writeMidi(song);
     const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 

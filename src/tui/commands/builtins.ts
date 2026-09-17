@@ -1,9 +1,9 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { extensionOf } from "@/runtime/files";
+import { extensionOf, fileExists } from "@/runtime/files";
+import { readConfig, writeConfig } from "@/runtime/config";
 import {
   exportCoverPng,
-  exportFur,
   exportMidi,
   exportSamplesZip,
   exportStepRecipe,
@@ -12,6 +12,7 @@ import {
   openPath,
   saveProject,
 } from "../io";
+import { backupPath, restoreBackup } from "../autosave";
 import {
   fail,
   ok,
@@ -291,6 +292,37 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "addinstrument",
+    name: "addinstrument",
+    aliases: ["addins"],
+    description: "Append a new default instrument",
+    category: "edit",
+    run: (_args, ctx) => {
+      const index = ctx.session.addInstrument();
+      return index >= 0
+        ? ok(`Added instrument ${index}`, { instrument: index })
+        : fail("No song loaded");
+    },
+  },
+  {
+    id: "delinstrument",
+    name: "delinstrument",
+    aliases: ["delins", "removeinstrument"],
+    description: "Delete an instrument and remap its pattern references",
+    category: "edit",
+    args: [{ name: "index", type: "number", required: true }],
+    run: (args, ctx) => {
+      const index = Number(arg(args, "index"));
+      if (!Number.isInteger(index))
+        return fail("instrument index must be an integer");
+      return ctx.session.deleteInstrument(index)
+        ? ok(`Deleted instrument ${index}`)
+        : fail(
+            "Cannot delete that instrument (missing, the last one, or no song)",
+          );
+    },
+  },
+  {
     id: "clear",
     name: "clear",
     aliases: ["del"],
@@ -563,7 +595,7 @@ export const builtinCommands: CommandDef[] = [
     name: "select",
     aliases: ["sel"],
     description:
-      "Start/clear a block selection at the cursor (also Shift+arrows)",
+      "Start/clear a block selection at the cursor (also E then arrows, or Shift+arrows)",
     category: "edit",
     run: (args, ctx) => {
       if (args.flags.clear) {
@@ -588,7 +620,7 @@ export const builtinCommands: CommandDef[] = [
     run: (_args, ctx) =>
       ctx.session.copySelection()
         ? ok("Copied")
-        : fail("Select a block first (Shift+arrows)"),
+        : fail("Select a block first (E then arrows, or Shift+arrows)"),
   },
   {
     id: "cut",
@@ -802,7 +834,7 @@ export const builtinCommands: CommandDef[] = [
     id: "open",
     name: "open",
     aliases: ["load"],
-    description: "Open a .lampjson or .fur file",
+    description: "Open a .lampjson project file",
     category: "file",
     args: [pathArg],
     run: async (args, ctx) => {
@@ -840,16 +872,62 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "restore",
+    name: "restore",
+    description: "Reload the autosaved backup (default backup.lmpjson)",
+    category: "file",
+    args: [pathArg],
+    run: async (args, ctx) => {
+      const target = arg(args, "path") ?? backupPath();
+      const result = await restoreBackup(ctx.session, target);
+      return result.ok
+        ? ok(result.message)
+        : fail(result.error ?? "Restore failed");
+    },
+  },
+  {
+    id: "default-open-override",
+    name: "default-open-override",
+    aliases: ["defaultopen", "startup"],
+    description: "Set the startup file (path), or 'off' / 'last'",
+    category: "file",
+    args: [{ name: "value", type: "string" }],
+    run: async (args) => {
+      const value = arg(args, "value");
+      if (!value) {
+        const config = await readConfig();
+        const open = config.defaultOpen;
+        const current =
+          open?.mode === "file" ? open.path : (open?.mode ?? "last");
+        return ok(`Default open: ${current}`);
+      }
+      const lower = value.toLowerCase();
+      if (lower === "off") {
+        await writeConfig({ defaultOpen: { mode: "off" } });
+        return ok("Default open: off (always the bundled default)");
+      }
+      if (lower === "last") {
+        await writeConfig({ defaultOpen: { mode: "last" } });
+        return ok("Default open: last opened project");
+      }
+      const resolved = path.resolve(value);
+      if (!(await fileExists(resolved)))
+        return fail(`No such file: ${resolved}`);
+      await writeConfig({ defaultOpen: { mode: "file", path: resolved } });
+      return ok(`Default open: ${resolved}`);
+    },
+  },
+  {
     id: "export",
     name: "export",
-    description: "Export the song (wav | mid | zip | fur)",
+    description: "Export the song (wav | mid | zip | png)",
     category: "file",
     args: [
       {
         name: "format",
         type: "enum",
         required: true,
-        choices: ["wav", "mid", "zip", "png", "fur"],
+        choices: ["wav", "mid", "zip", "png"],
       },
       pathArg,
     ],
@@ -895,14 +973,7 @@ export const builtinCommands: CommandDef[] = [
           ? ok(result.message, { path: result.path })
           : fail(result.error ?? "Export failed");
       }
-      const result = await exportFur(
-        ctx.session,
-        target,
-        ctx.session.getState().furBytes,
-      );
-      return result.ok
-        ? ok(result.message, { path: result.path })
-        : fail(result.error ?? "Export failed");
+      return fail(`Unsupported export format: ${format}`);
     },
   },
 ];
