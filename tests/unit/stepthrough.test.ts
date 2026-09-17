@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   applyBuildStep,
+  blankTargetFrom,
   buildSteps,
   cloneTarget,
   type BuildTarget,
 } from "@/core/stepthrough";
 import { defaultMasterFx } from "@/core/masterFx";
 import { defaultProject } from "@/core/project";
-import { defaultSamplerSettings } from "@/core/sampler";
 import { buildSongModelFromProject, cellAt } from "@/core/songModel";
 import { Session } from "@/tui/session";
 
@@ -54,9 +54,9 @@ describe("stepthrough generator", () => {
 
   it("round-trips a default project through its own recipe", () => {
     const target = session.snapshotTarget()!;
-    const blank = blankTarget();
-    // Give the blank target the same instrument slots so instrument steps apply.
-    blank.settings = target.settings.map(() => defaultSamplerSettings());
+    const blank = blankTargetFrom(target);
+    // The blank start has no pattern content and default instrument settings.
+    expect(blank.settings.every((s) => s.sourceIndex === null)).toBe(true);
     for (const step of buildSteps(target)) applyBuildStep(blank, step);
 
     expect(blank.project.songTitle).toBe(target.project.songTitle);
@@ -71,6 +71,31 @@ describe("stepthrough generator", () => {
       expect(blank.settings[index]!.sourceIndex).toBe(
         target.settings[index]!.sourceIndex,
       );
+    // Pattern cells are reproduced.
+    const patternStep = buildSteps(target).find(
+      (step) => step.action.kind === "patternCell",
+    );
+    if (patternStep && patternStep.action.kind === "patternCell") {
+      expect(
+        cellAt(
+          blank.song,
+          patternStep.action.channel,
+          patternStep.action.order,
+          patternStep.action.row,
+        ),
+      ).toEqual(patternStep.action.cell);
+    }
+  });
+
+  it("names FX effects in pattern steps", () => {
+    const target = session.snapshotTarget()!;
+    const channel = target.song.channels[0]!;
+    const pattern = channel.patterns.get(channel.orderList[0]!)!;
+    pattern.rows[0]!.effects[0] = { effect: 0x01, value: 0x20 };
+    const step = buildSteps(target).find(
+      (candidate) => candidate.id === "pattern.0.0.0",
+    );
+    expect(step?.title).toContain("01 - Pitch slide up");
   });
 
   it("applies a pattern-cell step to the target song", () => {

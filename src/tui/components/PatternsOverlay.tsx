@@ -57,7 +57,7 @@ export function PatternsOverlay({
   useInput(
     (char, key) => {
       if (editing !== null) {
-        if (key.escape) {
+        if (key.escape || char === "x") {
           setEditing(null);
           return;
         }
@@ -77,7 +77,7 @@ export function PatternsOverlay({
         return;
       }
 
-      if (key.escape || char === "q") {
+      if (key.escape || char === "q" || char === "x") {
         onClose();
         return;
       }
@@ -124,7 +124,7 @@ export function PatternsOverlay({
           setSelected(Math.min(clamped + 1, orderLength));
         return;
       }
-      if (char === "x" || key.delete) {
+      if (key.delete || char === "r") {
         if (session.removePatternAt(clamped))
           setSelected(Math.max(clamped - 1, 0));
         return;
@@ -142,7 +142,7 @@ export function PatternsOverlay({
         }
         return;
       }
-      if (key.return) {
+      if (key.return || char === "z") {
         session.setViewOrder(clamped);
         onClose();
       }
@@ -179,7 +179,7 @@ export function PatternsOverlay({
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          ↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e
+          ↑↓ select · shift+↑↓/J/K move · a add · d duplicate · del/r remove · e
           number · enter jump · esc close
         </Text>
       )}

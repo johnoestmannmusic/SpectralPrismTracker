@@ -3,7 +3,12 @@ import { defaultMasterFx, type MasterFxSettings } from "./masterFx";
 import type { ProjectFile } from "./project";
 import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
 import { applyEdit, type SongModel } from "./songModel";
-import { defaultSpectralSettings } from "./spectral";
+import {
+  defaultSpectralSettings,
+  spectralModeHasAmount,
+  spectralModeNeedsB,
+} from "./spectral";
+import { FX_CATALOG } from "./tracker";
 
 /**
  * Stepthrough: a machine-readable recipe describing how a project is built.
@@ -127,6 +132,62 @@ export function cloneTarget(target: BuildTarget): BuildTarget {
   return structuredClone(target);
 }
 
+/**
+ * A blank starting point for a stepthrough build: the same song structure
+ * (orders, pattern length, instruments, samples) but with every value reset to
+ * its default, so applying the recipe visibly builds the project up.
+ */
+export function blankTargetFrom(target: BuildTarget): BuildTarget {
+  const blank = cloneTarget(target);
+  const emptyCell = (): PatternCell => ({
+    note: null,
+    instrument: null,
+    volume: null,
+    effects: Array.from({ length: 8 }, () => ({
+      effect: null,
+      value: null,
+    })),
+  });
+  blank.song.channels.forEach((channel) => {
+    for (let order = 0; order < blank.song.meta.orderLength; order++) {
+      for (let row = 0; row < blank.song.meta.patternLength; row++) {
+        applyEdit(blank.song, {
+          channel: channel.index,
+          order,
+          row,
+          cell: emptyCell(),
+        });
+      }
+    }
+  });
+  blank.song.instruments.forEach((instrument, index) => {
+    instrument.name = `Instrument ${String(index).padStart(2, "0")}`;
+  });
+  blank.settings = blank.song.instruments.map(() => defaultSamplerSettings());
+  blank.project.songTitle = "";
+  blank.project.artist = "";
+  blank.project.album = "";
+  blank.project.comments = "";
+  blank.project.tickRateOverride = null;
+  blank.project.speedOverride = null;
+  blank.project.highlightAOverride = null;
+  blank.project.highlightBOverride = null;
+  blank.project.virtualTempoOverride = null;
+  blank.project.instrumentNames = blank.song.instruments.map(
+    (_, index) => `Instrument ${String(index).padStart(2, "0")}`,
+  );
+  blank.project.sourceSamples = blank.project.sourceSamples.map((sample) =>
+    sample
+      ? { name: "", url: sample.url, comments: "", dataUrl: sample.dataUrl }
+      : null,
+  );
+  blank.channelVolume = [1, 1, 1, 1];
+  blank.channelMuted = [false, false, false, false];
+  blank.masterVolume = 1;
+  blank.masterFx = defaultMasterFx();
+  return blank;
+}
+
 const EPSILON = 1e-6;
 
 function differs(a: unknown, b: unknown): boolean {
@@ -142,51 +203,127 @@ function fmt(value: number, unit = ""): string {
   return unit ? `${text}${unit}` : text;
 }
 
-type NumField = {
-  field: keyof SamplerSettings;
-  label: string;
-  group: string;
-  unit?: string;
-};
+function hex2(value: number): string {
+  return value.toString(16).toUpperCase().padStart(2, "0").slice(-2);
+}
 
-const INSTRUMENT_NUM_FIELDS: NumField[] = [
-  { field: "startSec", label: "Trim start", group: "Source", unit: "s" },
-  { field: "endSec", label: "Trim end", group: "Source", unit: "s" },
+/** Human-readable effect text, e.g. "01 - Pitch slide up 20". */
+function effectSummary(effect: number | null, value: number | null): string {
+  const entry = FX_CATALOG.find((candidate) => candidate.code === effect);
+  const label = entry
+    ? `${hex2(entry.code)} - ${entry.description}`
+    : `FX ${hex2(effect ?? 0)}`;
+  return value !== null ? `${label} ${hex2(value)}` : label;
+}
+
+type InstrumentField =
+  | { kind: "source" }
+  | {
+      kind: "num";
+      field: keyof SamplerSettings;
+      label: string;
+      group: string;
+      unit?: string;
+    }
+  | {
+      kind: "bool";
+      field: keyof SamplerSettings;
+      label: string;
+      group: string;
+    };
+
+/** Emitted in the order the Sampler editor groups/rows are shown. */
+const INSTRUMENT_FIELDS: InstrumentField[] = [
+  { kind: "source" },
+  { kind: "bool", field: "looping", label: "Loop", group: "Source" },
+  { kind: "bool", field: "pingPong", label: "Ping-pong", group: "Source" },
   {
+    kind: "num",
+    field: "startSec",
+    label: "Trim start",
+    group: "Source",
+    unit: "s",
+  },
+  {
+    kind: "num",
+    field: "endSec",
+    label: "Trim end",
+    group: "Source",
+    unit: "s",
+  },
+  {
+    kind: "num",
+    field: "attack",
+    label: "Attack",
+    group: "Amp envelope",
+    unit: "s",
+  },
+  {
+    kind: "num",
+    field: "decay",
+    label: "Decay",
+    group: "Amp envelope",
+    unit: "s",
+  },
+  {
+    kind: "num",
+    field: "sustain",
+    label: "Sustain",
+    group: "Amp envelope",
+  },
+  {
+    kind: "num",
+    field: "release",
+    label: "Release",
+    group: "Amp envelope",
+    unit: "s",
+  },
+  {
+    kind: "num",
     field: "transpose",
     label: "Transpose",
     group: "Tuning & level",
     unit: "st",
   },
-  { field: "volume", label: "Volume", group: "Tuning & level" },
-  { field: "attack", label: "Attack", group: "Amp envelope", unit: "s" },
-  { field: "decay", label: "Decay", group: "Amp envelope", unit: "s" },
-  { field: "sustain", label: "Sustain", group: "Amp envelope" },
-  { field: "release", label: "Release", group: "Amp envelope", unit: "s" },
-  { field: "pan", label: "Pan", group: "Tuning & level" },
   {
+    kind: "num",
+    field: "volume",
+    label: "Volume",
+    group: "Tuning & level",
+  },
+  { kind: "num", field: "pan", label: "Pan", group: "Tuning & level" },
+  {
+    kind: "num",
     field: "panRandomRange",
     label: "Pan spread",
     group: "Tuning & level",
   },
   {
+    kind: "num",
     field: "vibratoSpeed",
     label: "Speed",
     group: "Vibrato",
     unit: "Hz",
   },
-  { field: "vibratoDepth", label: "Depth", group: "Vibrato", unit: "st" },
-  { field: "voiceCap", label: "Voice cap", group: "Polyphony" },
-];
-
-const INSTRUMENT_BOOL_FIELDS: Array<{
-  field: keyof SamplerSettings;
-  label: string;
-  group: string;
-}> = [
-  { field: "looping", label: "Loop", group: "Source" },
-  { field: "pingPong", label: "Ping-pong", group: "Source" },
-  { field: "polyphonic", label: "Polyphonic", group: "Polyphony" },
+  {
+    kind: "num",
+    field: "vibratoDepth",
+    label: "Depth",
+    group: "Vibrato",
+    unit: "st",
+  },
+  {
+    kind: "bool",
+    field: "polyphonic",
+    label: "Polyphonic",
+    group: "Polyphony",
+  },
+  {
+    kind: "num",
+    field: "voiceCap",
+    label: "Voice cap",
+    group: "Polyphony",
+  },
 ];
 
 type SpectralField = {
@@ -199,11 +336,13 @@ type SpectralField = {
 
 const SPECTRAL_FIELDS: SpectralField[] = [
   { key: "mode", label: "Fusion mode", group: "Spectral", kind: "string" },
+  { key: "oneShot", label: "One-shot", group: "Spectral", kind: "boolean" },
   {
-    key: "sourceIndex2",
-    label: "Source sample B",
-    group: "Source B",
-    kind: "string",
+    key: "loopLengthSeconds",
+    label: "Loop length",
+    group: "Spectral",
+    unit: "s",
+    kind: "number",
   },
   {
     key: "freezePoint",
@@ -211,24 +350,31 @@ const SPECTRAL_FIELDS: SpectralField[] = [
     group: "Source A",
     kind: "number",
   },
+  { key: "tune", label: "Tune", group: "Source A", unit: "st", kind: "number" },
+  {
+    key: "formantShift",
+    label: "Formant",
+    group: "Source A",
+    unit: "st",
+    kind: "number",
+  },
+  { key: "volume", label: "Volume", group: "Source A", kind: "number" },
+  {
+    key: "sourceIndex2",
+    label: "Source sample B",
+    group: "Source B",
+    kind: "string",
+  },
   {
     key: "freezePointB",
     label: "Freeze point B",
     group: "Source B",
     kind: "number",
   },
-  { key: "tune", label: "Tune", group: "Source A", unit: "st", kind: "number" },
   {
     key: "tuneB",
     label: "Tune B",
     group: "Source B",
-    unit: "st",
-    kind: "number",
-  },
-  {
-    key: "formantShift",
-    label: "Formant",
-    group: "Source A",
     unit: "st",
     kind: "number",
   },
@@ -239,7 +385,6 @@ const SPECTRAL_FIELDS: SpectralField[] = [
     unit: "st",
     kind: "number",
   },
-  { key: "volume", label: "Volume", group: "Source A", kind: "number" },
   { key: "volumeB", label: "Volume B", group: "Source B", kind: "number" },
   { key: "mixAmount", label: "Mix amount", group: "Mix", kind: "number" },
   {
@@ -261,14 +406,6 @@ const SPECTRAL_FIELDS: SpectralField[] = [
     kind: "number",
   },
   { key: "stereoWidth", label: "Stereo width", group: "Mix", kind: "number" },
-  {
-    key: "loopLengthSeconds",
-    label: "Loop length",
-    group: "Spectral",
-    unit: "s",
-    kind: "number",
-  },
-  { key: "oneShot", label: "One-shot", group: "Spectral", kind: "boolean" },
 ];
 
 const PERCUSSION_FIELDS: Array<{
@@ -323,10 +460,10 @@ function cellSummary(cell: PatternCell): string {
   }
   if (cell.instrument !== null) parts.push(`ins ${cell.instrument}`);
   if (cell.volume !== null) parts.push(`vol ${cell.volume}`);
-  const fx = (cell.effects ?? []).find(
-    (slot) => slot.effect !== null || slot.value !== null,
-  );
-  if (fx) parts.push(`fx ${fx.effect ?? "--"}:${fx.value ?? "--"}`);
+  const effects = (cell.effects ?? [])
+    .filter((slot) => slot.effect !== null || slot.value !== null)
+    .map((slot) => effectSummary(slot.effect, slot.value));
+  if (effects.length > 0) parts.push(effects.join(", "));
   return parts.join(", ") || "cell";
 }
 
@@ -436,58 +573,70 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
       });
     }
 
-    if (differs(setting.sourceIndex, defaults.sourceIndex)) {
-      push({
-        id: `instrument.${instrument}.source`,
-        title: `Ins ${instrument} — source sample`,
-        detail:
-          setting.sourceIndex === null
-            ? `Clear the source sample on instrument ${instrument}.`
-            : `Assign source sample ${setting.sourceIndex} to instrument ${instrument}.`,
-        screen: "sampler",
-        instrument,
-        highlights: [
-          { kind: "param", group: "Source", label: "Source sample" },
-        ],
-        action: {
-          kind: "instrumentSource",
+    for (const entry of INSTRUMENT_FIELDS) {
+      if (entry.kind === "source") {
+        if (differs(setting.sourceIndex, defaults.sourceIndex)) {
+          push({
+            id: `instrument.${instrument}.source`,
+            title: `Ins ${instrument} — source sample`,
+            detail:
+              setting.sourceIndex === null
+                ? `Clear the source sample on instrument ${instrument}.`
+                : `Assign source sample ${setting.sourceIndex} to instrument ${instrument}.`,
+            screen: "sampler",
+            instrument,
+            highlights: [
+              { kind: "param", group: "Source", label: "Source sample" },
+            ],
+            action: {
+              kind: "instrumentSource",
+              instrument,
+              sourceIndex: setting.sourceIndex,
+            },
+          });
+        }
+        continue;
+      }
+      if (entry.kind === "bool") {
+        const value = setting[entry.field] as boolean;
+        const base = defaults[entry.field] as boolean;
+        if (value === base) continue;
+        push({
+          id: `instrument.${instrument}.${String(entry.field)}`,
+          title: `Ins ${instrument} — ${entry.label}`,
+          detail: `${value ? "Enable" : "Disable"} ${entry.label.toLowerCase()}.`,
+          screen: "sampler",
           instrument,
-          sourceIndex: setting.sourceIndex,
-        },
-      });
-    }
-
-    for (const { field, label, group, unit } of INSTRUMENT_NUM_FIELDS) {
-      const value = setting[field] as number;
-      const base = defaults[field] as number;
+          highlights: [
+            { kind: "param", group: entry.group, label: entry.label },
+          ],
+          action: {
+            kind: "instrumentParam",
+            instrument,
+            field: entry.field,
+            value,
+          },
+        });
+        continue;
+      }
+      const value = setting[entry.field] as number;
+      const base = defaults[entry.field] as number;
       if (!differs(value, base)) continue;
+      // Voice cap is only shown once Polyphonic is on.
+      if (entry.field === "voiceCap" && !setting.polyphonic) continue;
       push({
-        id: `instrument.${instrument}.${String(field)}`,
-        title: `Ins ${instrument} — ${label}`,
-        detail: `Set ${label.toLowerCase()} to ${fmt(value, unit)}.`,
+        id: `instrument.${instrument}.${String(entry.field)}`,
+        title: `Ins ${instrument} — ${entry.label}`,
+        detail: `Set ${entry.label.toLowerCase()} to ${fmt(value, entry.unit)}.`,
         screen: "sampler",
         instrument,
-        highlights: [{ kind: "param", group, label }],
+        highlights: [{ kind: "param", group: entry.group, label: entry.label }],
         action: {
           kind: "instrumentParam",
           instrument,
-          field,
+          field: entry.field,
           value,
         },
-      });
-    }
-    for (const { field, label, group } of INSTRUMENT_BOOL_FIELDS) {
-      const value = setting[field] as boolean;
-      const base = defaults[field] as boolean;
-      if (value === base) continue;
-      push({
-        id: `instrument.${instrument}.${String(field)}`,
-        title: `Ins ${instrument} — ${label}`,
-        detail: `${value ? "Enable" : "Disable"} ${label.toLowerCase()}.`,
-        screen: "sampler",
-        instrument,
-        highlights: [{ kind: "param", group, label }],
-        action: { kind: "instrumentParam", instrument, field, value },
       });
     }
 
@@ -511,7 +660,37 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
       });
     }
     if (spectral.enabled) {
+      const amountKeyForMode =
+        spectral.mode === "mix"
+          ? "mixAmount"
+          : spectral.mode === "cross-synth"
+            ? "crossSynthAmount"
+            : spectral.mode === "convolve"
+              ? "convolveAmount"
+              : spectral.mode === "ring-modulate"
+                ? "ringModAmount"
+                : null;
+      const SOURCE_B_KEYS = [
+        "sourceIndex2",
+        "freezePointB",
+        "tuneB",
+        "formantShiftB",
+        "volumeB",
+      ];
+      const AMOUNT_KEYS = [
+        "mixAmount",
+        "crossSynthAmount",
+        "convolveAmount",
+        "ringModAmount",
+      ];
       for (const { key, label, group, unit, kind } of SPECTRAL_FIELDS) {
+        // Skip options the Spectral menu hides for the current mode.
+        if (SOURCE_B_KEYS.includes(key) && !spectralModeNeedsB(spectral.mode))
+          continue;
+        if (AMOUNT_KEYS.includes(key)) {
+          if (!spectralModeHasAmount(spectral.mode)) continue;
+          if (key !== amountKeyForMode) continue;
+        }
         const value = (spectral as unknown as Record<string, unknown>)[key];
         const base = (spectralDefaults as unknown as Record<string, unknown>)[
           key

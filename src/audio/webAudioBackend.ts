@@ -408,6 +408,8 @@ export class WebAudioBackend implements AudioBackend {
           when + duration,
           Math.min(Math.max(settings.release, 0), 5),
         );
+        if (note.slideRate !== undefined && note.slideRate > 0)
+          voice.pitchRamp(note.slideRate, when, duration);
         this.patternSamplerPreview.push(voice);
       } catch {
         // Audition is best-effort: a not-yet-ready sample/fusion render is not

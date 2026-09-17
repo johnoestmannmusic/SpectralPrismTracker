@@ -20,6 +20,7 @@ import { SongInfoPanel } from "./components/SongInfoPanel";
 import { ExplainerPanel } from "./components/ExplainerPanel";
 import {
   applyBuildStep,
+  blankTargetFrom,
   buildSteps,
   cloneTarget,
   type BuildStep,
@@ -169,20 +170,22 @@ export function App({ session }: Props) {
   suggestionsRef.current = suggestions;
 
   const startStepthrough = useCallback(() => {
-    const base = session.snapshotTarget();
-    if (!base) return;
-    const steps = buildSteps(base);
+    const final = session.snapshotTarget();
+    if (!final) return;
+    const steps = buildSteps(final);
     setHelpOpen(false);
     if (steps.length === 0) {
       session.setStatus("Nothing to rebuild — project is already empty");
       return;
     }
-    setStepMode({ steps, base, index: 0 });
+    // Start from a blank project and build it up step by step.
+    setStepMode({ steps, base: blankTargetFrom(final), index: 0 });
     session.setStatus(`Stepthrough: ${steps.length} steps`);
   }, [session]);
 
   const stopStepthrough = useCallback(() => {
     setStepMode(null);
+    session.restoreStepAudio();
     session.setStatus("Stepthrough off");
   }, [session]);
 
@@ -190,7 +193,7 @@ export function App({ session }: Props) {
   const stepTarget = useMemo(() => {
     if (!stepMode) return null;
     const target = cloneTarget(stepMode.base);
-    for (let i = 0; i < stepMode.index; i++)
+    for (let i = 0; i <= stepMode.index; i++)
       applyBuildStep(target, stepMode.steps[i]!);
     return target;
   }, [stepMode]);
@@ -463,17 +466,25 @@ export function App({ session }: Props) {
         session.redo();
         return;
       }
-      // Clipboard.
-      if (key.ctrl && char === "c") {
+      // Clipboard. Ctrl+Shift+C/X/V (undefined Ctrl+Shift+F for flood) so that
+      // plain Ctrl+C stays available to quit the app, and the uppercase note
+      // keys (X/C/V) keep working.
+      const ctrlShift = (letter: string) =>
+        key.ctrl && key.shift && char?.toLowerCase() === letter;
+      if (ctrlShift("c")) {
         session.copySelection();
         return;
       }
-      if (key.ctrl && char === "x") {
+      if (ctrlShift("x") || (key.ctrl && char === "x")) {
         session.cutSelection();
         return;
       }
-      if (key.ctrl && char === "v") {
-        session.pasteSelection(key.shift);
+      if (ctrlShift("v") || (key.ctrl && char === "v")) {
+        session.pasteSelection(false);
+        return;
+      }
+      if (ctrlShift("f")) {
+        session.pasteSelection(true);
         return;
       }
       if (key.ctrl && char === "a") {
@@ -601,9 +612,23 @@ export function App({ session }: Props) {
     { isActive: overlay === "none" && !helpOpen && !stepMode },
   );
 
+  // Audition each step against the growing project (debounced). A tick after
+  // the engine re-sync forces the editor waveforms to redraw from the new
+  // (partial) settings, so stepping backwards un-renders Spectral too.
+  const [, setStepAudioTick] = useState(0);
+  useEffect(() => {
+    if (!stepMode || !stepTarget || !currentStep) return;
+    const timer = setTimeout(() => {
+      void session
+        .previewBuildStep(stepTarget, currentStep)
+        .then(() => setStepAudioTick((tick) => tick + 1));
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [session, stepMode, stepTarget, currentStep]);
+
   // STEPTHROUGH navigation takes over all input while the mode is active.
   useInput(
-    (_char, key) => {
+    (char, key) => {
       if (!stepMode) return;
       if (key.escape) {
         stopStepthrough();
@@ -628,6 +653,18 @@ export function App({ session }: Props) {
       }
       if (key.pageUp || key.pageDown) {
         const direction = key.pageUp ? -1 : 1;
+        setStepMode((mode) =>
+          mode
+            ? {
+                ...mode,
+                index: jumpChapter(mode.steps, mode.index, direction),
+              }
+            : mode,
+        );
+        return;
+      }
+      if (char === "[" || char === "]") {
+        const direction = char === "[" ? -1 : 1;
         setStepMode((mode) =>
           mode
             ? {

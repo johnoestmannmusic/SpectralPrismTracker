@@ -138,12 +138,16 @@ export function samplerGroups(
     {
       title: "Source",
       params: [
-        en("Source sample", sourceValue(s.sourceIndex), sourceChoices(), (v) =>
-          set({ sourceIndex: parseSource(String(v)) }),
+        en(
+          "Source sample",
+          sourceValue(s.sourceIndex),
+          sourceChoices(),
+          (v) => set({ sourceIndex: parseSource(String(v)) }),
+          true,
         ),
-        bool("Loop", s.looping, (v) => set({ looping: !!v })),
+        bool("Loop", s.looping, (v) => set({ looping: !!v }), true),
         ...(s.looping
-          ? [bool("Ping-pong", s.pingPong, (v) => set({ pingPong: !!v }))]
+          ? [bool("Ping-pong", s.pingPong, (v) => set({ pingPong: !!v }), true)]
           : []),
         ...(s.sourceIndex !== null
           ? [
@@ -156,6 +160,7 @@ export function samplerGroups(
                   max: 30,
                   step: 0.01,
                   unit: "s",
+                  preview: true,
                 },
               ),
               num("Trim end", s.endSec, (v) => set({ endSec: v as number }), {
@@ -163,6 +168,7 @@ export function samplerGroups(
                 max: 30,
                 step: 0.01,
                 unit: "s",
+                preview: true,
               }),
             ]
           : []),
@@ -177,12 +183,14 @@ export function samplerGroups(
           max: 5,
           step: 0.005,
           unit: "s",
+          preview: true,
         }),
         num("Decay", s.decay, (v) => set({ decay: v as number }), {
           min: 0,
           max: 5,
           step: 0.005,
           unit: "s",
+          preview: true,
         }),
         unit01("Sustain", s.sustain, (v) => set({ sustain: v as number })),
         num("Release", s.release, (v) => set({ release: v as number }), {
@@ -190,6 +198,7 @@ export function samplerGroups(
           max: 5,
           step: 0.005,
           unit: "s",
+          preview: true,
         }),
       ],
     },
@@ -210,6 +219,7 @@ export function samplerGroups(
           min: -1,
           max: 1,
           step: 0.05,
+          preview: true,
         }),
         unit01("Pan spread", s.panRandomRange, (v) =>
           set({ panRandomRange: v as number }),
@@ -223,20 +233,20 @@ export function samplerGroups(
           "Speed",
           s.vibratoSpeed,
           (v) => set({ vibratoSpeed: v as number }),
-          { min: 0, max: 20, step: 0.1, unit: "Hz" },
+          { min: 0, max: 20, step: 0.1, unit: "Hz", preview: true },
         ),
         num(
           "Depth",
           s.vibratoDepth,
           (v) => set({ vibratoDepth: v as number }),
-          { min: 0, max: 12, step: 0.1, unit: "st" },
+          { min: 0, max: 12, step: 0.1, unit: "st", preview: true },
         ),
       ],
     },
     {
       title: "Polyphony",
       params: [
-        bool("Polyphonic", s.polyphonic, (v) => set({ polyphonic: !!v })),
+        bool("Polyphonic", s.polyphonic, (v) => set({ polyphonic: !!v }), true),
         ...(s.polyphonic
           ? [
               num(
@@ -248,6 +258,7 @@ export function samplerGroups(
                   max: 32,
                   step: 1,
                   integer: true,
+                  preview: true,
                 },
               ),
             ]

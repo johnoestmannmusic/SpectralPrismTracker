@@ -130,7 +130,7 @@ export function MixerOverlay({
 
   useInput(
     (char, key) => {
-      if (key.escape || char === "q") {
+      if (key.escape || char === "q" || char === "x") {
         onClose();
         return;
       }

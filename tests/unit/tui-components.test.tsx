@@ -4,7 +4,7 @@ import { MixerOverlay } from "@/tui/components/MixerOverlay";
 import { SamplesOverlay } from "@/tui/components/SamplesOverlay";
 import { InstrumentsOverlay } from "@/tui/components/InstrumentsOverlay";
 import { PatternsOverlay } from "@/tui/components/PatternsOverlay";
-import { StepPanel } from "@/tui/components/StepPanel";
+import { StepPanel, marquee } from "@/tui/components/StepPanel";
 import { buildSteps } from "@/core/stepthrough";
 import { StatusBar } from "@/tui/components/StatusBar";
 import {
@@ -223,6 +223,23 @@ describe("TUI overlays", () => {
   });
 
   describe("editor tabs", () => {
+    it("scrolls to the stepthrough-highlighted param", async () => {
+      const { lastFrame, unmount } = render(
+        <ParamEditorOverlay
+          title="Sampler"
+          groups={samplerGroups(session, 0)}
+          active
+          height={12}
+          onClose={() => {}}
+          highlight={[{ group: "Vibrato", label: "Depth" }]}
+        />,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("◆ Depth");
+      unmount();
+    });
+
     it("renders the tabs and switches on Tab / [ / ]", async () => {
       const onSelect = vi.fn();
       const { stdin, lastFrame, unmount } = render(
@@ -241,6 +258,7 @@ describe("TUI overlays", () => {
         />,
       );
       expect(lastFrame() ?? "").toContain("Percussion");
+      expect(lastFrame() ?? "").toContain("chain: sampler");
       const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
       stdin.write("\t");
       await tick();
@@ -256,6 +274,12 @@ describe("TUI overlays", () => {
   });
 
   describe("step panel", () => {
+    it("marquees overflowing titles", () => {
+      expect(marquee("abc", 5, 0)).toBe("abc");
+      expect(marquee("abcdef", 3, 0)).toBe("abc");
+      expect(marquee("abcdef", 3, 2)).toBe("cde");
+    });
+
     it("lists the recipe and marks the current step", () => {
       const steps = buildSteps(session.snapshotTarget()!);
       expect(steps.length).toBeGreaterThan(0);

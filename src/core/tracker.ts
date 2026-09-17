@@ -41,6 +41,21 @@ export const FX_CATALOG: Array<{
 
 export const CLIPBOARD_TAG = "LANTERN-PATTERN-CLIP:";
 
+/**
+ * Target base rate after a 01/02 pitch-slide effect spans `ticks` ticks (the
+ * effect value is in 1/32 semitone steps per tick). Undefined for other effects.
+ */
+export function pitchSlideRate(
+  baseRate: number,
+  effect: number | null,
+  value: number | null,
+  ticks: number,
+): number | undefined {
+  if ((effect !== 0x01 && effect !== 0x02) || value === null) return undefined;
+  const semitones = ((effect === 0x01 ? 1 : -1) * value * ticks) / 32;
+  return baseRate * Math.pow(2, semitones / 12);
+}
+
 export function columnLabel(column: EditColumn): string {
   switch (column.kind) {
     case "note":

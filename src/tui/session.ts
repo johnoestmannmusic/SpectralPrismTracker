@@ -1,4 +1,5 @@
 import { WebAudioBackend } from "@/audio/webAudioBackend";
+import type { PatternNote } from "@/audio/backend";
 import type { NoteValue, PatternCell } from "@/core/fur/types";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import {
@@ -22,8 +23,13 @@ import {
   sequenceFromSong,
   type SamplerSettings,
 } from "@/core/sampler";
-import { rowTime, songPositionAt } from "@/core/timing";
-import { cloneTarget, type BuildTarget } from "@/core/stepthrough";
+import { rowDuration, rowTime, songPositionAt } from "@/core/timing";
+import { samplerPlaybackRate } from "@/core/pitch";
+import {
+  cloneTarget,
+  type BuildStep,
+  type BuildTarget,
+} from "@/core/stepthrough";
 import {
   adjustCell,
   applyLastValue as applyLastValueToCell,
@@ -38,6 +44,7 @@ import {
   insertPatternAfter,
   interpolateColumn,
   moveOrder as moveOrderSnapshot,
+  pitchSlideRate,
   readValue,
   recordLastValue,
   removePatternAt as removePatternAtSnapshot,
@@ -154,6 +161,8 @@ export class Session {
   private lastOctave = 4;
   private clipboard: string | null = null;
   private historyCursor: number | null = null;
+  /** Guards stale async stepthrough auditions (bumped on every step). */
+  private previewToken = 0;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -612,6 +621,8 @@ export class Session {
     }
     recordLastValue(this.last, columnDef, after);
     this.commit([{ channel, order, row, before, after }]);
+    // Immediate audio feedback for the row just edited.
+    this.auditionRow([channel], order, row);
     const step = this.state.step;
     if (step > 0) this.moveCursor({ row: step });
   }
@@ -652,6 +663,11 @@ export class Session {
     }
     if (entries.length === 0) return;
     this.commit(entries);
+    this.auditionRow(
+      [this.state.cursor.channel],
+      this.state.cursor.order,
+      this.state.cursor.row,
+    );
     const focusColumn = flatColumnsForChannel(song, this.state.cursor.channel)[
       this.state.cursor.column
     ];
@@ -758,6 +774,7 @@ export class Session {
     const before = cellAt(song, channel, order, row);
     const after = applyLastValueToCell(before, columnDef, this.last);
     this.commit([{ channel, order, row, before, after }]);
+    this.auditionRow([channel], order, row);
   }
 
   clearCell(): void {
@@ -1264,6 +1281,195 @@ export class Session {
     this.patch({ reference });
   }
 
+  /** Points the audio engine at the growing stepthrough snapshot. */
+  private syncEngineToTarget(target: BuildTarget): void {
+    const engine = this.engine;
+    if (!engine) return;
+    engine.updateSequence(sequenceFromSong(target.song));
+    target.settings.forEach((settings, index) =>
+      engine.setSamplerSettings(index, settings),
+    );
+    for (let channel = 0; channel < 4; channel++) {
+      engine.setChannelVolume(channel, target.channelVolume[channel] ?? 1);
+      engine.setChannelMute(channel, target.channelMuted[channel] ?? false);
+    }
+    engine.setMasterVolume(target.masterVolume);
+    engine.setMasterFx(target.masterFx);
+  }
+
+  private stepInstrument(target: BuildTarget, step: BuildStep): number | null {
+    if (step.instrument !== undefined) return step.instrument;
+    const action = step.action;
+    if (action.kind === "patternCell") {
+      if (action.cell.instrument !== null) return action.cell.instrument;
+      const channel = target.song.channels[action.channel];
+      return channel?.insTimeline[action.order]?.[action.row] ?? null;
+    }
+    return null;
+  }
+
+  /** Quick 2-row audition of a tracker row (matches the original app). */
+  private collectNotes(
+    song: SongModel,
+    settings: SamplerSettings[],
+    channels: number[],
+    order: number,
+    row: number,
+  ): PatternNote[] {
+    const notes: PatternNote[] = [];
+    for (const channel of channels) {
+      const ch = song.channels[channel];
+      if (!ch) continue;
+      const note = ch.noteTimeline[order]?.[row];
+      const instrument = ch.insTimeline[order]?.[row] ?? null;
+      if (!note || instrument === null) continue;
+      const setting = settings[instrument];
+      if (!setting || setting.muted || setting.sourceIndex === null) continue;
+      if (setting.spectral.enabled && !this.engine?.fusionReady(instrument))
+        continue;
+      const rate = samplerPlaybackRate(note, song.meta.tuningA4, 0);
+      if (rate === null || !(rate > 0)) continue;
+      const cell = cellAt(song, channel, order, row);
+      // 01/02 pitch slides: ramp to the pitch the row's effect reaches.
+      const slide = (cell.effects ?? []).find(
+        (slot) => slot.effect === 0x01 || slot.effect === 0x02,
+      );
+      const absolute = order * song.meta.patternLength + row;
+      const ticks = song.rowTicks[absolute] ?? 6;
+      const slideRate = slide
+        ? pitchSlideRate(rate, slide.effect, slide.value, ticks)
+        : undefined;
+      notes.push({
+        channel,
+        instrument,
+        rate,
+        volume: Math.min(cell.volume ?? 15, 15) / 15,
+        slideRate,
+      });
+    }
+    return notes;
+  }
+
+  /**
+   * Auditions a tracker row against the live project for ~2 rows, so entering
+   * or changing a note gives immediate audio feedback.
+   */
+  auditionRow(channels: number[], order: number, row: number): void {
+    const song = this.state.song;
+    const engine = this.engine;
+    if (!song || !engine) return;
+    const notes = this.collectNotes(
+      song,
+      this.state.settings,
+      channels,
+      order,
+      row,
+    );
+    if (notes.length === 0) return;
+    engine.ensureStarted();
+    const absolute = order * song.meta.patternLength + row;
+    engine.previewPattern(
+      channels,
+      rowTime(song, order, row),
+      Math.max(rowDuration(song, absolute) * 2, 0.05),
+      notes,
+    );
+  }
+
+  /**
+   * Auditions a build step using the partial (stepthrough) settings: syncs the
+   * engine to the snapshot, then previews the instrument or the exact note.
+   */
+  async previewBuildStep(target: BuildTarget, step: BuildStep): Promise<void> {
+    const engine = this.engine;
+    if (!engine) return;
+    this.syncEngineToTarget(target);
+    const instrument = this.stepInstrument(target, step);
+    if (instrument === null) return;
+    const settings = target.settings[instrument];
+    if (!settings || settings.sourceIndex === null) return;
+    const token = ++this.previewToken;
+    engine.stopPreview();
+    const action = step.action;
+
+    // Pattern steps preview the whole row: held/cell note, volume and the
+    // 01/02 pitch-slide effect, through the fused render when Spectral is on.
+    if (action.kind === "patternCell") {
+      if (settings.spectral.enabled && !engine.fusionReady(instrument)) {
+        engine.renderFusion(instrument);
+        const deadline = Date.now() + 8000;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        while (engine.fusionRendering(instrument) && Date.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        if (token !== this.previewToken) return;
+      }
+      const notes = this.collectNotes(
+        target.song,
+        target.settings,
+        [action.channel],
+        action.order,
+        action.row,
+      );
+      if (notes.length > 0) {
+        const absolute =
+          action.order * target.song.meta.patternLength + action.row;
+        engine.previewPattern(
+          [action.channel],
+          0,
+          Math.max(rowDuration(target.song, absolute) * 2, 0.05),
+          notes,
+        );
+        return;
+      }
+    }
+
+    // Spectral/Percussion parameter steps must be rendered before they can be
+    // heard.
+    if (settings.spectral.enabled) {
+      engine.renderFusion(instrument);
+      const deadline = Date.now() + 8000;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      while (engine.fusionRendering(instrument) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+      if (token !== this.previewToken) return;
+      if (engine.fusionReady(instrument))
+        engine.preview(instrument, target.project.refPitchEnabled);
+      return;
+    }
+    engine.preview(instrument, target.project.refPitchEnabled);
+  }
+
+  /** Restores the live project's audio after leaving stepthrough. */
+  restoreStepAudio(): void {
+    const { song, project, settings } = this.state;
+    if (!song || !project) return;
+    this.syncEngineToTarget({
+      project,
+      song,
+      settings,
+      channelVolume: this.state.channelVolume,
+      channelMuted: this.state.channelMuted,
+      masterVolume: this.state.masterVolume,
+      masterFx: this.state.masterFx,
+    });
+    // Stepthrough may have overwritten the engine's fused renders with partial
+    // settings, so re-render the live Spectral/Percussion instruments.
+    const engine = this.engine;
+    if (!engine) return;
+    this.previewToken += 1;
+    settings.forEach((setting, index) => {
+      if (
+        setting.spectral.enabled &&
+        setting.sourceIndex !== null &&
+        (setting.spectral.mode === "off" ||
+          setting.spectral.sourceIndex2 !== null)
+      ) {
+        engine.renderFusion(index);
+      }
+    });
+  }
+
   meterLevels(): number[] {
     return this.engine?.meterLevels() ?? [0, 0, 0, 0, 0];
   }
@@ -1315,6 +1521,37 @@ export class Session {
       },
       samples: state.sampleNames,
       meters: this.meterLevels(),
+    };
+  }
+
+  /**
+   * A fresh ProjectFile from the current live state — includes edited pattern
+   * data and instrument settings, so saving captures the whole project.
+   */
+  buildProjectFile(): ProjectFile | null {
+    const {
+      project,
+      song,
+      settings,
+      channelVolume,
+      channelMuted,
+      masterVolume,
+      masterFx,
+    } = this.state;
+    if (!project || !song) return null;
+    return {
+      ...project,
+      instruments: settings,
+      instrumentNames: song.instruments.map(
+        (instrument, index) =>
+          instrument.name || `Instrument ${String(index).padStart(2, "0")}`,
+      ),
+      patternSnapshot: patternSnapshot(song),
+      channelVolume,
+      mutedChannels: channelMuted,
+      mutedInstruments: settings.map((setting) => !!setting.muted),
+      masterVolume,
+      masterFx,
     };
   }
 

@@ -135,7 +135,7 @@ export function SamplesOverlay({
         return;
       }
 
-      if (key.escape || char === "q") {
+      if (key.escape || char === "q" || char === "x") {
         onClose();
         return;
       }
@@ -151,7 +151,7 @@ export function SamplesOverlay({
         );
         return;
       }
-      if (key.return) {
+      if (key.return || char === "z") {
         openEdit(selected);
         return;
       }

@@ -47,6 +47,86 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 
 ## Implemented
 
+### FEAT-65 — UX batch: z/x menu keys, sampler preview, signal chain, clipboard keys, z audition
+- priority: high
+- tags: tui, ux, keyboard, audio, preview, clipboard
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Batch of UX fixes: (1) `z` (last value) now auditions the cell like other edits; (2) all Sampler editor params now preview (preview:true) like Spectral/Percussion; (3) the instrument editor shows the signal chain 'chain: sampler -> spectral -> percussion (each transforms the previous)'; (4) `z` acts like Enter and `x` like Esc in menus (ParamEditor, Instruments, Samples, Patterns, Mixer, Help; pattern remove moved to del/r); (5) clipboard moved to Ctrl+Shift+C/X/V (flood Ctrl+Shift+F) so plain Ctrl+C quits the app, with Ctrl+X/V kept as aliases (plain Shift would clash with the uppercase note keys); help text updated.
+
+### BUG-14 — Save/load dropped pattern notes and instrument settings
+- priority: critical
+- tags: io, save, load, project, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Saving a project dropped edited pattern notes and instrument settings: saveProject wrote the stored state.project baseline, not the live edits. Added Session.buildProjectFile() which rebuilds a ProjectFile from the live state (settings, instrument names, mutedInstruments, patternSnapshot(song), channel volumes/mutes, master volume/FX) and saveProject now writes it + updates state.project. Also fixed muted instruments not persisting. Added a round-trip test that edits a note + an instrument param, saves, reopens and asserts both survive.
+
+### FEAT-64 — Marquee overflowing step titles in the Stepthrough list
+- priority: low
+- tags: stepthrough, tui, ux, marquee
+- created: 2026-09-17
+- updated: 2026-09-17
+
+The Stepthrough Recipe list now marquees the current step's title when it is wider than the panel, instead of truncating to "…". StepPanel ticks a marquee offset every 130ms (reset on step change) and renders a wrapping window of the title; the panel got flexShrink={0} so Ink no longer shrinks it (which was truncating the marquee itself). Verified live in a pty (title window shifts over time) and with a new `marquee` unit test. typecheck clean, 191 tests pass.
+
+### FEAT-63 — Name effects in Stepthrough FX steps
+- priority: low
+- tags: stepthrough, effects, ux, tracker
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Stepthrough FX steps now name the effect instead of showing raw hex. cellSummary uses FX_CATALOG to render e.g. "01 - Pitch slide up 20" (and lists multiple effect columns), so the step title/detail read "CH1 00:25 — 01 - Pitch slide up 20". Verified by a buildSteps test asserting the effect name appears, plus a full-suite check that the bundled project's FX steps include named effects.
+
+### FEAT-62 — Reflect 01/02 pitch-slide effects in audition previews
+- priority: medium
+- tags: tracker, audio, preview, stepthrough, effects, pitch-slide
+- created: 2026-09-17
+- updated: 2026-09-17
+
+01/02 pitch-slide effects are now reflected in the audition preview, in both normal editing and Stepthrough. Added `pitchSlideRate(baseRate, effect, value, ticks)` in core/tracker (value is 1/32 semitone per tick), PatternNote gained an optional `slideRate`, and WebAudioBackend.previewPattern calls `voice.pitchRamp(slideRate, when, duration)` after building the voice. Session.collectNotes computes the slide target for the previewed row, so both `auditionRow` (live note entry/edits) and Stepthrough pattern steps sound the slide — including FX-only rows that apply to a held note. Verified by the new pure-helper test (0x01 up / 0x02 down / ignores other effects), full 189-test suite, typecheck and build.
+
+### BUG-13 — Note entry/changes had no audio preview; stepthrough note pitch was wrong
+- priority: high
+- tags: tracker, audio, preview, stepthrough, notes, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Notes had no quick audio feedback. Fixes: (1) Session.auditionRow plays the tracker row for ~2 rows (rowDuration * 2, matching the original app) and is now called after editCell (note/instrument/volume entry) and adjustValue (q/a/w/s), using noteTimeline/insTimeline like the original; (2) stepthrough note steps now take the note-preview branch BEFORE the Spectral-instrument branch, so they sound the actual pitch (through the fused render when Spectral is on) instead of a fixed-pitch instrument preview; (3) stepthrough note pitch no longer double-applies instrument transpose (buildVoice already applies settings.transpose, so samplerPlaybackRate is now called with 0, matching sequenceFromSong/onAudition). Added tests: auditionRow invokes previewPattern with a positive duration, and editCell triggers an audition.
+
+### BUG-12 — Loop cache returned the Spectral render after stepping back
+- priority: high
+- tags: audio, sampler, spectral, stepthrough, cache, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Audio kept playing the Spectral loop after stepping back to a pre-Spectral step. Root cause: SamplerEngine's per-instrument loop cache keyed only on source/start/end/pingPong, not on whether the loop was built from the Spectral/Percussion fused render or the raw sample. Once a Spectral step rendered and previewed, the cache held the fused loop; stepping back to a non-Spectral step with matching trim/source returned that cached fused buffer, so the raw sample was never heard. Fix: add `fused` to LoopCache and to the cache-hit comparison (and set it when writing). Verified with a new webSampler regression test (fused loop !== raw loop once Spectral is disabled) and the full 186-test suite.
+
+### BUG-11 — Stepping backwards did not un-render Spectral
+- priority: high
+- tags: stepthrough, audio, spectral, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Stepping backwards in the recipe did not un-do Spectral: the editor waveforms read the audio engine's effective/fused waveform, but the engine was re-synced to the older step 220ms later with no re-render, so the Spectral render stayed visible (and the live fused buffers were left overwritten on exit). Fix: (1) App bumps a tick after Session.previewBuildStep resolves, forcing the editor groups/waveforms to redraw from the re-synced engine; (2) Session.restoreStepAudio now re-renders the live Spectral/Percussion instruments on exit so leaving mid-build doesn't leave partial renders in the engine. Verified with a pty comparison: the step-16 sampler waveform reached directly is byte-identical to the waveform reached by stepping forward past Spectral then back. typecheck clean, 185 tests pass.
+
+### BUG-10 — Stepthrough: off-screen highlighted params + silent Spectral steps
+- priority: high
+- tags: stepthrough, tui, audio, spectral, ux, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Two stepthrough bugs reported after FEAT-61: (1) the highlighted parameter could be past the editor's scroll window (e.g. Step 66 "Depth" in Vibrato was off-screen) — ParamEditorOverlay now scrolls to (and selects) the stepthrough-highlighted param; (2) the "Spectral on" step made no audible change because the fused render for the partial settings was never produced — Session.previewBuildStep is now async, renders the fusion for Spectral/Percussion steps, waits for the render (token-guarded against stale navigations) and previews the result. Also added generator guards so steps are only emitted for options the menus actually show (voice cap only when polyphonic; Source B fields only when the mode uses B; only the current algorithm's amount). Verified live in a pty (Step 66 Vibrato/Depth visible and selected; Step 24 "spectral on" shows "Waveform (fused render)") and by 185 passing tests incl. a new scroll-to-highlight regression test.
+
+### FEAT-61 — Stepthrough refinements: chapters, blank start, step audio preview, menu order
+- priority: high
+- tags: stepthrough, tui, audio, ux, generator
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Stepthrough refinements: (1) [ and ] now jump to the prev/next chapter (same as PgUp/PgDn); (2) StepPanel shows chapter headings (SONG, SOURCE SAMPLES, INSTRUMENTS, MIXER, MASTER FX, PATTERNS); (3) the panel is titled "Stepthrough Recipe" with an n/N progress line; (4) stepthrough now starts from a blank project (blankTargetFrom: same structure, all values default) and applies steps 0..N inclusive so the project visibly and audibly builds up; (5) each step auditions the current sound via Session.previewBuildStep — syncs the audio engine (sequence, per-instrument settings, mixer, master FX) to the partial snapshot and previews the instrument or the exact note/pitch, restoring the live audio on exit; (6) the generator now emits instrument/spectral fields in the exact order the editor menus show them. Verified live in a pty (title, chapters, [ ] jumps, blank start with names/sources filling in, menu-ordered steps) and by 184 tests + typecheck + build.
+
 ### FEAT-53 — Stepthrough mode — progressive project rebuild tutorial
 - priority: critical
 - tags: plan-stepthrough-mode-progressive-project-rebuild-tutorial, epic

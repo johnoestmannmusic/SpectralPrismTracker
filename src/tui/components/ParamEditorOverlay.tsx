@@ -232,6 +232,24 @@ export function ParamEditorOverlay({
     setSelected(0);
   }, [tabs?.active]);
 
+  // In stepthrough, scroll to (and select) the step's highlighted parameter so
+  // it is never hidden past the current scroll window.
+  const highlightKey =
+    highlight?.map((h) => `${h.group ?? ""}:${h.label ?? ""}`).join("|") ?? "";
+  useEffect(() => {
+    if (!highlight || highlight.length === 0) return;
+    const index = flat.findIndex(({ groupIndex, param }) => {
+      const groupTitle = groups[groupIndex]?.title ?? "";
+      return highlight.some(
+        (h) =>
+          (h.group === undefined || h.group === groupTitle) &&
+          (h.label === undefined || h.label === param.label),
+      );
+    });
+    if (index >= 0) setSelected(index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightKey, tabs?.active]);
+
   useEffect(() => {
     if (!onExplain) return;
     const current = flat[Math.max(0, Math.min(selected, flat.length - 1))];
@@ -289,7 +307,7 @@ export function ParamEditorOverlay({
     (char, key) => {
       // Inline value entry swallows every key until Enter/Escape.
       if (editing !== null) {
-        if (key.escape) {
+        if (key.escape || char === "x") {
           setEditing(null);
           return;
         }
@@ -316,7 +334,7 @@ export function ParamEditorOverlay({
         return;
       }
 
-      if (key.escape) {
+      if (key.escape || char === "x") {
         onClose();
         return;
       }
@@ -390,7 +408,7 @@ export function ParamEditorOverlay({
         if (current) adjust(current.param, key.leftArrow ? -1 : 1, key.ctrl);
         return;
       }
-      if (key.return) {
+      if (key.return || char === "z") {
         if (current) setEditing(initialEditText(current.param));
         return;
       }
@@ -426,11 +444,13 @@ export function ParamEditorOverlay({
                 >
                   {` ${label} `}
                 </Text>
-                {tabIndex < tabs.labels.length - 1 ? <Text> </Text> : null}
               </Text>
             );
           })}
-          <Text dimColor> · [ ]/tab/1-3 switch · , . instrument</Text>
+          <Text dimColor>
+            {"  "}chain: sampler -&gt; spectral -&gt; percussion (each
+            transforms the previous)
+          </Text>
         </Box>
       ) : null}
       <Text dimColor wrap="truncate-end">

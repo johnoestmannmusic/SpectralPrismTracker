@@ -18,6 +18,8 @@ export interface PatternNote {
   /** Pitch ratio before the instrument's transpose is applied. */
   rate: number;
   volume: number;
+  /** Optional target rate for a 01/02 pitch-slide effect. */
+  slideRate?: number;
 }
 
 export interface AudioBackend {

@@ -179,7 +179,9 @@ export async function saveProject(
   session: Session,
   filePath: string,
 ): Promise<IoResult> {
-  const project = session.getState().project;
+  // Build from the live state so edited patterns and instrument settings are
+  // captured (the stored `project` object is the pre-edit baseline).
+  const project = session.buildProjectFile();
   if (!project) return { ok: false, error: "No project loaded" };
   const json = projectToJson(project, true);
   const written = await writeBytesSafe(
@@ -187,6 +189,7 @@ export async function saveProject(
     new TextEncoder().encode(json),
   );
   if (!written.ok) return { ok: false, error: written.error };
+  session.setProject(project);
   session.setStatus(`Saved ${written.value}`);
   return { ok: true, message: `Saved ${written.value}`, path: written.value };
 }

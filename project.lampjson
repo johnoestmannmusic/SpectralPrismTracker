@@ -10,9 +10,9 @@
   "refPitchEnabled": false,
   "instruments": [
     {
-      "sourceIndex": null,
+      "sourceIndex": 1,
       "startSec": 0,
-      "endSec": 0,
+      "endSec": 0.6,
       "transpose": 0,
       "volume": 1,
       "loop": false,
@@ -28,10 +28,10 @@
       "polyphonic": false,
       "voiceCap": 8,
       "spectral": {
-        "enabled": false,
+        "enabled": true,
         "sourceIndex2": null,
         "mode": "off",
-        "freezePoint": 50,
+        "freezePoint": 31,
         "freezePointB": 50,
         "tune": 0,
         "tuneB": 0,
@@ -47,7 +47,7 @@
         "loopLengthSeconds": 4,
         "modulation": [],
         "percussion": {
-          "enabled": false,
+          "enabled": true,
           "noiseAmount": 8,
           "noiseColor": "white",
           "noiseDecay": 0.04,
@@ -67,7 +67,7 @@
           "stereoWidth": 20,
           "lengthSeconds": 0.6
         },
-        "oneShot": false,
+        "oneShot": true,
         "savedStartSec": 0,
         "savedEndSec": 0,
         "savedLooping": false
@@ -94,7 +94,7 @@
   ],
   "sourceSamples": [
     {
-      "name": "0-seed",
+      "name": "0",
       "url": null,
       "comments": "",
       "dataUrl": null
@@ -131,5 +131,486 @@
     }
   ],
   "songTitle": "New Song",
-  "artist": "Unknown Artist"
+  "artist": "Unknown Artist",
+  "patternSnapshot": {
+    "orderLength": 1,
+    "channels": [
+      {
+        "orderList": [
+          0
+        ],
+        "patterns": [
+          [
+            0,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 132
+                  },
+                  "instrument": 0,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                2,
+                {
+                  "note": {
+                    "Note": 132
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                3,
+                {
+                  "note": {
+                    "Note": 132
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                6,
+                {
+                  "note": {
+                    "Note": 132
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                7,
+                {
+                  "note": {
+                    "Note": 132
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "orderList": [
+          0
+        ],
+        "patterns": [
+          [
+            0,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 144
+                  },
+                  "instrument": 0,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                4,
+                {
+                  "note": {
+                    "Note": 144
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                9,
+                {
+                  "note": {
+                    "Note": 144
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                12,
+                {
+                  "note": {
+                    "Note": 144
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ],
+              [
+                14,
+                {
+                  "note": {
+                    "Note": 144
+                  },
+                  "instrument": null,
+                  "volume": null,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "orderList": [
+          0
+        ],
+        "patterns": []
+      },
+      {
+        "orderList": [
+          0
+        ],
+        "patterns": []
+      }
+    ]
+  }
 }

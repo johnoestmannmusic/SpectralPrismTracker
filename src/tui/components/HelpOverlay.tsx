@@ -29,8 +29,8 @@ const KEY_SHORTCUTS: Array<[string, string]> = [
   ["C", "Note off"],
   ["Q / A", "Value +1 / -1"],
   ["W / S", "Note +/-1 octave"],
-  ["Ctrl+C / X / V", "Copy / cut / paste"],
-  ["Ctrl+Shift+V", "Flood paste to end"],
+  ["Ctrl+Shift+C / X / V", "Copy / cut / paste"],
+  ["Ctrl+Shift+F", "Flood paste to end"],
   ["Ctrl+A", "Select column / all"],
   ["Ctrl+Z / Y", "Undo / redo"],
   ["Space", "Play from pattern start / pause"],
@@ -82,7 +82,7 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
 
   useInput(
     (char, key) => {
-      if (key.escape || char === "q" || key.return) {
+      if (key.escape || char === "q" || char === "x" || key.return) {
         onClose();
         return;
       }

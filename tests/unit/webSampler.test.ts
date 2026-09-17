@@ -242,4 +242,39 @@ describe("buildVoice one-shot Spectral envelope", () => {
     const secondRamp = gainCalls.filter((c) => c.type === "ramp")[1];
     expect(secondRamp).toMatchObject({ value: 0.4, time: 12.338 });
   });
+
+  it("does not reuse the fused loop once Spectral is disabled", () => {
+    setSpectralWasmAvailable(true);
+    try {
+      const sampler = new SamplerEngine();
+      const ctx = fakeAudioContext();
+      const makeBuffer = () =>
+        ({
+          duration: 4,
+          numberOfChannels: 1,
+          sampleRate: 44_100,
+          getChannelData: () => new Float32Array(4 * 44_100),
+        }) as unknown as AudioBuffer;
+      sampler.samples = [makeBuffer()];
+      sampler.fused = [makeBuffer()];
+      const settings = defaultSamplerSettings();
+      settings.sourceIndex = 0;
+      settings.looping = true;
+      settings.startSec = 0;
+      settings.endSec = 4;
+      settings.spectral = {
+        ...defaultSpectralSettings(),
+        enabled: true,
+        mode: "off",
+      };
+      sampler.settings = [settings];
+
+      const fusedLoop = sampler.buffer(ctx, 0);
+      settings.spectral.enabled = false;
+      const rawLoop = sampler.buffer(ctx, 0);
+      expect(rawLoop).not.toBe(fusedLoop);
+    } finally {
+      setSpectralWasmAvailable(false);
+    }
+  });
 });

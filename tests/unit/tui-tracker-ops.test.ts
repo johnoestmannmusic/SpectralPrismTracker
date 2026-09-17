@@ -1,10 +1,12 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRegistry } from "@/tui/commands";
 import type { CommandContext } from "@/tui/commands/types";
 import { Session } from "@/tui/session";
+import { pitchSlideRate } from "@/core/tracker";
+import { cellAt } from "@/core/songModel";
 
 const registry = createRegistry();
 const session = new Session();
@@ -100,6 +102,32 @@ describe("tracker block operations", () => {
     expect(session.getState().cursor.row).toBe(3);
     await run("step 1");
     session.undo();
+  });
+
+  it("auditions a row for ~2 rows", () => {
+    const engine = session.backend!;
+    const spy = vi.spyOn(engine, "previewPattern");
+    session.auditionRow([3], 0, 0);
+    expect(spy).toHaveBeenCalled();
+    const duration = spy.mock.calls[0]?.[2] as number;
+    expect(duration).toBeGreaterThan(0);
+    spy.mockRestore();
+  });
+
+  it("auditions after entering a note", () => {
+    const spy = vi.spyOn(session, "auditionRow");
+    session.setCursor({ order: 0, channel: 3, row: 0, column: 0 });
+    session.editCell({ note: { kind: "note", note: 60 } });
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    session.undo();
+  });
+
+  it("computes a pitch-slide target for 01/02 effects", () => {
+    expect(pitchSlideRate(1, 0x01, 32, 6)).toBeCloseTo(Math.SQRT2, 5);
+    expect(pitchSlideRate(1, 0x02, 32, 6)).toBeCloseTo(1 / Math.SQRT2, 5);
+    expect(pitchSlideRate(1, 0x09, 5, 6)).toBeUndefined();
+    expect(pitchSlideRate(1, 0x01, null, 6)).toBeUndefined();
   });
 
   it("recalls command history", () => {
@@ -229,15 +257,24 @@ describe("file and export commands", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("saves a project, then reopens it", async () => {
+  it("saves notes and instrument settings, then reopens them", async () => {
     const target = path.join(dir, "song.lampjson");
+    session.setCursor({ order: 0, channel: 3, row: 5, column: 0 });
+    session.editCell({ note: { kind: "note", note: 65 } });
+    session.updateSamplerSetting(1, { attack: 1.234 });
     expect((await run(`save "${target}"`)).ok).toBe(true);
     const text = await readFile(target, "utf8");
     expect(text).toContain("version");
+    expect(text).toContain("patternSnapshot");
 
     const opened = await run(`open "${target}"`);
     expect(opened.ok).toBe(true);
     expect(session.getState().song).not.toBeNull();
+    expect(cellAt(session.song!, 3, 0, 5).note).toMatchObject({
+      kind: "note",
+      note: 65,
+    });
+    expect(session.samplerSettings(1)?.attack).toBeCloseTo(1.234, 5);
   });
 
   it("exports MIDI", async () => {

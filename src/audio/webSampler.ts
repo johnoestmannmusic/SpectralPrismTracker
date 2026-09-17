@@ -240,6 +240,8 @@ export function buildVoice(
 
 export interface LoopCache {
   source: number;
+  /** Whether the loop was built from the Spectral/Percussion fused render. */
+  fused: boolean;
   start: number;
   end: number;
   pingPong: boolean;
@@ -421,9 +423,8 @@ export class SamplerEngine {
     if (!settings) throw new Error("No instrument settings");
     const source = settings.sourceIndex;
     if (source === null) throw new Error("Sample is not assigned");
-    const original = this.spectralActive(instrument)
-      ? this.fused[instrument]
-      : this.samples[source];
+    const active = this.spectralActive(instrument);
+    const original = active ? this.fused[instrument] : this.samples[source];
     if (!original) throw new Error("Sample is not ready");
     const reg = region(settings, original.duration);
     if (!reg) throw new Error("Empty trim");
@@ -434,6 +435,7 @@ export class SamplerEngine {
     if (
       cache &&
       cache.source === source &&
+      cache.fused === active &&
       cache.start === start &&
       cache.end === start + length &&
       cache.pingPong === settings.pingPong
@@ -462,6 +464,7 @@ export class SamplerEngine {
       buffer.getChannelData(c).set(channels[c]!);
     this.loops[instrument] = {
       source,
+      fused: active,
       start,
       end: start + length,
       pingPong: settings.pingPong,
