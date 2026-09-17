@@ -47,6 +47,22 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 
 ## Implemented
 
+### FEAT-52 — Pattern Manager overlay: add/remove/duplicate/re-arrange orders
+- priority: high
+- tags: tui, patterns, pattern-manager, orders, tracker, reorder
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Parity with the 0008 Pattern Manager. Added `/patterns` (aliases `patternmanager`, `pm`) opening a PatternsOverlay listing order positions with their channel-0 pattern number and a `◀ view` marker. Keys: ↑↓ select, Shift+↑↓/J/K move the order up/down (re-arrange, swapping across every channel), a add empty, d duplicate, x/Delete remove, e edit the pattern number inline, c (twice) clear all, Enter jump the tracker there and close, Esc close. Added core helpers tracker.ts moveOrder/setOrderPattern and Session methods insertPatternAt/removePatternAt/moveOrder/setOrderPatternNumber (existing insertPattern/removePattern now delegate). Added `/move <up|down> [order]` and `/setpattern <order> <n>` commands for scripting; kept /insert, /remove, /clearall. Verified live in a pty (move down reorders 01↔12 and follows the view) and with new tests (session move/setpattern + overlay duplicate + /patterns command). typecheck clean, 177 tests pass.
+
+### FEAT-51 — Rename /instrument to /setinstrument
+- priority: low
+- tags: tui, commands, rename
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Renamed the cursor-cell instrument command from `/instrument` to `/setinstrument` to avoid confusion with `/instruments`. Kept `ins` as an alias and added `setins`. Help/command listing updates automatically. Verified: typecheck clean, 173 tests pass, TUI builds.
+
 ### FEAT-50 — Instrument editor UX streamlining (tab status, mode cycling, conditional options)
 - priority: medium
 - tags: tui, instruments, spectral, percussion, sampler, ux, streamlining

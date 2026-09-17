@@ -3,6 +3,7 @@ import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { MixerOverlay } from "@/tui/components/MixerOverlay";
 import { SamplesOverlay } from "@/tui/components/SamplesOverlay";
 import { InstrumentsOverlay } from "@/tui/components/InstrumentsOverlay";
+import { PatternsOverlay } from "@/tui/components/PatternsOverlay";
 import { StatusBar } from "@/tui/components/StatusBar";
 import {
   ParamEditorOverlay,
@@ -248,6 +249,23 @@ describe("TUI overlays", () => {
       stdin.write("[");
       await tick();
       expect(onSelect).toHaveBeenLastCalledWith(2);
+      unmount();
+    });
+  });
+
+  describe("pattern manager", () => {
+    it("lists orders and duplicates on d", async () => {
+      const before = session.getState().song!.meta.orderLength;
+      const { stdin, lastFrame, unmount } = render(
+        <PatternsOverlay session={session} active onClose={() => {}} />,
+      );
+      expect(lastFrame() ?? "").toContain("Pattern Manager");
+      stdin.write("d");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(session.getState().song!.meta.orderLength).toBe(before + 1);
+      // Restore the shared session for the remaining tests.
+      session.removePatternAt(1);
+      expect(session.getState().song!.meta.orderLength).toBe(before);
       unmount();
     });
   });

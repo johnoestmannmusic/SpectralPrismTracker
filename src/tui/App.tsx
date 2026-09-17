@@ -14,6 +14,7 @@ import {
   InstrumentsOverlay,
   type InstrumentTab,
 } from "./components/InstrumentsOverlay";
+import { PatternsOverlay } from "./components/PatternsOverlay";
 import { ExplainerPanel } from "./components/ExplainerPanel";
 import {
   DEFAULT_EXPLAINER,
@@ -69,6 +70,7 @@ type Overlay =
   | "mixer"
   | "samples"
   | "instruments"
+  | "patterns"
   | "sampler"
   | "spectral"
   | "percussion"
@@ -563,7 +565,12 @@ export function App({ session }: Props) {
                 title: "Instruments",
                 hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
               }
-            : null;
+            : overlay === "patterns"
+              ? {
+                  title: "Pattern Manager",
+                  hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e number · enter jump · esc close",
+                }
+              : null;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -605,6 +612,14 @@ export function App({ session }: Props) {
                 setReturnToList(true);
                 setOverlay(tab);
               }}
+              onExplain={setMenuExplainer}
+              height={contentHeight}
+            />
+          ) : overlay === "patterns" ? (
+            <PatternsOverlay
+              session={session}
+              active={overlay === "patterns"}
+              onClose={() => setOverlay("none")}
               onExplain={setMenuExplainer}
               height={contentHeight}
             />

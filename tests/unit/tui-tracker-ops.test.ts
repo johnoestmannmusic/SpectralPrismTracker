@@ -72,6 +72,27 @@ describe("tracker block operations", () => {
     expect(session.song!.meta.orderLength).toBe(before);
   });
 
+  it("re-arranges orders with /move", async () => {
+    const channel = session.song!.channels[0]!;
+    const before = channel.orderList.slice(0, 2);
+    expect((await run("move down 0")).ok).toBe(true);
+    expect(channel.orderList[0]).toBe(before[1]);
+    expect(channel.orderList[1]).toBe(before[0]);
+    // Swap back so later tests see the original arrangement.
+    expect((await run("move up 1")).ok).toBe(true);
+    expect(channel.orderList.slice(0, 2)).toEqual(before);
+  });
+
+  it("re-points a pattern number with /setpattern", async () => {
+    const channel = session.song!.channels[0]!;
+    const original = channel.orderList[0];
+    expect((await run("setpattern 0 42")).ok).toBe(true);
+    expect(channel.orderList[0]).toBe(42);
+    expect(channel.patterns.has(42)).toBe(true);
+    expect((await run(`setpattern 0 ${original}`)).ok).toBe(true);
+    expect(channel.orderList[0]).toBe(original);
+  });
+
   it("honours step when entering notes", async () => {
     await run("step 3");
     session.setCursor({ order: 0, channel: 0, row: 0, column: 0 });

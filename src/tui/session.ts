@@ -36,10 +36,12 @@ import {
   globalColumnIndex,
   insertPatternAfter,
   interpolateColumn,
+  moveOrder as moveOrderSnapshot,
   readValue,
   recordLastValue,
-  removePatternAt,
+  removePatternAt as removePatternAtSnapshot,
   selectionRect,
+  setOrderPattern,
   writeValue,
   type CellPos,
   type CellValue,
@@ -990,34 +992,73 @@ export class Session {
 
   /** Inserts a new order after the viewed one; `duplicate` clones the current pattern. */
   insertPattern(duplicate = false): boolean {
-    const song = this.state.song;
-    if (!song) return false;
-    const snapshot = patternSnapshot(song);
-    insertPatternAfter(
-      snapshot,
-      this.state.viewOrder,
-      song.meta.patternLength,
-      duplicate,
-    );
-    applySnapshot(song, snapshot);
-    this.history = [];
-    this.redoStack = [];
-    this.patch({ dirty: true });
-    return true;
+    return this.insertPatternAt(this.state.viewOrder, duplicate);
   }
 
-  removePattern(): boolean {
+  /** Inserts a new order after `order`; `duplicate` clones that pattern. */
+  insertPatternAt(order: number, duplicate = false): boolean {
     const song = this.state.song;
-    if (!song || song.meta.orderLength <= 1) return false;
+    if (!song) return false;
+    const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
     const snapshot = patternSnapshot(song);
-    removePatternAt(snapshot, this.state.viewOrder);
+    insertPatternAfter(snapshot, pos, song.meta.patternLength, duplicate);
     applySnapshot(song, snapshot);
     this.history = [];
     this.redoStack = [];
     this.patch({
       dirty: true,
-      viewOrder: Math.min(this.state.viewOrder, song.meta.orderLength - 1),
+      viewOrder: Math.min(pos + 1, song.meta.orderLength - 1),
     });
+    return true;
+  }
+
+  removePattern(): boolean {
+    return this.removePatternAt(this.state.viewOrder);
+  }
+
+  removePatternAt(order: number): boolean {
+    const song = this.state.song;
+    if (!song || song.meta.orderLength <= 1) return false;
+    const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
+    const snapshot = patternSnapshot(song);
+    removePatternAtSnapshot(snapshot, pos);
+    applySnapshot(song, snapshot);
+    this.history = [];
+    this.redoStack = [];
+    this.patch({
+      dirty: true,
+      viewOrder: Math.min(pos, song.meta.orderLength - 1),
+    });
+    return true;
+  }
+
+  /** Re-arranges: swaps an order position with its neighbour across channels. */
+  moveOrder(order: number, direction: -1 | 1): boolean {
+    const song = this.state.song;
+    if (!song) return false;
+    const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
+    const snapshot = patternSnapshot(song);
+    if (!moveOrderSnapshot(snapshot, pos, direction)) return false;
+    applySnapshot(song, snapshot);
+    this.history = [];
+    this.redoStack = [];
+    this.patch({ dirty: true, viewOrder: pos + direction });
+    return true;
+  }
+
+  /** Re-points an order position at a channel-0 pattern number. */
+  setOrderPatternNumber(order: number, patternIndex: number): boolean {
+    const song = this.state.song;
+    if (!song) return false;
+    const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
+    const next = Math.min(Math.max(Math.round(patternIndex), 0), 255);
+    const snapshot = patternSnapshot(song);
+    if (!setOrderPattern(snapshot, pos, next, song.meta.patternLength))
+      return false;
+    applySnapshot(song, snapshot);
+    this.history = [];
+    this.redoStack = [];
+    this.patch({ dirty: true });
     return true;
   }
 

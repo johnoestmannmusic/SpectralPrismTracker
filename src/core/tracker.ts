@@ -458,6 +458,55 @@ export function removePatternAt(snapshot: PatternSnapshot, pos: number): void {
   }
 }
 
+/** Swaps an order position with its neighbour across every channel. */
+export function moveOrder(
+  snapshot: PatternSnapshot,
+  pos: number,
+  direction: -1 | 1,
+): boolean {
+  const target = pos + direction;
+  if (target < 0 || target >= snapshot.orderLength) return false;
+  for (const channel of snapshot.channels) {
+    const a = channel.orderList[pos];
+    const b = channel.orderList[target];
+    if (a === undefined || b === undefined) continue;
+    channel.orderList[pos] = b;
+    channel.orderList[target] = a;
+  }
+  return true;
+}
+
+/**
+ * Re-points an order position at a specific pattern number on channel 0,
+ * creating an empty pattern when that number is new (Pattern Manager parity).
+ */
+export function setOrderPattern(
+  snapshot: PatternSnapshot,
+  pos: number,
+  patternIndex: number,
+  patternLength: number,
+): boolean {
+  const channel = snapshot.channels[0];
+  if (!channel || pos < 0 || pos >= channel.orderList.length) return false;
+  channel.orderList[pos] = patternIndex;
+  if (!channel.patterns.some(([index]) => index === patternIndex)) {
+    channel.patterns.push([
+      patternIndex,
+      Array.from({ length: patternLength }, () => ({
+        note: null,
+        instrument: null,
+        volume: null,
+        effects: Array.from({ length: 8 }, () => ({
+          effect: null,
+          value: null,
+        })),
+      })),
+    ]);
+    channel.patterns.sort((a, b) => a[0] - b[0]);
+  }
+  return true;
+}
+
 /**
  * Re-targets every INS cell after instrument `deletedIndex` is removed:
  * references to it are cleared, and higher indices shift down by one.

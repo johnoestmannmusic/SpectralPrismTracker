@@ -262,9 +262,9 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
-    id: "instrument",
-    name: "instrument",
-    aliases: ["ins"],
+    id: "setinstrument",
+    name: "setinstrument",
+    aliases: ["ins", "setins"],
     description: "Set the instrument on the cursor cell",
     category: "edit",
     args: [{ name: "index", type: "number", required: true }],
@@ -659,6 +659,72 @@ export const builtinCommands: CommandDef[] = [
       ctx.session.removePattern()
         ? ok("Removed order")
         : fail("Cannot remove the last order"),
+  },
+  {
+    id: "patterns",
+    name: "patterns",
+    aliases: ["patternmanager", "pm"],
+    description:
+      "Open the Pattern Manager (add/duplicate/remove/re-arrange orders)",
+    category: "edit",
+    run: (_args, ctx) => {
+      ctx.openOverlay?.("patterns");
+      const orders = ctx.session.getState().song?.meta.orderLength ?? 0;
+      return ok(`Pattern Manager (${orders} orders)`, { orders });
+    },
+  },
+  {
+    id: "move",
+    name: "move",
+    aliases: ["moveorder"],
+    description: "Re-arrange: move an order up or down",
+    category: "edit",
+    args: [
+      {
+        name: "direction",
+        type: "enum",
+        required: true,
+        choices: ["up", "down"],
+      },
+      { name: "order", type: "number" },
+    ],
+    run: (args, ctx) => {
+      const direction =
+        arg(args, "direction") === "up"
+          ? -1
+          : arg(args, "direction") === "down"
+            ? 1
+            : null;
+      if (direction === null) return fail("direction must be up or down");
+      const order =
+        arg(args, "order") !== undefined
+          ? Number(arg(args, "order"))
+          : ctx.session.getState().viewOrder;
+      if (!Number.isFinite(order)) return fail("order must be a number");
+      return ctx.session.moveOrder(order, direction)
+        ? ok(`Moved order ${order} ${arg(args, "direction")}`)
+        : fail("Cannot move further");
+    },
+  },
+  {
+    id: "setpattern",
+    name: "setpattern",
+    aliases: ["pat"],
+    description: "Point an order at a specific pattern number (channel 0)",
+    category: "edit",
+    args: [
+      { name: "order", type: "number", required: true },
+      { name: "pattern", type: "number", required: true },
+    ],
+    run: (args, ctx) => {
+      const order = Number(arg(args, "order"));
+      const pattern = Number(arg(args, "pattern"));
+      if (!Number.isFinite(order) || !Number.isFinite(pattern))
+        return fail("order and pattern must be numbers");
+      return ctx.session.setOrderPatternNumber(order, pattern)
+        ? ok(`Order ${order} → pattern ${pattern}`)
+        : fail("Cannot set pattern");
+    },
   },
   {
     id: "clearall",

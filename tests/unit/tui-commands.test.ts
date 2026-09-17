@@ -181,6 +181,13 @@ describe("session commands over the bundled song", () => {
     expect(data.instruments).toBeGreaterThan(0);
   });
 
+  it("/patterns reports the order count", async () => {
+    const result = await run(session, "patterns");
+    expect(result.ok).toBe(true);
+    const data = result.data as { orders: number };
+    expect(data.orders).toBeGreaterThan(0);
+  });
+
   it("/new names source samples from their filenames", async () => {
     const result = await run(session, "new");
     expect(result.ok).toBe(true);
