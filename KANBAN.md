@@ -68,6 +68,28 @@ Data/model: add `coverArt?: CoverArtDesign | null` to `ProjectFile` (src/core/pr
 
 ## Implemented
 
+### FEAT-16 — Perc mode: auto-preview the rendered one-shot on parameter slider release
+- priority: medium
+- tags: spectral, percussion, ui, preview
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Request (John):** In PERC MODE, letting go of any percussion parameter slider should audition the final sound automatically, so results can be heard without scrolling back up to the Preview button.
+
+**Design**
+- Fire a preview on the released slider only (range inputs), not on every `onChange` during the drag (renders already run continuously during the drag).
+- Must wait for the async Spectral re-render to finish before previewing, otherwise `sampler.buffer()` sees `fused === null` mid-render and the preview errors/plays stale audio.
+- Reuse the existing top-bar Preview path: `backend.preview(index, reference)`.
+- Scope: sliders inside `PercussionControls` (primary + Advanced) while percussion is enabled.
+
+**Architecture**
+- `SamplerEditor.tsx`: add optional `onCommit` to the shared `Slider` (fires on pointerup/keyup), thread an `onPreview` callback into `PercussionControls`, and add a pending-preview guard in the existing `useAnimationFrame` poll that only previews once `backend.fusionRendering(index)` is false and `backend.fusionReady(index)` is true (with a short grace window so a not-yet-started render isn't skipped).
+
+**Acceptance**
+- Releasing any percussion slider plays the freshly rendered result once.
+- No preview fires mid-drag; no error/stale preview when the render is still in flight.
+- Existing Preview button and all tests unchanged.
+
 ### FEAT-14 — Percussion polish: punchier presets, drive/compression stage, simplified UI
 
 - priority: high

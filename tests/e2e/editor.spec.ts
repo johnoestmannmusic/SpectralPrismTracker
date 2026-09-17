@@ -202,6 +202,18 @@ test("Percussion post-stage renders a one-shot after Fusion", async () => {
       timeout: 30_000,
     });
 
+    // Releasing a percussion parameter slider auditions the freshly rendered
+    // one-shot (no scrolling back to the Preview button). Pressing End on the
+    // Length slider sets a 2s hit, long enough to observe the playing state.
+    const lengthSlider = spectralTab
+      .locator('.percussion .slider', { hasText: 'Length (s)' })
+      .locator('input[type="range"]');
+    await lengthSlider.focus();
+    await lengthSlider.press('End');
+    await expect(
+      modal.getByRole('button', { name: 'Stop Preview' }),
+    ).toBeVisible({ timeout: 30_000 });
+
     // A rendered non-empty result waveform exists for the one-shot.
     const resultWave = spectralTab.locator(".waveform canvas").last();
     await expect(resultWave).toBeVisible();

@@ -65,6 +65,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
   const [markers, setMarkers] = useState<WaveformMarker[]>([]);
   const [previewing, setPreviewing] = useState(false);
   const [rendering, setRendering] = useState(false);
+  // PERC MODE auto-preview: set when a percussion slider is released, then
+  // consumed once the resulting Spectral render has finished.
+  const previewRequestAt = useRef<number | null>(null);
 
   useAnimationFrame(() => {
     const dur = backend.effectiveDuration(props.index);
@@ -83,7 +86,24 @@ export function SamplerEditor(props: SamplerEditorProps) {
         })),
     );
     setPreviewing(backend.previewPosition()?.instrument === props.index);
-    setRendering(backend.fusionRendering(props.index));
+    const renderingNow = backend.fusionRendering(props.index);
+    setRendering(renderingNow);
+    // Audition the freshly rendered one-shot after a slider release, but only
+    // once the async render has settled so we never play the previous buffer
+    // (or error on a half-finished one). The short grace window covers the
+    // moment before React has kicked off the render.
+    const requestedAt = previewRequestAt.current;
+    if (
+      requestedAt !== null &&
+      !renderingNow &&
+      performance.now() - requestedAt > 120 &&
+      backend.fusionReady(props.index) &&
+      backend.effectiveDuration(props.index) > 0 &&
+      props.settings.endSec > props.settings.startSec
+    ) {
+      previewRequestAt.current = null;
+      backend.preview(props.index, props.reference);
+    }
   });
 
   const title = props.spectralTab ? "SpectralPrism" : `Sampler — ${props.name}`;
@@ -188,6 +208,9 @@ export function SamplerEditor(props: SamplerEditorProps) {
             peaks={peaks}
             markers={markers}
             rendering={rendering}
+            onPreviewRequest={() => {
+              previewRequestAt.current = performance.now();
+            }}
           />
         ) : (
           <div className="editor-tab">
@@ -353,6 +376,7 @@ function SpectralTab(
     peaks: Array<[number, number]>;
     markers: WaveformMarker[];
     rendering: boolean;
+    onPreviewRequest: () => void;
   },
 ) {
   const { backend, settings } = props;
@@ -594,6 +618,7 @@ function SpectralTab(
         onUpdate={(patch) =>
           props.onUpdate({ spectral: { ...spectral, ...patch } })
         }
+        onPreview={props.onPreviewRequest}
       />
 
       <h3>Result</h3>
@@ -620,6 +645,7 @@ function formatModNumber(value: number): string {
 function PercussionControls(props: {
   spectral: SpectralSettings;
   onUpdate: (patch: Partial<SpectralSettings>) => void;
+  onPreview: () => void;
 }) {
   const percussion = props.spectral.percussion;
   const patch = (next: Partial<PercussionSettings>) =>
@@ -637,7 +663,22 @@ function PercussionControls(props: {
     patch({ pitchStart: value / 2, pitchEnd: -value / 2 });
 
   return (
-    <div className="percussion">
+    <div
+      className="percussion"
+      // Releasing a parameter slider auditions the result, so the user does
+      // not have to scroll back up to the Preview button. Scoped to range
+      // inputs only (preset buttons / selects / number fields are ignored).
+      onPointerUp={(e) => {
+        if ((e.target as HTMLElement).matches('input[type="range"]')) {
+          props.onPreview();
+        }
+      }}
+      onKeyUp={(e) => {
+        if ((e.target as HTMLElement).matches('input[type="range"]')) {
+          props.onPreview();
+        }
+      }}
+    >
       <h3>PERCUSSION · third step, applied after Fusion</h3>
       <div className="row wrap">
         <label>
