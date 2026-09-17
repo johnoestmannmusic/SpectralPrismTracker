@@ -101,14 +101,15 @@ test("EDIT MODE: Z repeats the last entered note", async () => {
     const window = await app.firstWindow();
     await expect(window.locator(".toolbar .status")).toContainText("instruments", { timeout: 30_000 });
     await window.getByRole("button", { name: "EDIT MODE" }).click();
+    // Wait for EDIT MODE's UI before interacting, so the right-click lands.
+    await window.getByRole("button", { name: "Pattern Manager" }).waitFor();
 
     // Enter a note via the right-click menu on row 0, channel 0.
     const firstNote = window.locator(".tracker tbody tr").first().locator("td").nth(1);
     await firstNote.click({ button: "right" });
-    await window
-      .locator(".context-menu")
-      .getByRole("button", { name: "D-4", exact: true })
-      .click();
+    const menu = window.locator(".context-menu");
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: "D-4", exact: true }).click();
 
     // Adjust it up one semitone (Q), then Z must repeat the adjusted value
     // (D#4) exactly, not one step further.

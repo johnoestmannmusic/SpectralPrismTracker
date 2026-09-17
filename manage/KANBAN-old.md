@@ -696,6 +696,20 @@ _(none currently)_
   the generic "instruments" status, and the Master FX/New Project tests assert
   the modal and the post-reset count instead.
 
+- **0007E-BUG-023 — Firefox played Spectral instruments unfused (ring-mod #6).**
+  *(2026-09-13 14:15)* Firefox's Spectral Worker takes much longer to warm up
+  than Chromium's, so `decodeAll` often ran while `spectralWasmAvailable()` was
+  still false and skipped every Spectral render; the fused (e.g. ring-modulated)
+  clips were then missing, and the WAV export dropped them too. Renders are now
+  started as soon as the engine reports ready (effect on `wasmReady`/`song`),
+  and `runWavExport` starts any still-missing renders and waits (bounded) before
+  mixing. Verified in Playwright Firefox: all Spectral instruments report
+  "Rendered result is ready" and an immediate export produces a valid 44.9 s
+  tagged WAV. Also stabilized the EDIT-MODE Z E2E (wait for the context menu).
+- **Note — ring mod save/load is correct.** Round-tripping `ringModAmount` through
+  `projectToJson`/`projectFromJson` preserves the value; the Firefox symptom was
+  the skipped render above, not serialization.
+
 ---
 
 _Add new cards at the bottom of their bucket; move them rather than copy._

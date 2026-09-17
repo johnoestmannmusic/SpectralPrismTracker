@@ -174,6 +174,21 @@ export function App() {
     };
   }, []);
 
+  // If the Spectral WASM engine became ready after the samples were decoded,
+  // the initial renders were skipped — start any that are still missing so the
+  // fused (e.g. ring-modulated) sound is used. This matters most in Firefox,
+  // where the Spectral Worker takes noticeably longer to warm up.
+  useEffect(() => {
+    if (!wasmReady || !song) return;
+    const engine = backendRef.current;
+    if (!engine) return;
+    settingsRef.current.forEach((setting, i) => {
+      if (setting.spectral.enabled && setting.sourceIndex !== null && !engine.fusionReady(i)) {
+        engine.renderFusion(i);
+      }
+    });
+  }, [wasmReady, song]);
+
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
@@ -899,6 +914,25 @@ export function App() {
         } else {
           const engine = backendRef.current;
           if (!engine) return;
+          // Make sure every Spectral instrument has finished rendering before we
+          // read its fused clip. The in-browser Worker can lag (notably in
+          // Firefox), and a missing render would silently drop or unfuse it.
+          const pendingFusion = () =>
+            settings.some(
+              (setting, i) =>
+                setting.spectral.enabled && setting.sourceIndex !== null && !engine.fusionReady(i),
+            );
+          if (wasmReady && pendingFusion()) {
+            settings.forEach((setting, i) => {
+              if (setting.spectral.enabled && setting.sourceIndex !== null && !engine.fusionReady(i)) {
+                engine.renderFusion(i);
+              }
+            });
+            const deadline = Date.now() + 30_000;
+            while (pendingFusion() && Date.now() < deadline) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+          }
           const clips = settings.map((_, i) => engine.effectiveClip(i));
           base = renderSamplerMix(
             sequenceFromSong(song),
@@ -959,6 +993,7 @@ export function App() {
       project,
       masterFx,
       saveBytes,
+      wasmReady,
     ],
   );
 
