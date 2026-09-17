@@ -4,13 +4,18 @@ import {
   initSync,
   render_fused,
   render_fused_modulated,
-} from "@/renderer/vendor/prism/prism_wasm.js";
+} from "@/wasm/vendor/prism/prism_wasm.js";
 import { makeSpectralRenderer, type PrismWasmModule } from "@/wasm/prism";
-import { defaultSpectralSettings, sampleSpectralModulation } from "@/core/spectral";
+import {
+  defaultSpectralSettings,
+  sampleSpectralModulation,
+} from "@/core/spectral";
 import { projectPath } from "./fixtures";
 
 beforeAll(() => {
-  const bytes = readFileSync(projectPath("src/renderer/vendor/prism/prism_wasm_bg.wasm"));
+  const bytes = readFileSync(
+    projectPath("src/wasm/vendor/prism/prism_wasm_bg.wasm"),
+  );
   initSync({ module: bytes });
 });
 
@@ -26,14 +31,20 @@ describe("prism_dsp WASM (real engine)", () => {
     settings.loopLengthSeconds = 1;
 
     const wasm = { render_fused } as unknown as PrismWasmModule;
-    const clip = makeSpectralRenderer(wasm)({ channels: [data], sampleRate: rate }, null, settings);
+    const clip = makeSpectralRenderer(wasm)(
+      { channels: [data], sampleRate: rate },
+      null,
+      settings,
+    );
 
     expect(clip.channels.length).toBe(2);
     const duration = clip.channels[0]!.length / clip.sampleRate;
     expect(Math.abs(duration - 1)).toBeLessThan(0.05);
     expect(Array.from(clip.channels[0]!).every(Number.isFinite)).toBe(true);
     expect(
-      Array.from(clip.channels.flatMap((c) => Array.from(c))).some((v) => Math.abs(v) > 1e-6),
+      Array.from(clip.channels.flatMap((c) => Array.from(c))).some(
+        (v) => Math.abs(v) > 1e-6,
+      ),
     ).toBe(true);
   });
 
@@ -55,9 +66,11 @@ describe("prism_dsp WASM (real engine)", () => {
       { channels: [tone(330)], sampleRate: rate },
       settings,
     );
-    expect(Array.from(clip.channels.flatMap((c) => Array.from(c))).every(Number.isFinite)).toBe(
-      true,
-    );
+    expect(
+      Array.from(clip.channels.flatMap((c) => Array.from(c))).every(
+        Number.isFinite,
+      ),
+    ).toBe(true);
   });
 
   it("bakes a parameter modulation route into the result", () => {
@@ -89,12 +102,22 @@ describe("prism_dsp WASM (real engine)", () => {
       render_fused_modulated,
     } as unknown as PrismWasmModule;
     const render = makeSpectralRenderer(wasm);
-    const plainClip = render({ channels: [data], sampleRate: rate }, null, plain);
-    const modClip = render({ channels: [data], sampleRate: rate }, null, modulated);
-
-    expect(Array.from(modClip.channels.flatMap((c) => Array.from(c))).every(Number.isFinite)).toBe(
-      true,
+    const plainClip = render(
+      { channels: [data], sampleRate: rate },
+      null,
+      plain,
     );
+    const modClip = render(
+      { channels: [data], sampleRate: rate },
+      null,
+      modulated,
+    );
+
+    expect(
+      Array.from(modClip.channels.flatMap((c) => Array.from(c))).every(
+        Number.isFinite,
+      ),
+    ).toBe(true);
     const diff: number = Array.from(modClip.channels[0]!).reduce(
       (sum, v, i) => sum + (v - plainClip.channels[0]![i]!) ** 2,
       0,

@@ -1,0 +1,258 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createRegistry } from "@/tui/commands";
+import type { CommandContext } from "@/tui/commands/types";
+import { Session } from "@/tui/session";
+
+const registry = createRegistry();
+const session = new Session();
+
+function ctx(): CommandContext {
+  return { session, listCommands: () => registry.all() };
+}
+
+async function run(line: string) {
+  return registry.execute(line, ctx());
+}
+
+describe("tracker block operations", () => {
+  beforeAll(async () => {
+    await session.init();
+  }, 60_000);
+
+  afterAll(() => {
+    session.dispose();
+  });
+
+  it("q/a bump the value under the cursor", () => {
+    session.setCursor({ order: 0, channel: 3, row: 0, column: 0 });
+    const before = session.song!.channels[3]!.patterns.get(
+      session.song!.channels[3]!.orderList[0]!,
+    )!.rows[0]!.note;
+    expect(before?.kind).toBe("note");
+    session.adjustValue(1);
+    const after = session.song!.channels[3]!.patterns.get(
+      session.song!.channels[3]!.orderList[0]!,
+    )!.rows[0]!.note;
+    expect((after as { note: number }).note).toBe(
+      (before as { note: number }).note + 1,
+    );
+    session.undo();
+  });
+
+  it("copies, pastes and undoes a block", () => {
+    session.setCursor({ order: 0, channel: 3, row: 0, column: 0 });
+    session.clearSelection();
+    session.extendSelection({ row: 2 });
+    expect(session.copySelection()).toBe(true);
+
+    session.setCursor({ order: 0, channel: 3, row: 10, column: 0 });
+    session.clearSelection();
+    expect(session.pasteSelection()).toBe(true);
+    expect(session.backend).not.toBeNull();
+    session.undo();
+    session.undo();
+  });
+
+  it("transposes a selected block", () => {
+    session.setCursor({ order: 0, channel: 3, row: 0, column: 0 });
+    session.clearSelection();
+    session.extendSelection({ row: 1 });
+    expect(session.transposeSelection(12)).toBe(true);
+    session.undo();
+  });
+
+  it("inserts and removes orders", async () => {
+    const before = session.song!.meta.orderLength;
+    expect((await run("insert")).ok).toBe(true);
+    expect(session.song!.meta.orderLength).toBe(before + 1);
+    expect((await run("remove")).ok).toBe(true);
+    expect(session.song!.meta.orderLength).toBe(before);
+  });
+
+  it("honours step when entering notes", async () => {
+    await run("step 3");
+    session.setCursor({ order: 0, channel: 0, row: 0, column: 0 });
+    await run("note C-4");
+    expect(session.getState().cursor.row).toBe(3);
+    await run("step 1");
+    session.undo();
+  });
+
+  it("recalls command history", () => {
+    session.recordCommand("preview 5");
+    session.recordCommand("info");
+    expect(session.recallCommand(-1)).toBe("info");
+    expect(session.recallCommand(-1)).toBe("preview 5");
+    expect(session.recallCommand(1)).toBe("info");
+  });
+
+  it("toggles follow by command", async () => {
+    session.setFollow(true);
+    expect((await run("follow off")).ok).toBe(true);
+    expect(session.getState().follow).toBe(false);
+    await run("follow on");
+    expect(session.getState().follow).toBe(true);
+  });
+
+  it("keeps follow on while navigating and editing", () => {
+    session.setFollow(true);
+    session.moveCursor({ order: 1 });
+    expect(session.getState().follow).toBe(true);
+    session.setCursor({ order: 0, row: 0, channel: 0, column: 0 });
+    expect(session.getState().follow).toBe(true);
+    session.editCell({ note: { kind: "note", note: 60 } });
+    expect(session.getState().follow).toBe(true);
+    session.undo();
+  });
+
+  it("wraps rows across pattern boundaries", () => {
+    const patternLength = session.song!.meta.patternLength;
+    session.setCursor({
+      order: 0,
+      row: patternLength - 1,
+      channel: 0,
+      column: 0,
+    });
+    session.moveCursor({ row: 1 });
+    expect(session.getState().cursor.order).toBe(1);
+    expect(session.getState().cursor.row).toBe(0);
+    session.moveCursor({ row: -1 });
+    expect(session.getState().cursor.order).toBe(0);
+    expect(session.getState().cursor.row).toBe(patternLength - 1);
+  });
+
+  it("cycles orders with wrap-around", () => {
+    const orderLength = session.song!.meta.orderLength;
+    session.setCursor({
+      order: orderLength - 1,
+      row: 0,
+      channel: 0,
+      column: 0,
+    });
+    session.moveCursor({ order: 1 });
+    expect(session.getState().cursor.order).toBe(0);
+    session.moveCursor({ order: -1 });
+    expect(session.getState().cursor.order).toBe(orderLength - 1);
+  });
+
+  it("Ctrl+arrow jumps 16 rows and changes channel to NOTE", () => {
+    session.setCursor({ order: 0, row: 0, channel: 0, column: 2 });
+    session.moveCursor({ row: 16 });
+    expect(session.getState().cursor.row).toBe(16);
+    session.moveCursor({ channel: 1 });
+    expect(session.getState().cursor.channel).toBe(1);
+    expect(session.getState().cursor.column).toBe(0);
+  });
+
+  it("scrolls the view with the playhead while following", async () => {
+    const engine = session.backend!;
+    const deadline = Date.now() + 20_000;
+    while (!engine.samplerReady() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    session.setCursor({ order: 0, row: 0, channel: 0, column: 0 });
+    session.setFollow(true);
+    await run("play");
+    const end = Date.now() + 4000;
+    let advanced = false;
+    while (Date.now() < end && !advanced) {
+      session.refreshPlayhead();
+      if ((session.getState().viewRow ?? 0) > 0) advanced = true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await run("stop");
+    expect(advanced).toBe(true);
+    // Editing never disabled follow along the way.
+    expect(session.getState().follow).toBe(true);
+  }, 30_000);
+
+  it("select-all, note off and octave adjust use the selection", () => {
+    session.setCursor({ order: 0, row: 0, channel: 0, column: 0 });
+    session.selectAll();
+    expect(session.selection()).not.toBeNull();
+    session.noteOff();
+    session.adjustValue(12);
+    session.undo();
+    session.undo();
+    session.clearSelection();
+  });
+
+  it("plays from the selected cell (Ctrl+Space)", async () => {
+    const engine = session.backend!;
+    const deadline = Date.now() + 20_000;
+    while (!engine.samplerReady() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    session.setCursor({ order: 0, row: 8, channel: 0, column: 0 });
+    session.playFromCursor();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    session.refreshPlayhead();
+    expect(session.getState().playing).toBe(true);
+    // Started at row 8, so the clock is already past the first few rows.
+    expect(session.getState().time).toBeGreaterThan(0.5);
+    await run("stop");
+  }, 30_000);
+});
+
+describe("file and export commands", () => {
+  let dir = "";
+
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "lantern-io-"));
+  }, 60_000);
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("saves a project, then reopens it", async () => {
+    const target = path.join(dir, "song.lampjson");
+    expect((await run(`save "${target}"`)).ok).toBe(true);
+    const text = await readFile(target, "utf8");
+    expect(text).toContain("version");
+
+    const opened = await run(`open "${target}"`);
+    expect(opened.ok).toBe(true);
+    expect(session.getState().song).not.toBeNull();
+  });
+
+  it("exports MIDI", async () => {
+    const result = await run(`export mid "${path.join(dir, "song.mid")}"`);
+    expect(result.ok).toBe(true);
+    const bytes = await readFile(path.join(dir, "song.mid"));
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(bytes.subarray(0, 4).toString("ascii")).toBe("MThd");
+  });
+
+  it("exports a source-sample ZIP", async () => {
+    const result = await run(`export zip "${path.join(dir, "samples.zip")}"`);
+    expect(result.ok).toBe(true);
+    const bytes = await readFile(path.join(dir, "samples.zip"));
+    expect(bytes.subarray(0, 2).toString("ascii")).toBe("PK");
+  });
+
+  it("exports the cover art as a PNG", async () => {
+    const target = path.join(dir, "cover.png");
+    const result = await run(`export png "${target}"`);
+    expect(result.ok).toBe(true);
+    const bytes = await readFile(target);
+    expect(Array.from(bytes.subarray(0, 8))).toEqual([
+      137, 80, 78, 71, 13, 10, 26, 10,
+    ]);
+  });
+
+  it("starts a new project", async () => {
+    const result = await run("new");
+    expect(result.ok).toBe(true);
+    expect(session.getState().song).not.toBeNull();
+  });
+
+  it("completes file paths for /open", async () => {
+    const def = registry.get("open")!;
+    const candidates = await registry.completeArg(def, 0, dir, ctx());
+    expect(candidates.length).toBeGreaterThan(0);
+  });
+});

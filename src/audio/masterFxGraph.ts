@@ -60,18 +60,28 @@ export function createMasterFxGraph(
   const update = (settings: MasterFxSettings) => {
     current = settings;
     const now = ctx.currentTime;
-    delayNode.delayTime.setValueAtTime(Math.max(0.001, settings.delay.timeSec), now);
-    delayFeedback.gain.setValueAtTime(
-      settings.delay.enabled ? Math.min(Math.max(settings.delay.feedback, 0), 0.95) : 0,
+    delayNode.delayTime.setValueAtTime(
+      Math.max(0.001, settings.delay.timeSec),
       now,
     );
-    delayTone.frequency.setValueAtTime(Math.max(200, settings.delay.toneHz), now);
+    delayFeedback.gain.setValueAtTime(
+      settings.delay.enabled
+        ? Math.min(Math.max(settings.delay.feedback, 0), 0.95)
+        : 0,
+      now,
+    );
+    delayTone.frequency.setValueAtTime(
+      Math.max(200, settings.delay.toneHz),
+      now,
+    );
     delayWet.gain.setValueAtTime(
       settings.delay.enabled ? Math.min(Math.max(settings.delay.mix, 0), 1) : 0,
       now,
     );
     reverbWet.gain.setValueAtTime(
-      settings.reverb.enabled ? Math.min(Math.max(settings.reverb.mix, 0), 1) : 0,
+      settings.reverb.enabled
+        ? Math.min(Math.max(settings.reverb.mix, 0), 1)
+        : 0,
       now,
     );
     regenerateImpulse();

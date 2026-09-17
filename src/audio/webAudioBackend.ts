@@ -1,7 +1,12 @@
 import type { AudioClip } from "@/core/dsp";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import { clipDuration } from "@/core/dsp";
-import { Scheduler, waveform, type SamplerSettings, type Sequence } from "@/core/sampler";
+import {
+  Scheduler,
+  waveform,
+  type SamplerSettings,
+  type Sequence,
+} from "@/core/sampler";
 import {
   NUM_CHANNELS,
   type AudioBackend,
@@ -12,7 +17,10 @@ import {
 import { SamplerEngine, Voice, buildVoice } from "./webSampler";
 import { createMasterFxGraph, type MasterFxGraph } from "./masterFxGraph";
 
-async function decodeBytes(ctx: AudioContext, bytes: Uint8Array): Promise<AudioBuffer> {
+async function decodeBytes(
+  ctx: AudioContext,
+  bytes: Uint8Array,
+): Promise<AudioBuffer> {
   const arrayBuffer = bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
@@ -37,7 +45,12 @@ export class WebAudioBackend implements AudioBackend {
   private masterGain: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private channelGain: Array<GainNode | null> = [null, null, null, null];
-  private channelAnalyser: Array<AnalyserNode | null> = [null, null, null, null];
+  private channelAnalyser: Array<AnalyserNode | null> = [
+    null,
+    null,
+    null,
+    null,
+  ];
   private meterBuffer = new Float32Array(512);
 
   private channelVolume = [1, 1, 1, 1];
@@ -65,7 +78,12 @@ export class WebAudioBackend implements AudioBackend {
   private stemBuffers: Array<AudioBuffer | null> = [null, null, null, null];
   private stemsReadyFlag = false;
   private chipDuration = 0;
-  private stemSources: Array<AudioBufferSourceNode | null> = [null, null, null, null];
+  private stemSources: Array<AudioBufferSourceNode | null> = [
+    null,
+    null,
+    null,
+    null,
+  ];
 
   private songStartOffset = 0;
   private songStartCtxTime = 0;
@@ -154,7 +172,8 @@ export class WebAudioBackend implements AudioBackend {
             this.sampler.fused[i] = null;
             this.sampler.fusedClips[i] = null;
             this.sampler.fusedWaveforms[i] = [];
-            if (s.spectral.enabled && s.sourceIndex !== null) await this.sampler.renderSpectral(ctx, i);
+            if (s.spectral.enabled && s.sourceIndex !== null)
+              await this.sampler.renderSpectral(ctx, i);
           }
         }
       } catch (e) {
@@ -220,7 +239,13 @@ export class WebAudioBackend implements AudioBackend {
   samplePlayheads(): SamplePlayhead[] {
     if (!this.ctx) return [];
     const now = this.ctx.currentTime;
-    const out = this.sampler.playheads(now).concat(this.patternSamplerPreview.map((v) => v.playhead(now)).filter((p): p is SamplePlayhead => p !== null));
+    const out = this.sampler
+      .playheads(now)
+      .concat(
+        this.patternSamplerPreview
+          .map((v) => v.playhead(now))
+          .filter((p): p is SamplePlayhead => p !== null),
+      );
     const preview = this.instrumentPreview?.voice.playhead(now);
     if (preview) out.push(preview);
     if (this.sourcePreview) {
@@ -312,7 +337,10 @@ export class WebAudioBackend implements AudioBackend {
       return;
     }
     if (settings.looping) {
-      voice.release(voice.start + 1.5, Math.min(Math.max(settings.release, 0), 5));
+      voice.release(
+        voice.start + 1.5,
+        Math.min(Math.max(settings.release, 0), 5),
+      );
     }
 
     let tone: OscillatorNode | null = null;
@@ -389,7 +417,8 @@ export class WebAudioBackend implements AudioBackend {
     }
     for (const note of notes) {
       const settings = this.sampler.settings[note.instrument];
-      if (!settings || settings.muted || settings.sourceIndex === null) continue;
+      if (!settings || settings.muted || settings.sourceIndex === null)
+        continue;
       try {
         const buffer = this.sampler.buffer(ctx, note.instrument);
         const voice = buildVoice(
@@ -403,7 +432,10 @@ export class WebAudioBackend implements AudioBackend {
           when,
           ctx.destination,
         );
-        voice.release(when + duration, Math.min(Math.max(settings.release, 0), 5));
+        voice.release(
+          when + duration,
+          Math.min(Math.max(settings.release, 0), 5),
+        );
         this.patternSamplerPreview.push(voice);
       } catch {
         // Audition is best-effort: a not-yet-ready sample/fusion render is not
@@ -435,7 +467,11 @@ export class WebAudioBackend implements AudioBackend {
   }
 
   setSamplerSettings(instrument: number, settings: SamplerSettings): void {
-    this.sampler.updateSettings(instrument, settings, this.ctx?.currentTime ?? 0);
+    this.sampler.updateSettings(
+      instrument,
+      settings,
+      this.ctx?.currentTime ?? 0,
+    );
   }
 
   /** Replaces the whole per-instrument settings array (after add/delete/import). */
@@ -487,7 +523,9 @@ export class WebAudioBackend implements AudioBackend {
 
   songDuration(): number {
     if (this.mode === "sampler") {
-      return this.sequence ? (this.sequence.rowTimes[this.sequence.rowTimes.length - 1] ?? 0) : 0;
+      return this.sequence
+        ? (this.sequence.rowTimes[this.sequence.rowTimes.length - 1] ?? 0)
+        : 0;
     }
     return this.chipDuration;
   }
@@ -506,7 +544,11 @@ export class WebAudioBackend implements AudioBackend {
       if (this.mode === "chip") {
         this.createStemSources(offset, startTime);
       } else if (this.sequence) {
-        this.sampler.scheduler = new Scheduler(this.sequence, startTime, offset);
+        this.sampler.scheduler = new Scheduler(
+          this.sequence,
+          startTime,
+          offset,
+        );
         this.startTimer(ctx);
       }
     }
@@ -582,7 +624,8 @@ export class WebAudioBackend implements AudioBackend {
   currentTime(): number {
     if (!this.songStarted || !this.ctx) return this.songStartOffset;
     const raw =
-      this.songStartOffset + Math.max(this.ctx.currentTime - this.songStartCtxTime, 0);
+      this.songStartOffset +
+      Math.max(this.ctx.currentTime - this.songStartCtxTime, 0);
     const duration = this.songDuration();
     if (duration > 0) return ((raw % duration) + duration) % duration;
     return raw;
@@ -592,14 +635,18 @@ export class WebAudioBackend implements AudioBackend {
     this.channelVolume[channel] = volume;
     if (this.channelMuted[channel]) return;
     const gain = this.channelGain[channel];
-    if (gain && this.ctx) gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+    if (gain && this.ctx)
+      gain.gain.setValueAtTime(volume, this.ctx.currentTime);
   }
 
   setChannelMute(channel: number, muted: boolean): void {
     this.channelMuted[channel] = muted;
     const gain = this.channelGain[channel];
     if (gain && this.ctx) {
-      gain.gain.setValueAtTime(muted ? 0 : this.channelVolume[channel]!, this.ctx.currentTime);
+      gain.gain.setValueAtTime(
+        muted ? 0 : this.channelVolume[channel]!,
+        this.ctx.currentTime,
+      );
     }
   }
 

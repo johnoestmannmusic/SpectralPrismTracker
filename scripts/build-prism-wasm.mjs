@@ -15,7 +15,7 @@ import path from "node:path";
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const crateDir = path.join(projectRoot, "native/prism-wasm");
 const outDir = path.join(crateDir, "pkg");
-const vendorDir = path.join(projectRoot, "src/renderer/vendor/prism");
+const vendorDir = path.join(projectRoot, "src/wasm/vendor/prism");
 // These are the wasm-bindgen outputs the app imports; `loader.ts` is
 // hand-written and lives alongside them, so it is never overwritten.
 const artifacts = [

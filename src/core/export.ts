@@ -1,4 +1,10 @@
-import { audioClip, clipDuration, clipIsEmpty, clipLen, type AudioClip } from "./dsp";
+import {
+  audioClip,
+  clipDuration,
+  clipIsEmpty,
+  clipLen,
+  type AudioClip,
+} from "./dsp";
 import {
   envelopeAt,
   region,
@@ -13,7 +19,12 @@ function pushU16(out: number[], value: number): void {
 }
 
 function pushU32(out: number[], value: number): void {
-  out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+  out.push(
+    value & 0xff,
+    (value >>> 8) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 24) & 0xff,
+  );
 }
 
 /** Encodes an AudioClip as a canonical 16-bit PCM WAV file. */
@@ -24,7 +35,8 @@ export function wavPcm16(clip: AudioClip, tags?: WavTags): Uint8Array {
   const blockAlign = channels * 2;
   const frames = clipLen(clip);
   const dataSize = frames * blockAlign;
-  if (dataSize > 0xffffffff - 36) throw new Error("Audio is too large for a PCM WAV file");
+  if (dataSize > 0xffffffff - 36)
+    throw new Error("Audio is too large for a PCM WAV file");
 
   const metadata = tags ? buildWavMetadataChunks(tags) : new Uint8Array(0);
 
@@ -50,7 +62,8 @@ export function wavPcm16(clip: AudioClip, tags?: WavTags): Uint8Array {
     for (let c = 0; c < channels; c++) {
       const raw = clip.channels[c]![frame]!;
       const sample = Math.min(Math.max(raw, -1), 1);
-      const value = sample < 0 ? Math.trunc(sample * 32768) : Math.trunc(sample * 32767);
+      const value =
+        sample < 0 ? Math.trunc(sample * 32768) : Math.trunc(sample * 32767);
       pushU16(out, value & 0xffff);
     }
   }
@@ -72,7 +85,8 @@ const CRC_TABLE = (() => {
 
 export function crc32(data: Uint8Array): number {
   let c = 0xffffffff;
-  for (let i = 0; i < data.length; i++) c = CRC_TABLE[(c ^ data[i]!) & 0xff]! ^ (c >>> 8);
+  for (let i = 0; i < data.length; i++)
+    c = CRC_TABLE[(c ^ data[i]!) & 0xff]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -168,7 +182,11 @@ export interface ExportParams {
  * continuous signal (effects must not be baked in per loop, or each repeat would
  * carry its own decaying tail and leave a gap before the next).
  */
-export function arrangeExport(clip: AudioClip, loops: number, fadeOutMs: number): AudioClip {
+export function arrangeExport(
+  clip: AudioClip,
+  loops: number,
+  fadeOutMs: number,
+): AudioClip {
   const srcLen = clipLen(clip);
   if (srcLen === 0 || clip.channels.length === 0) return clip;
 
@@ -181,8 +199,10 @@ export function arrangeExport(clip: AudioClip, loops: number, fadeOutMs: number)
   const out: Float32Array[] = [];
   for (const channel of clip.channels) {
     const dst = new Float32Array(total);
-    for (let r = 0; r < passes; r++) dst.set(channel.subarray(0, srcLen), r * srcLen);
-    for (let j = 0; j < fadeOutFrames; j++) dst[fullFrames + j] = channel[j % srcLen]!;
+    for (let r = 0; r < passes; r++)
+      dst.set(channel.subarray(0, srcLen), r * srcLen);
+    for (let j = 0; j < fadeOutFrames; j++)
+      dst[fullFrames + j] = channel[j % srcLen]!;
     out.push(dst);
   }
   return audioClip(out, rate);
@@ -194,13 +214,19 @@ export function arrangeExport(clip: AudioClip, loops: number, fadeOutMs: number)
  * normalisation. The fade-out must be applied here (after Master FX) so the
  * reverb/delay tail cannot ring past the intended end.
  */
-export function applyExportEnvelope(clip: AudioClip, params: ExportParams): AudioClip {
+export function applyExportEnvelope(
+  clip: AudioClip,
+  params: ExportParams,
+): AudioClip {
   const total = clipLen(clip);
   if (total === 0 || clip.channels.length === 0) return clip;
 
   const rate = clip.sampleRate;
   const fadeInFrames = Math.max(0, Math.round((params.fadeInMs / 1000) * rate));
-  const fadeOutFrames = Math.max(0, Math.round((params.fadeOutMs / 1000) * rate));
+  const fadeOutFrames = Math.max(
+    0,
+    Math.round((params.fadeOutMs / 1000) * rate),
+  );
   const fadeIn = Math.min(fadeInFrames, total);
   const fadeOut = Math.min(fadeOutFrames, total);
   const fadeOutStart = total - fadeOut;
@@ -227,15 +253,22 @@ export function applyExportEnvelope(clip: AudioClip, params: ExportParams): Audi
     }
     if (peak > 0) {
       const gain = 1 / peak;
-      for (const data of out) for (let i = 0; i < total; i++) data[i] = data[i]! * gain;
+      for (const data of out)
+        for (let i = 0; i < total; i++) data[i] = data[i]! * gain;
     }
   }
 
   return audioClip(out, rate);
 }
 
-export function finalizeExport(clip: AudioClip, params: ExportParams): AudioClip {
-  return applyExportEnvelope(arrangeExport(clip, params.loops, params.fadeOutMs), params);
+export function finalizeExport(
+  clip: AudioClip,
+  params: ExportParams,
+): AudioClip {
+  return applyExportEnvelope(
+    arrangeExport(clip, params.loops, params.fadeOutMs),
+    params,
+  );
 }
 
 // ---- Offline sampler mixdown (ports lantern-core::export::render_sampler_mix) ----
@@ -278,7 +311,8 @@ function rateAt(voice: RenderVoice, time: number): number {
   for (const ramp of voice.rateRamps) {
     if (time < ramp.start) return current;
     if (time <= ramp.end) {
-      const amount = (time - ramp.start) / Math.max(ramp.end - ramp.start, 0.0001);
+      const amount =
+        (time - ramp.start) / Math.max(ramp.end - ramp.start, 0.0001);
       return ramp.from + (ramp.to - ramp.from) * amount;
     }
     current = ramp.to;
@@ -305,7 +339,12 @@ function voiceEnvelope(voice: RenderVoice, time: number): number {
   return voice.level * envelopeAt(voice.settings, time - voice.start);
 }
 
-function releaseVoice(voice: RenderVoice, time: number, duration: number, stolen: boolean): void {
+function releaseVoice(
+  voice: RenderVoice,
+  time: number,
+  duration: number,
+  stolen: boolean,
+): void {
   if (voice.end <= time) return;
   const level = voiceEnvelope(voice, time);
   voice.release = { start: time, level, duration };
@@ -347,7 +386,8 @@ export function renderSamplerMix(
     for (const event of sequence.rows[row] ?? []) {
       if (event.type === "off") {
         const voice = lastByChannel[event.channel];
-        if (voice) releaseVoice(voice, time, clamp(voice.settings.release, 0, 5), false);
+        if (voice)
+          releaseVoice(voice, time, clamp(voice.settings.release, 0, 5), false);
         continue;
       }
       if (event.type === "pitchRamp") {
@@ -355,8 +395,14 @@ export function renderSamplerMix(
         if (voice && voice.end > time && !voice.stolen) {
           const from = rateAt(voice, time);
           const to =
-            event.rate * Math.pow(2, clamp(voice.settings.transpose, -48, 48) / 12);
-          voice.rateRamps.push({ start: time, end: time + event.duration, from, to });
+            event.rate *
+            Math.pow(2, clamp(voice.settings.transpose, -48, 48) / 12);
+          voice.rateRamps.push({
+            start: time,
+            end: time + event.duration,
+            from,
+            to,
+          });
         }
         continue;
       }
@@ -371,7 +417,8 @@ export function renderSamplerMix(
         const cap = Math.floor(clamp(setting.voiceCap, 1, 32));
         const active = () =>
           voices.filter(
-            (v) => v.instrument === event.instrument && v.end > time && !v.stolen,
+            (v) =>
+              v.instrument === event.instrument && v.end > time && !v.stolen,
           );
         while (active().length >= cap) {
           const victim = active()[0];
@@ -387,8 +434,13 @@ export function renderSamplerMix(
 
       const panCentre = clamp(setting.pan, -1, 1);
       const panWidth = clamp(setting.panRandomRange, 0, 1);
-      const pan = clamp(panCentre + ((random() / 0xffffffff) * 2 - 1) * panWidth, -1, 1);
-      const rate = event.rate * Math.pow(2, clamp(setting.transpose, -48, 48) / 12);
+      const pan = clamp(
+        panCentre + ((random() / 0xffffffff) * 2 - 1) * panWidth,
+        -1,
+        1,
+      );
+      const rate =
+        event.rate * Math.pow(2, clamp(setting.transpose, -48, 48) / 12);
       const voice: RenderVoice = {
         instrument: event.instrument,
         channel: event.channel,
@@ -417,8 +469,13 @@ export function renderSamplerMix(
     if (!reg) continue;
     const [regionStart, regionLen] = reg;
     const startFrame = Math.floor(voice.start * OUTPUT_RATE);
-    const endFrame = Math.min(Math.ceil(Math.min(voice.end, duration) * OUTPUT_RATE), frames);
-    const mix = channelMuted[voice.channel] ? 0 : (channelVolume[voice.channel] ?? 1) * master;
+    const endFrame = Math.min(
+      Math.ceil(Math.min(voice.end, duration) * OUTPUT_RATE),
+      frames,
+    );
+    const mix = channelMuted[voice.channel]
+      ? 0
+      : (channelVolume[voice.channel] ?? 1) * master;
     const angle = ((voice.pan + 1) * Math.PI) / 4;
     const mono = voice.clip.channels.length === 1;
     const regionChannel = (ch: number) =>
@@ -426,7 +483,11 @@ export function renderSamplerMix(
 
     let traveled = 0;
     let previousTime = voice.start;
-    let previousRate = modulatedRate(voice, voice.start, rateAt(voice, voice.start));
+    let previousRate = modulatedRate(
+      voice,
+      voice.start,
+      rateAt(voice, voice.start),
+    );
 
     for (let frame = startFrame; frame < endFrame; frame++) {
       const t = frame / OUTPUT_RATE;
@@ -466,8 +527,10 @@ export function renderSamplerMix(
         left[frame] = left[frame]! + s * Math.cos(angle) * gain;
         right[frame] = right[frame]! + s * Math.sin(angle) * gain;
       } else {
-        left[frame] = left[frame]! + sample(0) * (1 - Math.max(voice.pan, 0)) * gain;
-        right[frame] = right[frame]! + sample(1) * (1 + Math.min(voice.pan, 0)) * gain;
+        left[frame] =
+          left[frame]! + sample(0) * (1 - Math.max(voice.pan, 0)) * gain;
+        right[frame] =
+          right[frame]! + sample(1) * (1 + Math.min(voice.pan, 0)) * gain;
       }
     }
   }

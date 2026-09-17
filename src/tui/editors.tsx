@@ -1,0 +1,590 @@
+import { Text } from "ink";
+import {
+  PERCUSSION_NOISE_COLORS,
+  PERCUSSION_PRESETS,
+  SPECTRAL_FUSION_MODES,
+  percussionPreset,
+  type PercussionNoiseColor,
+  type PercussionPreset,
+} from "@/core/spectral";
+import { defaultSamplerSettings, type SamplerSettings } from "@/core/sampler";
+import { renderEnvelope, renderWaveform } from "./format";
+import type { EditorGroup, EditorParam } from "./components/ParamEditorOverlay";
+import type { Session } from "./session";
+
+type Setter = (value: number | boolean | string) => void;
+
+interface NumOptions {
+  min?: number;
+  max?: number;
+  step?: number;
+  integer?: boolean;
+  unit?: string;
+  preview?: boolean;
+  format?: (value: number) => string;
+}
+
+function num(
+  label: string,
+  value: number,
+  set: Setter,
+  options: NumOptions = {},
+): EditorParam {
+  return {
+    label,
+    kind: "number",
+    value,
+    min: options.min,
+    max: options.max,
+    step: options.step ?? 0.01,
+    integer: options.integer,
+    unit: options.unit,
+    preview: options.preview,
+    format: options.format ? (v) => options.format!(v as number) : undefined,
+    set,
+  };
+}
+
+function bool(
+  label: string,
+  value: boolean,
+  set: Setter,
+  preview?: boolean,
+): EditorParam {
+  return { label, kind: "toggle", value, preview, set };
+}
+
+function en(
+  label: string,
+  value: string,
+  choices: string[],
+  set: Setter,
+  preview?: boolean,
+): EditorParam {
+  return { label, kind: "enum", value, choices, preview, set };
+}
+
+const pct = (label: string, value: number, set: Setter, preview = true) =>
+  num(label, value, set, {
+    min: 0,
+    max: 100,
+    step: 1,
+    integer: true,
+    unit: "%",
+    preview,
+  });
+const signed = (label: string, value: number, set: Setter, preview = true) =>
+  num(label, value, set, {
+    min: -48,
+    max: 48,
+    step: 1,
+    integer: true,
+    unit: "st",
+    preview,
+  });
+const unit01 = (label: string, value: number, set: Setter, preview = true) =>
+  num(label, value, set, {
+    min: 0,
+    max: 1,
+    step: 0.02,
+    preview,
+    format: (v) => `${Math.round(v * 100)}%`,
+  });
+
+function sourceChoices(): string[] {
+  return ["none", "0", "1", "2", "3", "4", "5"];
+}
+const sourceValue = (index: number | null): string =>
+  index === null ? "none" : String(index);
+const parseSource = (value: string): number | null =>
+  value === "none" ? null : Number(value);
+
+/** Sampler/instrument editor groups. */
+export function samplerGroups(session: Session, index: number): EditorGroup[] {
+  const s = session.samplerSettings(index) ?? defaultSamplerSettings();
+  const set = (patch: Partial<SamplerSettings>) =>
+    session.updateSamplerSetting(index, patch);
+  const effective = session.effectiveWaveform(index);
+  const waveform =
+    effective.length > 0
+      ? effective
+      : s.sourceIndex !== null
+        ? session.sampleWaveform(s.sourceIndex)
+        : [];
+
+  return [
+    {
+      title: `Waveform (${s.sourceIndex === null ? "no source" : `src ${s.sourceIndex}`})`,
+      graph: (
+        <Text color="green">
+          {waveform.length > 0
+            ? renderWaveform(waveform, 56)
+            : "(no sample assigned)"}
+        </Text>
+      ),
+      params: [],
+    },
+    {
+      title: "Source",
+      params: [
+        en("Source sample", sourceValue(s.sourceIndex), sourceChoices(), (v) =>
+          set({ sourceIndex: parseSource(String(v)) }),
+        ),
+        bool("Loop", s.looping, (v) => set({ looping: !!v })),
+        bool("Ping-pong", s.pingPong, (v) => set({ pingPong: !!v })),
+        num("Trim start", s.startSec, (v) => set({ startSec: v as number }), {
+          min: 0,
+          max: 30,
+          step: 0.01,
+          unit: "s",
+        }),
+        num("Trim end", s.endSec, (v) => set({ endSec: v as number }), {
+          min: 0,
+          max: 30,
+          step: 0.01,
+          unit: "s",
+        }),
+      ],
+    },
+    {
+      title: "Amp envelope",
+      graph: <Text color="green">{renderEnvelope(s)}</Text>,
+      params: [
+        num("Attack", s.attack, (v) => set({ attack: v as number }), {
+          min: 0.003,
+          max: 5,
+          step: 0.005,
+          unit: "s",
+        }),
+        num("Decay", s.decay, (v) => set({ decay: v as number }), {
+          min: 0,
+          max: 5,
+          step: 0.005,
+          unit: "s",
+        }),
+        unit01("Sustain", s.sustain, (v) => set({ sustain: v as number })),
+        num("Release", s.release, (v) => set({ release: v as number }), {
+          min: 0,
+          max: 5,
+          step: 0.005,
+          unit: "s",
+        }),
+      ],
+    },
+    {
+      title: "Tuning & level",
+      params: [
+        signed("Transpose", s.transpose, (v) =>
+          set({ transpose: v as number }),
+        ),
+        num("Volume", s.volume, (v) => set({ volume: v as number }), {
+          min: 0,
+          max: 1.5,
+          step: 0.02,
+          preview: true,
+          format: (v) => `${Math.round(v * 100)}%`,
+        }),
+        num("Pan", s.pan, (v) => set({ pan: v as number }), {
+          min: -1,
+          max: 1,
+          step: 0.05,
+        }),
+        unit01("Pan spread", s.panRandomRange, (v) =>
+          set({ panRandomRange: v as number }),
+        ),
+      ],
+    },
+    {
+      title: "Vibrato",
+      params: [
+        num(
+          "Speed",
+          s.vibratoSpeed,
+          (v) => set({ vibratoSpeed: v as number }),
+          { min: 0, max: 20, step: 0.1, unit: "Hz" },
+        ),
+        num(
+          "Depth",
+          s.vibratoDepth,
+          (v) => set({ vibratoDepth: v as number }),
+          { min: 0, max: 12, step: 0.1, unit: "st" },
+        ),
+      ],
+    },
+    {
+      title: "Polyphony",
+      params: [
+        bool("Polyphonic", s.polyphonic, (v) => set({ polyphonic: !!v })),
+        num("Voice cap", s.voiceCap, (v) => set({ voiceCap: v as number }), {
+          min: 1,
+          max: 32,
+          step: 1,
+          integer: true,
+        }),
+      ],
+    },
+  ];
+}
+
+/** Spectral fusion editor groups. */
+export function spectralGroups(session: Session, index: number): EditorGroup[] {
+  const s = session.samplerSettings(index) ?? defaultSamplerSettings();
+  const sp = s.spectral;
+  const set = (patch: Partial<typeof sp>) =>
+    session.updateSamplerSetting(index, { spectral: { ...sp, ...patch } });
+  const fused = session.fusionWaveform(index);
+  const waveform = fused.length > 0 ? fused : session.effectiveWaveform(index);
+
+  return [
+    {
+      title: `Waveform (${fused.length > 0 ? "fused render" : "source / not rendered"})`,
+      graph: (
+        <Text color="green">
+          {waveform.length > 0
+            ? renderWaveform(waveform, 56)
+            : "(no render yet — enable or adjust)"}
+        </Text>
+      ),
+      params: [],
+    },
+    {
+      title: "Spectral",
+      params: [
+        bool("Enabled", sp.enabled, (v) => set({ enabled: !!v }), true),
+        en(
+          "Fusion mode",
+          sp.mode,
+          [...SPECTRAL_FUSION_MODES],
+          (v) => set({ mode: v as typeof sp.mode }),
+          true,
+        ),
+        en(
+          "Source B",
+          sourceValue(sp.sourceIndex2),
+          sourceChoices(),
+          (v) => set({ sourceIndex2: parseSource(String(v)) }),
+          true,
+        ),
+        bool("One-shot", sp.oneShot, (v) => set({ oneShot: !!v }), true),
+        num(
+          "Loop length",
+          sp.loopLengthSeconds,
+          (v) => set({ loopLengthSeconds: v as number }),
+          { min: 0.5, max: 8, step: 0.1, unit: "s", preview: true },
+        ),
+      ],
+    },
+    {
+      title: "Source A",
+      params: [
+        pct("Freeze point", sp.freezePoint, (v) =>
+          set({ freezePoint: v as number }),
+        ),
+        num("Tune", sp.tune, (v) => set({ tune: v as number }), {
+          min: -24,
+          max: 24,
+          step: 1,
+          preview: true,
+          unit: "st",
+        }),
+        num(
+          "Formant",
+          sp.formantShift,
+          (v) => set({ formantShift: v as number }),
+          { min: -24, max: 24, step: 1, preview: true, unit: "st" },
+        ),
+        pct("Volume", sp.volume, (v) => set({ volume: v as number })),
+      ],
+    },
+    {
+      title: "Source B",
+      params: [
+        pct("Freeze point B", sp.freezePointB, (v) =>
+          set({ freezePointB: v as number }),
+        ),
+        num("Tune B", sp.tuneB, (v) => set({ tuneB: v as number }), {
+          min: -24,
+          max: 24,
+          step: 1,
+          preview: true,
+          unit: "st",
+        }),
+        num(
+          "Formant B",
+          sp.formantShiftB,
+          (v) => set({ formantShiftB: v as number }),
+          { min: -24, max: 24, step: 1, preview: true, unit: "st" },
+        ),
+        pct("Volume B", sp.volumeB, (v) => set({ volumeB: v as number })),
+      ],
+    },
+    {
+      title: "Mix",
+      params: [
+        pct("Mix", sp.mixAmount, (v) => set({ mixAmount: v as number })),
+        pct("Cross-synth", sp.crossSynthAmount, (v) =>
+          set({ crossSynthAmount: v as number }),
+        ),
+        pct("Convolve", sp.convolveAmount, (v) =>
+          set({ convolveAmount: v as number }),
+        ),
+        pct("Ring-mod", sp.ringModAmount, (v) =>
+          set({ ringModAmount: v as number }),
+        ),
+        pct("Stereo width", sp.stereoWidth, (v) =>
+          set({ stereoWidth: v as number }),
+        ),
+      ],
+    },
+    {
+      title: `Modulation (${sp.modulation.length} route${sp.modulation.length === 1 ? "" : "s"})`,
+      graph: (
+        <Text dimColor wrap="truncate-end">
+          {sp.modulation.length === 0
+            ? "none — modulation routes are authored in the project JSON"
+            : sp.modulation
+                .map(
+                  (route) =>
+                    `${route.target} ${route.shape} ${route.depth > 0 ? "+" : ""}${route.depth} @${route.rateHz}Hz`,
+                )
+                .join(" · ")}
+        </Text>
+      ),
+      params: [],
+    },
+  ];
+}
+
+/** Percussion post-stage editor groups. */
+export function percussionGroups(
+  session: Session,
+  index: number,
+): EditorGroup[] {
+  const s = session.samplerSettings(index) ?? defaultSamplerSettings();
+  const sp = s.spectral;
+  const percussion = sp.percussion;
+  const set = (patch: Partial<typeof percussion>) =>
+    session.updateSamplerSetting(index, {
+      spectral: { ...sp, percussion: { ...percussion, ...patch } },
+    });
+  const fused = session.fusionWaveform(index);
+  const waveform = fused.length > 0 ? fused : session.effectiveWaveform(index);
+
+  return [
+    {
+      title: `Waveform (${fused.length > 0 ? "rendered hit" : "source / not rendered"})`,
+      graph: (
+        <Text color="green">
+          {waveform.length > 0
+            ? renderWaveform(waveform, 56)
+            : "(no render yet — enable or adjust)"}
+        </Text>
+      ),
+      params: [],
+    },
+    {
+      title: "Percussion",
+      params: [
+        bool(
+          "Enabled",
+          percussion.enabled,
+          (v) =>
+            session.updateSamplerSetting(index, {
+              spectral: {
+                ...sp,
+                percussion: { ...percussion, enabled: !!v },
+                oneShot: v ? true : sp.oneShot,
+              },
+            }),
+          true,
+        ),
+        bool(
+          "One-shot (don't loop)",
+          sp.oneShot,
+          (v) =>
+            session.updateSamplerSetting(index, {
+              spectral: { ...sp, oneShot: !!v },
+            }),
+          true,
+        ),
+        en(
+          "Preset",
+          "",
+          [...PERCUSSION_PRESETS],
+          (v) => {
+            session.updateSamplerSetting(index, {
+              spectral: {
+                ...sp,
+                oneShot: true,
+                percussion: percussionPreset(v as PercussionPreset),
+              },
+            });
+          },
+          true,
+        ),
+      ],
+    },
+    {
+      title: "Noise",
+      params: [
+        pct("Amount", percussion.noiseAmount, (v) =>
+          set({ noiseAmount: v as number }),
+        ),
+        en(
+          "Colour",
+          percussion.noiseColor,
+          [...PERCUSSION_NOISE_COLORS],
+          (v) => set({ noiseColor: v as PercussionNoiseColor }),
+          true,
+        ),
+        num(
+          "Decay",
+          percussion.noiseDecay,
+          (v) => set({ noiseDecay: v as number }),
+          { min: 0, max: 1, step: 0.005, unit: "s", preview: true },
+        ),
+      ],
+    },
+    {
+      title: "Transient",
+      params: [
+        pct("Amount", percussion.transientAmount, (v) =>
+          set({ transientAmount: v as number }),
+        ),
+        num(
+          "Decay",
+          percussion.transientDecay,
+          (v) => set({ transientDecay: v as number }),
+          { min: 0, max: 0.2, step: 0.001, unit: "s", preview: true },
+        ),
+        num(
+          "Frequency",
+          percussion.transientFrequency,
+          (v) => set({ transientFrequency: v as number }),
+          { min: 100, max: 8000, step: 10, unit: "Hz", preview: true },
+        ),
+      ],
+    },
+    {
+      title: "Pitch & amp",
+      params: [
+        num(
+          "Pitch start",
+          percussion.pitchStart,
+          (v) => set({ pitchStart: v as number }),
+          { min: -48, max: 48, step: 1, unit: "st", preview: true },
+        ),
+        num(
+          "Pitch end",
+          percussion.pitchEnd,
+          (v) => set({ pitchEnd: v as number }),
+          { min: -48, max: 48, step: 1, unit: "st", preview: true },
+        ),
+        num(
+          "Pitch decay",
+          percussion.pitchDecay,
+          (v) => set({ pitchDecay: v as number }),
+          { min: 0, max: 0.5, step: 0.002, unit: "s", preview: true },
+        ),
+        num(
+          "Amp decay",
+          percussion.ampDecay,
+          (v) => set({ ampDecay: v as number }),
+          { min: 0, max: 2, step: 0.005, unit: "s", preview: true },
+        ),
+      ],
+    },
+    {
+      title: "Body",
+      params: [
+        pct("Body amount", percussion.bodyAmount, (v) =>
+          set({ bodyAmount: v as number }),
+        ),
+        num(
+          "Partials",
+          percussion.partialCount,
+          (v) => set({ partialCount: v as number }),
+          { min: 1, max: 32, step: 1, integer: true, preview: true },
+        ),
+        num(
+          "Partial decay",
+          percussion.partialDecay,
+          (v) => set({ partialDecay: v as number }),
+          { min: 0, max: 2, step: 0.005, unit: "s", preview: true },
+        ),
+      ],
+    },
+    {
+      title: "Character",
+      params: [
+        pct("Digital", percussion.digitalAmount, (v) =>
+          set({ digitalAmount: v as number }),
+        ),
+        pct("Drive", percussion.driveAmount, (v) =>
+          set({ driveAmount: v as number }),
+        ),
+        pct("Compression", percussion.compressAmount, (v) =>
+          set({ compressAmount: v as number }),
+        ),
+        pct("Stereo width", percussion.stereoWidth, (v) =>
+          set({ stereoWidth: v as number }),
+        ),
+        num(
+          "Length",
+          percussion.lengthSeconds,
+          (v) => set({ lengthSeconds: v as number }),
+          { min: 0.05, max: 2, step: 0.01, unit: "s", preview: true },
+        ),
+      ],
+    },
+  ];
+}
+
+/** Master output FX editor groups. */
+export function masterFxGroups(session: Session): EditorGroup[] {
+  const fx = session.getState().masterFx;
+  const delay = fx.delay;
+  const reverb = fx.reverb;
+  const setDelay = (patch: Partial<typeof delay>) =>
+    session.patchMasterFx({ delay: { ...delay, ...patch } });
+  const setReverb = (patch: Partial<typeof reverb>) =>
+    session.patchMasterFx({ reverb: { ...reverb, ...patch } });
+
+  return [
+    {
+      title: "Delay",
+      params: [
+        bool("Enabled", delay.enabled, (v) => setDelay({ enabled: !!v })),
+        num("Time", delay.timeSec, (v) => setDelay({ timeSec: v as number }), {
+          min: 0.01,
+          max: 2,
+          step: 0.01,
+          unit: "s",
+        }),
+        unit01("Feedback", delay.feedback, (v) =>
+          setDelay({ feedback: v as number }),
+        ),
+        num("Tone", delay.toneHz, (v) => setDelay({ toneHz: v as number }), {
+          min: 200,
+          max: 12000,
+          step: 50,
+          unit: "Hz",
+        }),
+        unit01("Mix", delay.mix, (v) => setDelay({ mix: v as number })),
+      ],
+    },
+    {
+      title: "Reverb",
+      params: [
+        bool("Enabled", reverb.enabled, (v) => setReverb({ enabled: !!v })),
+        num(
+          "Decay",
+          reverb.decaySec,
+          (v) => setReverb({ decaySec: v as number }),
+          { min: 0.1, max: 8, step: 0.1, unit: "s" },
+        ),
+        unit01("Mix", reverb.mix, (v) => setReverb({ mix: v as number })),
+      ],
+    },
+  ];
+}

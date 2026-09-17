@@ -6,7 +6,11 @@ import {
   spectralRender,
   defaultSpectralSettings,
 } from "@/core/spectral";
-import { makeSpectralRenderer, registerPrismWasm, type PrismWasmModule } from "@/wasm/prism";
+import {
+  makeSpectralRenderer,
+  registerPrismWasm,
+  type PrismWasmModule,
+} from "@/wasm/prism";
 
 afterEach(() => {
   registerSpectralRenderer(null);
@@ -62,7 +66,11 @@ describe("prism_dsp WASM adapter", () => {
       },
     };
     registerPrismWasm(wasm);
-    const clip = await spectralRender(makeClip([[1, 1]], 44_100), null, defaultSpectralSettings());
+    const clip = await spectralRender(
+      makeClip([[1, 1]], 44_100),
+      null,
+      defaultSpectralSettings(),
+    );
     const peak = Math.max(...Array.from(clip.channels[0]!, (v) => Math.abs(v)));
     expect(Math.abs(peak - 1)).toBeLessThan(1e-4);
   });

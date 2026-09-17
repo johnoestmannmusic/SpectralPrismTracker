@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { PatternCell } from "@/core/fur/types";
 import { cellAt } from "@/core/songModel";
-import { flatColumnsForChannel } from "@/core/tracker";
+import { flatColumnsForChannel, globalColumnIndex } from "@/core/tracker";
 import {
   formatEffect,
   formatInstrument,
@@ -10,10 +10,19 @@ import {
 } from "../format";
 import type { SessionState } from "../session";
 
+interface SelectionRect {
+  order: number;
+  rowLo: number;
+  rowHi: number;
+  colLo: number;
+  colHi: number;
+}
+
 interface Props {
   state: SessionState;
   viewportRows: number;
   playhead: { order: number; row: number } | null;
+  selection: SelectionRect | null;
 }
 
 interface Segment {
@@ -64,7 +73,12 @@ function channelWidth(
   }, 0);
 }
 
-export function PatternView({ state, viewportRows, playhead }: Props) {
+export function PatternView({
+  state,
+  viewportRows,
+  playhead,
+  selection,
+}: Props) {
   const { song, cursor, viewOrder } = state;
   if (!song) {
     return (
@@ -76,10 +90,16 @@ export function PatternView({ state, viewportRows, playhead }: Props) {
 
   const patternLength = song.meta.patternLength;
   const rows = Math.max(Math.min(viewportRows, patternLength), 1);
+  // While following, the viewport scrolls to the playhead row rather than the
+  // edit cursor, so editing never drags the view off the playhead.
+  const scrollRow =
+    state.follow && playhead !== null && state.viewRow !== null
+      ? state.viewRow
+      : cursor.row;
   const startRow = Math.max(
     0,
     Math.min(
-      cursor.row - Math.floor(rows / 2),
+      scrollRow - Math.floor(rows / 2),
       Math.max(patternLength - rows, 0),
     ),
   );
@@ -104,40 +124,89 @@ export function PatternView({ state, viewportRows, playhead }: Props) {
     </Box>
   );
 
+  const beatA = Math.max(song.meta.highlightA || 4, 1);
+  const beatB = Math.max(song.meta.highlightB || 16, 1);
+
   const body = Array.from({ length: endRow - startRow }, (_, offset) => {
     const row = startRow + offset;
     const isPlayheadRow = playhead?.order === viewOrder && playhead.row === row;
     const isCursorRow = cursor.row === row && cursor.order === viewOrder;
+    const isBar = row % beatB === 0;
+    const isBeat = !isBar && row % beatA === 0;
+    const marker = isBar ? "●" : isBeat ? "·" : " ";
+    const inSelectedRows =
+      selection !== null &&
+      selection.order === viewOrder &&
+      row >= selection.rowLo &&
+      row <= selection.rowHi;
     return (
       <Box key={row} flexDirection="row">
         <Text
-          color={isPlayheadRow ? "green" : undefined}
-          bold={isPlayheadRow}
-          dimColor={!isPlayheadRow}
+          color={
+            isPlayheadRow
+              ? "green"
+              : isBar
+                ? "black"
+                : isBeat
+                  ? "cyan"
+                  : undefined
+          }
+          backgroundColor={
+            isPlayheadRow ? undefined : isBar ? "gray" : undefined
+          }
+          bold={isPlayheadRow || isBar}
+          dimColor={!isPlayheadRow && !isBar && !isBeat}
         >
+          {marker}
           {row.toString(16).toUpperCase().padStart(2, "0")}{" "}
         </Text>
         {Array.from({ length: channelCount }, (_, channel) => {
           const cell = cellAt(song, channel, viewOrder, row);
           const segments = segmentsFor(song, channel, cell);
           const selectedChannel = cursor.channel === channel && isCursorRow;
+          const columns = flatColumnsForChannel(song, channel);
           return (
             <Text key={channel}>
               {segments.map((segment, index) => {
                 const isCursor =
                   selectedChannel && segment.column === cursor.column;
+                const inSelection =
+                  inSelectedRows &&
+                  selection !== null &&
+                  segment.column >= 0 &&
+                  (() => {
+                    const global = globalColumnIndex(
+                      song,
+                      channel,
+                      columns[segment.column]!,
+                    );
+                    return (
+                      global >= selection.colLo && global <= selection.colHi
+                    );
+                  })();
+                const beatBackground = isBar && !isPlayheadRow;
                 return (
                   <Text
                     key={index}
                     color={
                       isCursor
                         ? "black"
-                        : segment.column === 0 && cell.note
-                          ? CHANNEL_COLORS[channel % CHANNEL_COLORS.length]
-                          : undefined
+                        : beatBackground
+                          ? undefined
+                          : segment.column === 0 && cell.note
+                            ? CHANNEL_COLORS[channel % CHANNEL_COLORS.length]
+                            : undefined
                     }
-                    backgroundColor={isCursor ? "white" : undefined}
-                    inverse={isPlayheadRow && !isCursor}
+                    backgroundColor={
+                      isCursor
+                        ? "white"
+                        : inSelection
+                          ? "blue"
+                          : beatBackground
+                            ? "gray"
+                            : undefined
+                    }
+                    inverse={isPlayheadRow && !isCursor && !inSelection}
                   >
                     {segment.text}
                   </Text>

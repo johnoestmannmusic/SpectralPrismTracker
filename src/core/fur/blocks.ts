@@ -109,7 +109,11 @@ export function parseInf2(r: Reader, dataEnd: number): Inf2Result {
   };
 }
 
-export function parseSng2(r: Reader, channels: number, dataEnd: number): Subsong {
+export function parseSng2(
+  r: Reader,
+  channels: number,
+  dataEnd: number,
+): Subsong {
   const ticksPerSecond = r.f32();
   const initialArpSpeed = r.u8();
   const effectSpeedDivider = r.u8();
@@ -127,7 +131,8 @@ export function parseSng2(r: Reader, channels: number, dataEnd: number): Subsong
   const comment = r.cstr();
 
   const orders: number[][] = [];
-  for (let c = 0; c < channels; c++) orders.push(Array.from(r.bytes(orderLength)));
+  for (let c = 0; c < channels; c++)
+    orders.push(Array.from(r.bytes(orderLength)));
 
   const effectColumns = Array.from(r.bytes(channels));
   const channelHidden = Array.from(r.bytes(channels));
@@ -250,13 +255,19 @@ function decodeNote(v: number, r: Reader): NoteValue {
   }
 }
 
-export function parsePatn(r: Reader, patternLength: number, dataEnd: number): Pattern {
+export function parsePatn(
+  r: Reader,
+  patternLength: number,
+  dataEnd: number,
+): Pattern {
   const subsong = r.u8();
   const channel = r.u8();
   const index = r.u16();
   const name = r.cstr();
 
-  const rows: PatternCell[] = Array.from({ length: patternLength }, () => emptyPatternCell());
+  const rows: PatternCell[] = Array.from({ length: patternLength }, () =>
+    emptyPatternCell(),
+  );
   let rowI = 0;
 
   while (r.pos < dataEnd) {
@@ -394,7 +405,8 @@ export function parseOldInfo(
   const patternPtrs = readPtrs(r, patternCount);
 
   const orders: number[][] = [];
-  for (let c = 0; c < channels; c++) orders.push(Array.from(r.bytes(orderLength)));
+  for (let c = 0; c < channels; c++)
+    orders.push(Array.from(r.bytes(orderLength)));
   const effectColumns = Array.from(r.bytes(channels));
   const channelHidden = Array.from(r.bytes(channels));
   const channelCollapsed = Array.from(r.bytes(channels));
@@ -451,11 +463,18 @@ export function parseOldInfo(
 
   const speedLen = r.u8();
   if (speedLen < 1 || speedLen > 16) {
-    throw new FurError("invalidSpeedPattern", `invalid speed-pattern length ${speedLen}`, speedLen);
+    throw new FurError(
+      "invalidSpeedPattern",
+      `invalid speed-pattern length ${speedLen}`,
+      speedLen,
+    );
   }
   const speedBytes = r.bytes(16);
-  let speedPattern = Array.from(speedBytes.subarray(0, speedLen)).map((s) => s * timeBase);
-  if (speedPattern.length === 0) speedPattern = [speed1 * timeBase, speed2 * timeBase];
+  let speedPattern = Array.from(speedBytes.subarray(0, speedLen)).map(
+    (s) => s * timeBase,
+  );
+  if (speedPattern.length === 0)
+    speedPattern = [speed1 * timeBase, speed2 * timeBase];
   const grooveCount = r.u8();
   r.skip(grooveCount * 17);
   r.skip(12);

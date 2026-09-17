@@ -9,7 +9,12 @@ import {
   type SpectralSettings,
 } from "@/core/spectral";
 import { makeSpectralRenderer, type PrismWasmModule } from "@/wasm/prism";
-import { projectFromJson, projectToJson, projectFromValue, defaultProject } from "@/core/project";
+import {
+  projectFromJson,
+  projectToJson,
+  projectFromValue,
+  defaultProject,
+} from "@/core/project";
 import { defaultSamplerSettings } from "@/core/sampler";
 
 const TUNE_A_INDEX = SPECTRAL_PARAMS.find((p) => p.id === "tuneA")!.index;
@@ -22,7 +27,10 @@ describe("spectral modulation sampling", () => {
     expect(mask).toBe(0);
     const tuneBase = settings.tune;
     for (let i = 0; i < MOD_CONTROL_POINTS; i++) {
-      expect(points[TUNE_A_INDEX * MOD_CONTROL_POINTS + i]).toBeCloseTo(tuneBase, 6);
+      expect(points[TUNE_A_INDEX * MOD_CONTROL_POINTS + i]).toBeCloseTo(
+        tuneBase,
+        6,
+      );
     }
   });
 
@@ -146,7 +154,9 @@ describe("prism_dsp modulated adapter", () => {
     expect(modCalls).toBe(1);
     expect(plainCalls).toBe(0);
     expect(lastPointsLength).toBe(SPECTRAL_PARAMS.length * MOD_CONTROL_POINTS);
-    const ringIndex = SPECTRAL_PARAMS.find((p) => p.id === "ringModAmount")!.index;
+    const ringIndex = SPECTRAL_PARAMS.find(
+      (p) => p.id === "ringModAmount",
+    )!.index;
     expect(lastMask & (1 << ringIndex)).toBeTruthy();
   });
 

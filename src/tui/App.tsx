@@ -8,16 +8,40 @@ import { PatternView } from "./components/PatternView";
 import { CommandBar, type Suggestion } from "./components/CommandBar";
 import { StatusBar } from "./components/StatusBar";
 import { HelpOverlay } from "./components/HelpOverlay";
+import { MixerOverlay } from "./components/MixerOverlay";
+import { SamplesOverlay } from "./components/SamplesOverlay";
+import {
+  ParamEditorOverlay,
+  type EditorGroup,
+} from "./components/ParamEditorOverlay";
+import {
+  masterFxGroups,
+  percussionGroups,
+  samplerGroups,
+  spectralGroups,
+} from "./editors";
 import { useSession } from "./hooks";
 import type { Session } from "./session";
 
-/** Keyboard -> semitone offsets, classic tracker layout. */
+/**
+ * Note entry keys. Uppercase letters enter the full chromatic scale; a few
+ * non-conflicting lowercase keys also work. Lowercase letters that overlap the
+ * original EDIT MODE functions (z/x/c/q/a/w/s) stay reserved for those.
+ */
 const NOTE_KEYS: Record<string, number> = {
-  z: 0,
-  s: 1,
-  x: 2,
+  Z: 0,
+  S: 1,
+  X: 2,
+  D: 3,
+  C: 4,
+  V: 5,
+  G: 6,
+  B: 7,
+  H: 8,
+  N: 9,
+  J: 10,
+  M: 11,
   d: 3,
-  c: 4,
   v: 5,
   g: 6,
   b: 7,
@@ -25,10 +49,13 @@ const NOTE_KEYS: Record<string, number> = {
   n: 9,
   j: 10,
   m: 11,
-  ",": 12,
   l: 13,
+  ",": 12,
   ".": 14,
 };
+
+type Overlay =
+  "none" | "mixer" | "samples" | "sampler" | "spectral" | "percussion" | "fx";
 
 interface Props {
   session: Session;
@@ -45,6 +72,8 @@ export function App({ session }: Props) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [overlay, setOverlay] = useState<Overlay>("none");
+  const [editInstrument, setEditInstrument] = useState(0);
   const inputRef = useRef(input);
   inputRef.current = input;
   const suggestionsRef = useRef(suggestions);
@@ -56,6 +85,15 @@ export function App({ session }: Props) {
       exit,
       listCommands: () => registry.all(),
       print: (text: string) => session.setStatus(text),
+      openOverlay: (name, arg) => {
+        if (arg !== undefined && Number.isFinite(arg)) {
+          const count = session.getState().song?.instruments.length ?? 1;
+          setEditInstrument(
+            Math.min(Math.max(Math.round(arg), 0), Math.max(count - 1, 0)),
+          );
+        }
+        setOverlay(name);
+      },
     }),
     [session, exit, registry],
   );
@@ -63,6 +101,7 @@ export function App({ session }: Props) {
   const runCommand = useCallback(
     async (raw: string) => {
       const result = await registry.execute(raw, ctx);
+      session.recordCommand(raw);
       setPaletteOpen(false);
       setInput("");
       if (result.ok) {
@@ -87,18 +126,30 @@ export function App({ session }: Props) {
     return () => clearInterval(timer);
   }, [session]);
 
+  // Refresh live waveform previews while a parameter editor is open.
+  const [, setEditorTick] = useState(0);
+  useEffect(() => {
+    if (overlay === "none" || overlay === "mixer" || overlay === "samples")
+      return;
+    const timer = setInterval(() => setEditorTick((value) => value + 1), 300);
+    return () => clearInterval(timer);
+  }, [overlay]);
+
   // Command/arg suggestions (async because path completion hits the fs).
   useEffect(() => {
     if (!paletteOpen) {
       setSuggestions([]);
       return;
     }
+    // Leave room for the popup: cap suggestions so they never push the layout
+    // past the terminal height (which clipped a row).
+    const cap = Math.max(0, Math.min(8, rows - 11));
     let cancelled = false;
     void (async () => {
       const raw = input.startsWith("/") ? input.slice(1) : input;
       const tokens = tokenize(raw);
       const trailing = /\s$/.test(raw);
-      if (!trailing) {
+      if (!trailing && tokens.length <= 1) {
         const query = tokens[0] ?? "";
         const items = registry.suggest(query, 8).map<Suggestion>((command) => ({
           label: `/${command.name}`,
@@ -107,35 +158,42 @@ export function App({ session }: Props) {
           replaceFrom: 0,
         }));
         if (!cancelled) {
-          setSuggestions(items);
+          setSuggestions(items.slice(0, cap));
           setSelected(0);
         }
         return;
       }
       const def = registry.get(tokens[0] ?? "");
       if (!def) {
-        if (!cancelled) setSuggestions([]);
+        if (!cancelled) {
+          setSuggestions([]);
+          setSelected(0);
+        }
         return;
       }
-      const argIndex = tokens.length - 1;
+      const argIndex = (trailing ? tokens.length : tokens.length - 1) - 1;
       const arg = def.args?.[argIndex];
       if (!arg) {
-        if (!cancelled) setSuggestions([]);
+        if (!cancelled) {
+          setSuggestions([]);
+          setSelected(0);
+        }
         return;
       }
+      const prefix = trailing ? "" : (tokens[tokens.length - 1] ?? "");
       let candidates: string[] = [];
       try {
-        candidates = await registry.completeArg(def, argIndex, "", ctx);
+        candidates = await registry.completeArg(def, argIndex, prefix, ctx);
       } catch {
         candidates = [];
       }
       if (!cancelled) {
         setSuggestions(
-          candidates.slice(0, 10).map((candidate) => ({
+          candidates.slice(0, cap).map((candidate) => ({
             label: candidate,
             description: arg.description,
             insert: candidate,
-            replaceFrom: input.length,
+            replaceFrom: input.length - prefix.length,
           })),
         );
         setSelected(0);
@@ -144,152 +202,344 @@ export function App({ session }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [input, paletteOpen, registry, ctx]);
+  }, [input, paletteOpen, registry, ctx, rows]);
 
   const applySuggestion = useCallback(() => {
-    const items = suggestionsRef.current;
-    const suggestion = items[selected];
+    const suggestion = suggestionsRef.current[selected];
     if (!suggestion) return;
     setInput(
       (current) => current.slice(0, suggestion.replaceFrom) + suggestion.insert,
     );
   }, [selected]);
 
-  useInput((char, key) => {
-    if (helpOpen) {
-      if (key.escape || char === "q") setHelpOpen(false);
-      return;
-    }
+  const recall = useCallback(
+    (direction: -1 | 1) => {
+      const command = session.recallCommand(direction);
+      if (command === null) return;
+      setPaletteOpen(true);
+      setInput(command);
+    },
+    [session],
+  );
 
-    if (paletteOpen) {
+  useInput(
+    (char, key) => {
+      if (paletteOpen) {
+        if (key.escape) {
+          setPaletteOpen(false);
+          setInput("");
+          return;
+        }
+        if (key.return) {
+          // Enter autocompletes an unfinished command exactly like Tab; once
+          // the command name is complete it executes.
+          if (
+            registry.enterAction(
+              inputRef.current,
+              suggestionsRef.current.length > 0,
+            ) === "complete"
+          ) {
+            applySuggestion();
+            return;
+          }
+          void runCommand(inputRef.current);
+          return;
+        }
+        if (key.tab) {
+          applySuggestion();
+          return;
+        }
+        if (key.ctrl && char === "p") {
+          recall(-1);
+          return;
+        }
+        if (key.ctrl && char === "n") {
+          recall(1);
+          return;
+        }
+        if (key.upArrow) {
+          setSelected((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setSelected((index) =>
+            suggestionsRef.current.length === 0
+              ? 0
+              : Math.max(
+                  0,
+                  Math.min(suggestionsRef.current.length - 1, index + 1),
+                ),
+          );
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setInput((current) => current.slice(0, -1));
+          return;
+        }
+        if (key.ctrl) return;
+        if (char) setInput((current) => current + char);
+        return;
+      }
+
+      // ---- tracker mode ----
+      if (key.ctrl && char === "p") {
+        recall(-1);
+        return;
+      }
+      if (key.ctrl && char === "n") {
+        recall(1);
+        return;
+      }
+      if (char === "/") {
+        setPaletteOpen(true);
+        setInput("/");
+        return;
+      }
+      if (char === "?") {
+        setHelpOpen(true);
+        return;
+      }
       if (key.escape) {
-        setPaletteOpen(false);
-        setInput("");
+        session.clearSelection();
         return;
       }
-      if (key.return) {
-        void runCommand(inputRef.current);
+
+      // Undo/redo.
+      if (key.ctrl && char === "z") {
+        session.undo();
         return;
       }
+      if (key.ctrl && char === "y") {
+        session.redo();
+        return;
+      }
+      // Clipboard.
+      if (key.ctrl && char === "c") {
+        session.copySelection();
+        return;
+      }
+      if (key.ctrl && char === "x") {
+        session.cutSelection();
+        return;
+      }
+      if (key.ctrl && char === "v") {
+        session.pasteSelection(key.shift);
+        return;
+      }
+      if (key.ctrl && char === "a") {
+        session.selectAll();
+        return;
+      }
+      // Ctrl+arrows: jump 16 rows (wrapping orders) / jump channel (NOTE).
+      if (key.ctrl && key.upArrow) {
+        session.moveCursor({ row: -16 });
+        return;
+      }
+      if (key.ctrl && key.downArrow) {
+        session.moveCursor({ row: 16 });
+        return;
+      }
+      if (key.ctrl && key.leftArrow) {
+        session.moveCursor({ channel: -1 });
+        return;
+      }
+      if (key.ctrl && key.rightArrow) {
+        session.moveCursor({ channel: 1 });
+        return;
+      }
+      // Ctrl+Space: terminals send NUL, which Ink reports as ctrl+`.
+      if (key.ctrl && (char === " " || char === "`")) {
+        session.playFromCursor();
+        return;
+      }
+
       if (key.tab) {
-        applySuggestion();
+        session.moveCursor({ channel: 1 });
         return;
       }
       if (key.upArrow) {
-        setSelected((index) => Math.max(0, index - 1));
+        if (key.shift) session.extendSelection({ row: -1 });
+        else session.moveCursor({ row: -1 });
         return;
       }
       if (key.downArrow) {
-        setSelected((index) =>
-          Math.min(suggestionsRef.current.length - 1, index + 1),
-        );
+        if (key.shift) session.extendSelection({ row: 1 });
+        else session.moveCursor({ row: 1 });
         return;
       }
-      if (key.backspace || key.delete) {
-        setInput((current) => current.slice(0, -1));
+      if (key.leftArrow) {
+        if (key.shift) session.extendSelection({ column: -1 });
+        else session.moveCursor({ column: -1 });
         return;
       }
-      if (key.ctrl) return;
-      if (char) setInput((current) => current + char);
-      return;
-    }
+      if (key.rightArrow) {
+        if (key.shift) session.extendSelection({ column: 1 });
+        else session.moveCursor({ column: 1 });
+        return;
+      }
+      if (key.pageUp) {
+        if (key.shift) session.extendSelection({ order: -1 });
+        else session.moveCursor({ order: -1 });
+        return;
+      }
+      if (key.pageDown) {
+        if (key.shift) session.extendSelection({ order: 1 });
+        else session.moveCursor({ order: 1 });
+        return;
+      }
+      // [ / ] cycle through the orders from the main edit screen.
+      if (char === "[") {
+        session.moveCursor({ order: -1 });
+        return;
+      }
+      if (char === "]") {
+        session.moveCursor({ order: 1 });
+        return;
+      }
+      if (key.delete || key.backspace) {
+        session.clearCell();
+        return;
+      }
+      if (char === " ") {
+        session.togglePlay();
+        return;
+      }
 
-    // ---- tracker mode ----
-    if (char === "/") {
-      setPaletteOpen(true);
-      setInput("/");
-      return;
-    }
-    if (char === "?") {
-      setHelpOpen(true);
-      return;
-    }
-    if (key.ctrl && char === "z") {
-      session.undo();
-      return;
-    }
-    if (key.ctrl && (char === "y" || char === "r")) {
-      session.redo();
-      return;
-    }
-    if (key.tab) {
-      session.moveCursor({ channel: 1 });
-      return;
-    }
-    if (key.upArrow) {
-      session.moveCursor(key.shift ? { row: -16 } : { row: -1 });
-      return;
-    }
-    if (key.downArrow) {
-      session.moveCursor(key.shift ? { row: 16 } : { row: 1 });
-      return;
-    }
-    if (key.leftArrow) {
-      session.moveCursor({ column: -1 });
-      return;
-    }
-    if (key.rightArrow) {
-      session.moveCursor({ column: 1 });
-      return;
-    }
-    if (key.pageUp) {
-      session.moveCursor({ order: -1 });
-      return;
-    }
-    if (key.pageDown) {
-      session.moveCursor({ order: 1 });
-      return;
-    }
-    if (key.delete || key.backspace) {
-      session.clearCell();
-      return;
-    }
-    if (char === " ") {
-      session.togglePlay();
-      return;
-    }
-    if (char === "+" || char === "=") {
-      session.setLastOctave(session.lastOctaveValue + 1);
-      return;
-    }
-    if (char === "-" || char === "_") {
-      session.setLastOctave(session.lastOctaveValue - 1);
-      return;
-    }
-    if (char === "q") {
-      exit();
-      return;
-    }
-    const semitone = NOTE_KEYS[char];
-    if (semitone !== undefined) {
-      const note = 60 + session.lastOctaveValue * 12 + semitone;
-      session.editCell({ note: { kind: "note", note } });
-    }
-  });
+      // Single-key edit functions (match the original EDIT MODE shortcuts).
+      if (char === "z") {
+        session.applyLastValue();
+        return;
+      }
+      if (char === "x") {
+        session.clearCell();
+        return;
+      }
+      if (char === "c") {
+        session.noteOff();
+        return;
+      }
+      if (char === "q") {
+        session.adjustValue(1);
+        return;
+      }
+      if (char === "a") {
+        session.adjustValue(-1);
+        return;
+      }
+      if (char === "w") {
+        session.adjustValue(12);
+        return;
+      }
+      if (char === "s") {
+        session.adjustValue(-12);
+        return;
+      }
+      if (char === "+" || char === "=") {
+        session.setLastOctave(session.lastOctaveValue + 1);
+        return;
+      }
+      if (char === "-" || char === "_") {
+        session.setLastOctave(session.lastOctaveValue - 1);
+        return;
+      }
+      const semitone = NOTE_KEYS[char];
+      if (semitone !== undefined) {
+        const note = 60 + session.lastOctaveValue * 12 + semitone;
+        session.editCell({ note: { kind: "note", note } });
+      }
+    },
+    { isActive: overlay === "none" && !helpOpen },
+  );
 
-  const viewportRows = Math.max(4, rows - 11);
+  const viewportRows = Math.max(
+    3,
+    rows - 8 - (paletteOpen ? suggestions.length : 0),
+  );
   const playhead = state.playing ? session.playheadPosition() : null;
+
+  const instrumentCount = state.song?.instruments.length ?? 0;
+  const instrumentLabel =
+    state.song?.instruments[editInstrument]?.name ??
+    `Instrument ${editInstrument}`;
+  const editorGroups: EditorGroup[] | null =
+    overlay === "sampler"
+      ? samplerGroups(session, editInstrument)
+      : overlay === "spectral"
+        ? spectralGroups(session, editInstrument)
+        : overlay === "percussion"
+          ? percussionGroups(session, editInstrument)
+          : overlay === "fx"
+            ? masterFxGroups(session)
+            : null;
+  const editorTitle =
+    overlay === "sampler"
+      ? `Sampler — ${instrumentLabel}`
+      : overlay === "spectral"
+        ? `Spectral — ${instrumentLabel}`
+        : overlay === "percussion"
+          ? `Percussion — ${instrumentLabel}`
+          : "Master FX";
+  const stepInstrument = (direction: 1 | -1) => {
+    if (instrumentCount === 0) return;
+    setEditInstrument((index) =>
+      Math.min(Math.max(index + direction, 0), instrumentCount - 1),
+    );
+  };
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
       <SongHeader state={state} playhead={playhead} />
       {helpOpen ? (
-        <HelpOverlay commands={registry.all()} />
+        <HelpOverlay
+          commands={registry.all()}
+          active={helpOpen}
+          height={viewportRows}
+          onClose={() => setHelpOpen(false)}
+        />
+      ) : editorGroups ? (
+        <ParamEditorOverlay
+          title={editorTitle}
+          groups={editorGroups}
+          active={overlay !== "none"}
+          height={viewportRows}
+          onClose={() => setOverlay("none")}
+          onPreview={
+            overlay === "fx"
+              ? undefined
+              : () => void session.previewAfterRender(editInstrument)
+          }
+          onPrev={overlay === "fx" ? undefined : () => stepInstrument(-1)}
+          onNext={overlay === "fx" ? undefined : () => stepInstrument(1)}
+          hint={
+            overlay === "fx"
+              ? "↑↓ select · ←→ adjust · esc close"
+              : "↑↓ select · ←→ adjust · enter/p preview · [ ] instrument · esc close"
+          }
+        />
+      ) : overlay === "mixer" ? (
+        <MixerOverlay
+          session={session}
+          active={overlay === "mixer"}
+          onClose={() => setOverlay("none")}
+        />
+      ) : overlay === "samples" ? (
+        <SamplesOverlay
+          session={session}
+          active={overlay === "samples"}
+          onClose={() => setOverlay("none")}
+        />
       ) : (
         <PatternView
           state={state}
           viewportRows={viewportRows}
           playhead={playhead}
+          selection={session.selection()}
         />
       )}
       <StatusBar
         status={state.status}
         error={state.error}
-        hint={
-          state.error
-            ? "any key to focus · type / for commands"
-            : "space play · / commands · ? help · q quit"
-        }
+        hint={"space play · q/a ±value · / commands · ctrl+p recall · ? help"}
       />
       <CommandBar
         input={input}

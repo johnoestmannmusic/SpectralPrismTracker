@@ -46,7 +46,8 @@ export class PrismWorkerClient {
         "message" in event && typeof event.message === "string" && event.message
           ? event.message
           : "prism_dsp worker error";
-      for (const entry of this.pending.values()) entry.reject(new Error(message));
+      for (const entry of this.pending.values())
+        entry.reject(new Error(message));
       this.pending.clear();
     };
   }
@@ -73,20 +74,33 @@ export class PrismWorkerClient {
     });
   }
 
-  render(a: AudioClip, b: AudioClip | null, settings: SpectralSettings): Promise<AudioClip> {
+  render(
+    a: AudioClip,
+    b: AudioClip | null,
+    settings: SpectralSettings,
+  ): Promise<AudioClip> {
     const id = this.nextId++;
     // Copy channel data before transferring: transfer detaches the underlying
     // buffer, but the caller's clips (cached decoded source samples) are
     // reused elsewhere and must not be zeroed out by this call.
-    const aCopy: AudioClip = { channels: a.channels.map((c) => c.slice()), sampleRate: a.sampleRate };
+    const aCopy: AudioClip = {
+      channels: a.channels.map((c) => c.slice()),
+      sampleRate: a.sampleRate,
+    };
     const bCopy: AudioClip | null = b
       ? { channels: b.channels.map((c) => c.slice()), sampleRate: b.sampleRate }
       : null;
     const transfer: Transferable[] = aCopy.channels.map((c) => c.buffer);
     if (bCopy) transfer.push(...bCopy.channels.map((c) => c.buffer));
     return new Promise<AudioClip>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: AudioClip | undefined) => void, reject });
-      this.worker.postMessage({ id, kind: "render", a: aCopy, b: bCopy, settings }, transfer);
+      this.pending.set(id, {
+        resolve: resolve as (value: AudioClip | undefined) => void,
+        reject,
+      });
+      this.worker.postMessage(
+        { id, kind: "render", a: aCopy, b: bCopy, settings },
+        transfer,
+      );
     });
   }
 

@@ -17,18 +17,15 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["vite/client", "node"]
+    "types": ["node"]
   },
   "include": [
-    "src/renderer",
     "src/core",
     "src/audio",
     "src/wasm",
     "src/shared",
     "src/runtime",
     "src/tui",
-    "tests/unit",
-    "tests/e2e",
-    "tests/web"
+    "tests/unit"
   ]
 }

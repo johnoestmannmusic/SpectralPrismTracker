@@ -69,7 +69,10 @@ export interface SongPosition {
   row: number;
 }
 
-function partitionPoint<T>(items: ArrayLike<T>, predicate: (item: T) => boolean): number {
+function partitionPoint<T>(
+  items: ArrayLike<T>,
+  predicate: (item: T) => boolean,
+): number {
   let lo = 0;
   let hi = items.length;
   while (lo < hi) {
@@ -110,7 +113,9 @@ export function songPositionAt(song: SongModel, t: number): SongPosition {
   );
   const patternLength = Math.max(song.meta.patternLength, 1);
   return {
-    orderPos: Math.floor(totalRows / patternLength) % Math.max(song.meta.orderLength, 1),
+    orderPos:
+      Math.floor(totalRows / patternLength) %
+      Math.max(song.meta.orderLength, 1),
     row: totalRows % patternLength,
   };
 }

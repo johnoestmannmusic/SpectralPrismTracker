@@ -1,6 +1,19 @@
 import type { NoteValue } from "./fur/types";
 
-const NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"];
+const NOTE_NAMES = [
+  "C-",
+  "C#",
+  "D-",
+  "D#",
+  "E-",
+  "F-",
+  "F#",
+  "G-",
+  "G#",
+  "A-",
+  "A#",
+  "B-",
+];
 
 /** Furnace's raw byte for its displayed "A-5" (scientific A4, 440 Hz). */
 export const A_REF_NOTE = 129;

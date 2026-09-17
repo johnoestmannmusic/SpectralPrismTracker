@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyExportEnvelope, arrangeExport, crc32, finalizeExport, wavPcm16, zipStore } from "@/core/export";
+import {
+  applyExportEnvelope,
+  arrangeExport,
+  crc32,
+  finalizeExport,
+  wavPcm16,
+  zipStore,
+} from "@/core/export";
 import { makeClip } from "@/core/spectral";
 import { clipDuration, clipLen } from "@/core/dsp";
 import { buildSongModel } from "@/core/songModel";
@@ -74,14 +81,20 @@ describe("ZIP export", () => {
 
 describe("MIDI export", () => {
   it("writes a format-1 SMF with one tempo track and one track per channel", () => {
-    const song = buildSongModel(parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur")));
+    const song = buildSongModel(
+      parseFurFile(
+        fixtureBytes("tests/fixtures/flight_school_night_shift.fur"),
+      ),
+    );
     const bytes = writeMidi(song);
     const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
     expect(ascii(bytes, 0, 4)).toBe("MThd");
     expect(data.getUint32(4, false)).toBe(6);
     expect(data.getUint16(8, false)).toBe(1); // format 1
-    expect(data.getUint16(10, false)).toBe(1 + Math.min(song.channels.length, 4));
+    expect(data.getUint16(10, false)).toBe(
+      1 + Math.min(song.channels.length, 4),
+    );
     expect(data.getUint16(12, false)).toBe(24); // TICKS_PER_ROW
     expect(ascii(bytes, 14, 4)).toBe("MTrk");
     // Each track ends with an End of Track meta event.
@@ -92,7 +105,12 @@ describe("MIDI export", () => {
 describe("export finalisation", () => {
   it("repeats the mix loops + 1 times with no gaps when there is no fade", () => {
     const clip = makeClip([[0.5, 0.25, 0.125]], 1000);
-    const out = finalizeExport(clip, { loops: 2, fadeInMs: 0, fadeOutMs: 0, normalize: false });
+    const out = finalizeExport(clip, {
+      loops: 2,
+      fadeInMs: 0,
+      fadeOutMs: 0,
+      normalize: false,
+    });
     expect(clipLen(out)).toBe(9);
     expect(Array.from(out.channels[0]!)).toEqual([
       0.5, 0.25, 0.125, 0.5, 0.25, 0.125, 0.5, 0.25, 0.125,
@@ -102,15 +120,27 @@ describe("export finalisation", () => {
   it("plays full loops untouched, then appends the fade as an extra pass", () => {
     // Loop of 4 frames at 1 kHz; Loops=1 means two full passes, then the fade.
     const clip = makeClip([[1, 1, 1, 1]], 1000);
-    const out = finalizeExport(clip, { loops: 1, fadeInMs: 0, fadeOutMs: 2, normalize: false });
+    const out = finalizeExport(clip, {
+      loops: 1,
+      fadeInMs: 0,
+      fadeOutMs: 2,
+      normalize: false,
+    });
     expect(clipLen(out)).toBe(10);
     // Two full loops with no gap, then a 2-frame fade tail that hits silence.
-    expect(Array.from(out.channels[0]!)).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 0]);
+    expect(Array.from(out.channels[0]!)).toEqual([
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+    ]);
   });
 
   it("continues looping the source while a long fade-out ramps to zero", () => {
     const clip = makeClip([[0.5, 0.25]], 1000);
-    const out = finalizeExport(clip, { loops: 0, fadeInMs: 0, fadeOutMs: 6, normalize: false });
+    const out = finalizeExport(clip, {
+      loops: 0,
+      fadeInMs: 0,
+      fadeOutMs: 6,
+      normalize: false,
+    });
     expect(clipLen(out)).toBe(8);
     const data = Array.from(out.channels[0]!);
     expect(data.slice(0, 2)).toEqual([0.5, 0.25]);
@@ -122,7 +152,12 @@ describe("export finalisation", () => {
 
   it("applies fade-in at the very start of the file", () => {
     const clip = makeClip([[1, 1, 1, 1]], 1000);
-    const out = finalizeExport(clip, { loops: 0, fadeInMs: 2, fadeOutMs: 0, normalize: false });
+    const out = finalizeExport(clip, {
+      loops: 0,
+      fadeInMs: 2,
+      fadeOutMs: 0,
+      normalize: false,
+    });
     expect(Array.from(out.channels[0]!)).toEqual([0, 0.5, 1, 1]);
   });
 
@@ -140,13 +175,22 @@ describe("export finalisation", () => {
       fadeOutMs: 2,
       normalize: false,
     });
-    expect(Array.from(out.channels[0]!)).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 0]);
+    expect(Array.from(out.channels[0]!)).toEqual([
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+    ]);
   });
 
   it("embeds LIST/INFO and ID3 tags with cover art, keeping the RIFF size correct", () => {
     const clip = makeClip([[0, 0.5]], 8000);
-    const artwork = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9]);
-    const bytes = wavPcm16(clip, { title: "Title", artist: "Artist", album: "Album", artwork });
+    const artwork = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9,
+    ]);
+    const bytes = wavPcm16(clip, {
+      title: "Title",
+      artist: "Artist",
+      album: "Album",
+      artwork,
+    });
     const data = view(bytes);
     expect(data.getUint32(4, true)).toBe(bytes.length - 8);
 
@@ -183,7 +227,12 @@ describe("export finalisation", () => {
 
   it("peak-normalises to full scale when enabled", () => {
     const clip = makeClip([[0.25, -0.5, 0.1]], 1000);
-    const out = finalizeExport(clip, { loops: 0, fadeInMs: 0, fadeOutMs: 0, normalize: true });
+    const out = finalizeExport(clip, {
+      loops: 0,
+      fadeInMs: 0,
+      fadeOutMs: 0,
+      normalize: true,
+    });
     const peak = Math.max(...Array.from(out.channels[0]!, (v) => Math.abs(v)));
     expect(Math.abs(peak - 1)).toBeLessThan(1e-9);
     expect(out.channels[0]![0]).toBeCloseTo(0.5);
@@ -202,7 +251,17 @@ describe("offline sampler mixdown", () => {
 
     const sequence = {
       tuning: 440,
-      rows: [[{ type: "note" as const, channel: 0, instrument: 0, rate: 1, volume: 1 }]],
+      rows: [
+        [
+          {
+            type: "note" as const,
+            channel: 0,
+            instrument: 0,
+            rate: 1,
+            volume: 1,
+          },
+        ],
+      ],
       rowTimes: [0, 1],
     };
     const samples = new Float32Array(44_100).fill(0.5);

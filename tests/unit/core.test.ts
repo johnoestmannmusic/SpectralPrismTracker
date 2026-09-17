@@ -32,7 +32,9 @@ import {
 } from "@/core/project";
 
 function fixture(): SongModel {
-  return buildSongModel(parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur")));
+  return buildSongModel(
+    parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur")),
+  );
 }
 
 describe("song model", () => {
@@ -102,14 +104,20 @@ describe("song model", () => {
         note: { kind: "note", note: 108 },
         instrument: 0,
         volume: 15,
-        effects: Array.from({ length: 8 }, () => ({ effect: null, value: null })),
+        effects: Array.from({ length: 8 }, () => ({
+          effect: null,
+          value: null,
+        })),
       },
     });
     const after = cellAt(song, 0, 0, 5);
     expect(after.note).toEqual({ kind: "note", note: 108 });
     expect(after.instrument).toBe(0);
     expect(after.volume).toBe(15);
-    expect(song.channels[0]!.noteTimeline[0]![5]).toEqual({ kind: "note", note: 108 });
+    expect(song.channels[0]!.noteTimeline[0]![5]).toEqual({
+      kind: "note",
+      note: 108,
+    });
     expect(song.channels[0]!.insTimeline[0]![5]).toBe(0);
   });
 
@@ -118,7 +126,9 @@ describe("song model", () => {
     const originalSecondRow = song.rowTimes[1]!;
     song.meta.tickRate *= 2;
     retime(song);
-    expect(Math.abs(song.rowTimes[1]! - originalSecondRow / 2)).toBeLessThan(1e-9);
+    expect(Math.abs(song.rowTimes[1]! - originalSecondRow / 2)).toBeLessThan(
+      1e-9,
+    );
   });
 
   it("pattern snapshot round-trips through applySnapshot", () => {
@@ -129,17 +139,27 @@ describe("song model", () => {
     expect(patternSnapshot(song2)).toEqual(before);
     expect(song2.rowTimes).toEqual(song.rowTimes);
     for (let i = 0; i < song.channels.length; i++) {
-      expect(song2.channels[i]!.noteTimeline).toEqual(song.channels[i]!.noteTimeline);
-      expect(song2.channels[i]!.insTimeline).toEqual(song.channels[i]!.insTimeline);
+      expect(song2.channels[i]!.noteTimeline).toEqual(
+        song.channels[i]!.noteTimeline,
+      );
+      expect(song2.channels[i]!.insTimeline).toEqual(
+        song.channels[i]!.insTimeline,
+      );
     }
   });
 
   it("golden-battletrain applies the F0 tempo lane", () => {
     const song = buildSongModel(
-      parseFurFile(fixtureBytes("tests/fixtures/golden-battletrain/06-golden_battletrain.fur")),
+      parseFurFile(
+        fixtureBytes(
+          "tests/fixtures/golden-battletrain/06-golden_battletrain.fur",
+        ),
+      ),
     );
     const flat =
-      song.meta.orderLength * song.meta.patternLength * rowDurationSec(song.meta);
+      song.meta.orderLength *
+      song.meta.patternLength *
+      rowDurationSec(song.meta);
     const duration = song.rowTimes[song.rowTimes.length - 1]!;
     expect(duration).toBeLessThan(flat);
     expect(Math.abs(duration - 94.416349)).toBeLessThan(0.01);
@@ -168,7 +188,8 @@ describe("sampler", () => {
   it("loops keep scheduling without duplicates", () => {
     const s = new Scheduler(sequence(), 2, 0);
     const rows: { row: number; when: number }[] = [];
-    for (let i = 0; i <= 80; i++) rows.push(...s.tick(2 + i * 0.025, LOOKAHEAD_SEC));
+    for (let i = 0; i <= 80; i++)
+      rows.push(...s.tick(2 + i * 0.025, LOOKAHEAD_SEC));
     expect(rows.length).toBeGreaterThan(20);
     rows.forEach((r, i) => {
       expect(r.row).toBe(i % 4);
@@ -189,7 +210,9 @@ describe("sampler", () => {
   it("fixture sequence uses actual note cells and held instruments", () => {
     const song = fixture();
     const seq = sequenceFromSong(song);
-    expect(seq.rows).toHaveLength(song.meta.orderLength * song.meta.patternLength);
+    expect(seq.rows).toHaveLength(
+      song.meta.orderLength * song.meta.patternLength,
+    );
     const first = seq.rows[0]![0]!;
     expect(first.type).toBe("note");
     if (first.type === "note") {
@@ -245,7 +268,9 @@ describe("sampler", () => {
 
 describe("project json", () => {
   it("original project round-trips without losing its schema", () => {
-    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    const project = projectFromJson(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    );
     validateProject(project, 10);
     expect(project.sourceSamples).toHaveLength(6);
     expect(project.instruments).toHaveLength(10);
@@ -261,7 +286,9 @@ describe("project json", () => {
   });
 
   it("legacy rootNote converts to transpose", () => {
-    const value = JSON.parse(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson")) as {
+    const value = JSON.parse(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    ) as {
       instruments: Array<Record<string, unknown>>;
     };
     const first = value.instruments[0]!;
@@ -283,7 +310,9 @@ describe("project json", () => {
   });
 
   it("round-trips master FX settings", () => {
-    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    const project = projectFromJson(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    );
     project.masterFx.delay.enabled = true;
     project.masterFx.delay.timeSec = 0.19;
     project.masterFx.delay.feedback = 0.5;
@@ -294,7 +323,9 @@ describe("project json", () => {
   });
 
   it("round-trips vibrato settings", () => {
-    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    const project = projectFromJson(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    );
     project.instruments[0]!.vibratoSpeed = 7.5;
     project.instruments[0]!.vibratoDepth = 0.4;
     const reread = projectFromJson(projectToJson(project));
@@ -303,14 +334,18 @@ describe("project json", () => {
   });
 
   it("round-trips instrument display names", () => {
-    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    const project = projectFromJson(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    );
     project.instrumentNames = ["Bass 1", "Lead", "Perc"];
     const reread = projectFromJson(projectToJson(project));
     expect(reread.instrumentNames).toEqual(["Bass 1", "Lead", "Perc"]);
   });
 
   it("round-trips the instrument pan centre and random width", () => {
-    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    const project = projectFromJson(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    );
     project.instruments[0]!.pan = -0.5;
     project.instruments[0]!.panRandomRange = 0.25;
     const reread = projectFromJson(projectToJson(project));
@@ -319,7 +354,9 @@ describe("project json", () => {
   });
 
   it("gracefully imports the legacy Fusion schema and unknown modes", () => {
-    const value = JSON.parse(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson")) as {
+    const value = JSON.parse(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    ) as {
       instruments: Array<Record<string, unknown>>;
     };
     const first = value.instruments[0]!;
@@ -346,10 +383,17 @@ describe("project json", () => {
     const originalSecondRow = song.rowTimes[1]!;
     const originalTickRate = song.meta.tickRate;
 
-    applyTimingOverrides(projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson")), song);
+    applyTimingOverrides(
+      projectFromJson(
+        fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+      ),
+      song,
+    );
     expect(song.meta.tickRate).toBe(originalTickRate);
 
-    const project = projectFromJson(fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"));
+    const project = projectFromJson(
+      fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
+    );
     project.tickRateOverride = originalTickRate * 2;
     project.speedOverride = 3;
     project.highlightAOverride = 8;

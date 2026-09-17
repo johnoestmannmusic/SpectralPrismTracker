@@ -61,6 +61,14 @@ describe("command registry", () => {
     });
     expect(choices).toEqual(["sampler", "chip"]);
   });
+
+  it("autocompletes an unfinished command on Enter", () => {
+    expect(registry.enterAction("/inf", true)).toBe("complete");
+    expect(registry.enterAction("/", true)).toBe("complete");
+    expect(registry.enterAction("/info", true)).toBe("run");
+    expect(registry.enterAction("/info song", true)).toBe("run");
+    expect(registry.enterAction("/nonsense", false)).toBe("run");
+  });
 });
 
 describe("session commands over the bundled song", () => {

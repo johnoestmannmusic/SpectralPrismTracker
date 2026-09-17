@@ -1,7 +1,16 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { projectToJson } from "@/core/project";
-import { writeBytesSafe } from "@/runtime/files";
+import { extensionOf } from "@/runtime/files";
+import {
+  exportCoverPng,
+  exportFur,
+  exportMidi,
+  exportSamplesZip,
+  exportWav,
+  newProject,
+  openPath,
+  saveProject,
+} from "../io";
 import {
   fail,
   ok,
@@ -86,6 +95,17 @@ export const builtinCommands: CommandDef[] = [
     run: (_args, ctx) => ok(ctx.session.getState().status),
   },
   {
+    id: "socket",
+    name: "socket",
+    aliases: ["control"],
+    description: "Show the live control socket path for scripts/agents",
+    category: "general",
+    run: (_args, ctx) => {
+      const path = ctx.session.getState().controlPath;
+      return path ? ok(path, { path }) : fail("Control socket is disabled");
+    },
+  },
+  {
     id: "info",
     name: "info",
     aliases: ["song"],
@@ -159,6 +179,20 @@ export const builtinCommands: CommandDef[] = [
       if (time === null) return fail("Seek needs seconds or mm:ss");
       ctx.session.seek(time);
       return ok(`Seek ${time.toFixed(2)}s`);
+    },
+  },
+  {
+    id: "follow",
+    name: "follow",
+    description: "Toggle tracker follow-playhead mode",
+    category: "tracker",
+    args: [{ name: "state", type: "enum", choices: ["on", "off", "toggle"] }],
+    run: (args, ctx) => {
+      const state = arg(args, "state") ?? "toggle";
+      const next =
+        state === "toggle" ? !ctx.session.getState().follow : state === "on";
+      ctx.session.setFollow(next);
+      return ok(`Follow ${next ? "on" : "off"}`);
     },
   },
   {
@@ -358,6 +392,92 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "mixer",
+    name: "mixer",
+    aliases: ["mix"],
+    description: "Open the channel/master mixer and Master FX controls",
+    category: "mixer",
+    run: (_args, ctx) => {
+      ctx.openOverlay?.("mixer");
+      return ok("Mixer");
+    },
+  },
+  {
+    id: "fx",
+    name: "fx",
+    aliases: ["masterfx"],
+    description: "Edit the master delay and reverb",
+    category: "mixer",
+    run: (_args, ctx) => {
+      ctx.openOverlay?.("fx");
+      return ok("Master FX");
+    },
+  },
+  {
+    id: "sampler",
+    name: "sampler",
+    aliases: ["smp"],
+    description: "Edit instrument sampler params (source, ADSR, tuning)",
+    category: "edit",
+    args: [{ name: "instrument", type: "number" }],
+    run: (args, ctx) => {
+      const index =
+        arg(args, "instrument") !== undefined
+          ? Number(arg(args, "instrument"))
+          : ctx.session.getState().cursor.channel;
+      if (!Number.isFinite(index)) return fail("instrument must be a number");
+      ctx.openOverlay?.("sampler", index);
+      return ok(`Sampler ${index}`);
+    },
+  },
+  {
+    id: "spectral",
+    name: "spectral",
+    aliases: ["sp"],
+    description: "Edit spectral fusion params for an instrument",
+    category: "edit",
+    args: [{ name: "instrument", type: "number" }],
+    run: (args, ctx) => {
+      const index =
+        arg(args, "instrument") !== undefined
+          ? Number(arg(args, "instrument"))
+          : ctx.session.getState().cursor.channel;
+      if (!Number.isFinite(index)) return fail("instrument must be a number");
+      ctx.openOverlay?.("spectral", index);
+      return ok(`Spectral ${index}`);
+    },
+  },
+  {
+    id: "percussion",
+    name: "percussion",
+    aliases: ["perc", "drum"],
+    description: "Edit the percussion post-stage for an instrument",
+    category: "edit",
+    args: [{ name: "instrument", type: "number" }],
+    run: (args, ctx) => {
+      const index =
+        arg(args, "instrument") !== undefined
+          ? Number(arg(args, "instrument"))
+          : ctx.session.getState().cursor.channel;
+      if (!Number.isFinite(index)) return fail("instrument must be a number");
+      ctx.openOverlay?.("percussion", index);
+      return ok(`Percussion ${index}`);
+    },
+  },
+  {
+    id: "query",
+    name: "query",
+    aliases: ["get"],
+    description: "Read session state as JSON (e.g. /query transport.playing)",
+    category: "general",
+    args: [{ name: "path", type: "string" }],
+    run: (args, ctx) => {
+      const path = arg(args, "path") ?? "";
+      const value = ctx.session.query(path);
+      return ok(JSON.stringify(value), { path, value });
+    },
+  },
+  {
     id: "meters",
     name: "meters",
     description: "Print current channel and master peak levels",
@@ -374,6 +494,7 @@ export const builtinCommands: CommandDef[] = [
     description: "List source samples with names and durations",
     category: "samples",
     run: (_args, ctx) => {
+      ctx.openOverlay?.("samples");
       const { sampleNames } = ctx.session.getState();
       const durations = ctx.session.backend?.sampleDurations() ?? [];
       const rows = sampleNames.map((name, index) => ({
@@ -404,27 +525,6 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
-    id: "save",
-    name: "save",
-    aliases: ["write"],
-    description: "Save the project as .lampjson",
-    category: "file",
-    args: [pathArg],
-    run: async (args, ctx) => {
-      const project = ctx.session.getState().project;
-      if (!project) return fail("No project loaded");
-      const target = arg(args, "path") ?? "project.lampjson";
-      const json = projectToJson(project, true);
-      const written = await writeBytesSafe(
-        target,
-        new TextEncoder().encode(json),
-      );
-      if (!written.ok) return fail(written.error);
-      ctx.session.setStatus(`Saved ${written.value}`);
-      return ok(`Saved ${written.value}`, { path: written.value });
-    },
-  },
-  {
     id: "reference",
     name: "reference",
     aliases: ["ref"],
@@ -437,6 +537,269 @@ export const builtinCommands: CommandDef[] = [
         state === "toggle" ? !ctx.session.getState().reference : state === "on";
       ctx.session.setReference(next);
       return ok(`Reference ${next ? "on" : "off"}`);
+    },
+  },
+  {
+    id: "step",
+    name: "step",
+    description:
+      "Set how many rows to advance after entering a value (0 = stay)",
+    category: "edit",
+    args: [{ name: "rows", type: "number", required: true }],
+    run: (args, ctx) => {
+      const rows = Number(arg(args, "rows"));
+      if (!Number.isFinite(rows)) return fail("step must be a number");
+      ctx.session.setStep(rows);
+      return ok(`Step ${ctx.session.getState().step}`);
+    },
+  },
+  {
+    id: "select",
+    name: "select",
+    aliases: ["sel"],
+    description:
+      "Start/clear a block selection at the cursor (also Shift+arrows)",
+    category: "edit",
+    run: (args, ctx) => {
+      if (args.flags.clear) {
+        ctx.session.clearSelection();
+        return ok("Selection cleared");
+      }
+      ctx.session.clearSelection();
+      ctx.session.extendSelection({ row: 1 });
+      ctx.session.moveCursor({ row: -1 });
+      const rect = ctx.session.selection();
+      return ok(
+        rect ? `Selected rows ${rect.rowLo}-${rect.rowHi}` : "Selected",
+      );
+    },
+  },
+  {
+    id: "copy",
+    name: "copy",
+    aliases: ["yank"],
+    description: "Copy the selected block (or cursor cell) to the clipboard",
+    category: "edit",
+    run: (_args, ctx) =>
+      ctx.session.copySelection()
+        ? ok("Copied")
+        : fail("Select a block first (Shift+arrows)"),
+  },
+  {
+    id: "cut",
+    name: "cut",
+    description: "Copy the selected block and clear it",
+    category: "edit",
+    run: (_args, ctx) =>
+      ctx.session.cutSelection() ? ok("Cut") : fail("Nothing selected"),
+  },
+  {
+    id: "paste",
+    name: "paste",
+    aliases: ["put"],
+    description: "Paste at the cursor (--flood repeats to the end)",
+    category: "edit",
+    run: (args, ctx) =>
+      ctx.session.pasteSelection(!!args.flags.flood)
+        ? ok("Pasted")
+        : fail("Clipboard is empty"),
+  },
+  {
+    id: "transpose",
+    name: "transpose",
+    aliases: ["tp"],
+    description: "Transpose selected notes by semitones (default +1)",
+    category: "edit",
+    args: [{ name: "semitones", type: "number" }],
+    run: (args, ctx) => {
+      const delta =
+        arg(args, "semitones") !== undefined
+          ? Number(arg(args, "semitones"))
+          : 1;
+      if (!Number.isFinite(delta)) return fail("semitones must be a number");
+      return ctx.session.transposeSelection(delta)
+        ? ok(`Transposed ${delta > 0 ? "+" : ""}${delta}`)
+        : fail("Select a block first");
+    },
+  },
+  {
+    id: "interpolate",
+    name: "interpolate",
+    aliases: ["interp"],
+    description:
+      "Linearly interpolate each selected column between its endpoints",
+    category: "edit",
+    run: (_args, ctx) =>
+      ctx.session.interpolateSelection()
+        ? ok("Interpolated")
+        : fail("Select at least two rows"),
+  },
+  {
+    id: "insert",
+    name: "insert",
+    description:
+      "Insert a new order after the current one (--clone duplicates it)",
+    category: "edit",
+    run: (args, ctx) =>
+      ctx.session.insertPattern(!!args.flags.clone)
+        ? ok("Inserted order")
+        : fail("No song"),
+  },
+  {
+    id: "remove",
+    name: "remove",
+    aliases: ["delorder"],
+    description: "Remove the current order",
+    category: "edit",
+    run: (_args, ctx) =>
+      ctx.session.removePattern()
+        ? ok("Removed order")
+        : fail("Cannot remove the last order"),
+  },
+  {
+    id: "clearall",
+    name: "clearall",
+    description: "Clear every pattern in the song",
+    category: "edit",
+    run: (_args, ctx) =>
+      ctx.session.clearAllPatterns()
+        ? ok("Cleared all patterns")
+        : fail("No song"),
+  },
+  {
+    id: "lastvalue",
+    name: "lastvalue",
+    aliases: ["lv"],
+    description: "Write the last-entered value for this column at the cursor",
+    category: "edit",
+    run: (_args, ctx) => {
+      ctx.session.applyLastValue();
+      return ok("Applied last value");
+    },
+  },
+  {
+    id: "history",
+    name: "history",
+    description: "List (or recall) recent commands",
+    category: "general",
+    args: [{ name: "index", type: "number" }],
+    run: (args, ctx) => {
+      const history = ctx.session.getState().commandHistory;
+      if (arg(args, "index") !== undefined) {
+        const index = Number(arg(args, "index"));
+        const recalled = history[history.length - 1 - index];
+        return recalled
+          ? ok(recalled, { command: recalled })
+          : fail("No such history entry");
+      }
+      return ok(history.slice(-10).join("\n") || "(no history)", { history });
+    },
+  },
+  {
+    id: "open",
+    name: "open",
+    aliases: ["load"],
+    description: "Open a .lampjson or .fur file",
+    category: "file",
+    args: [pathArg],
+    run: async (args, ctx) => {
+      const target = arg(args, "path");
+      if (!target) return fail("/open requires a file path");
+      const result = await openPath(ctx.session, target);
+      return result.ok
+        ? ok(result.message)
+        : fail(result.error ?? "Open failed");
+    },
+  },
+  {
+    id: "new",
+    name: "new",
+    description: "Start a fresh default project",
+    category: "file",
+    run: async (_args, ctx) => {
+      const result = await newProject(ctx.session);
+      return result.ok ? ok(result.message) : fail(result.error ?? "Failed");
+    },
+  },
+  {
+    id: "save",
+    name: "save",
+    aliases: ["write"],
+    description: "Save the project as .lampjson",
+    category: "file",
+    args: [pathArg],
+    run: async (args, ctx) => {
+      const target = arg(args, "path") ?? "project.lampjson";
+      const result = await saveProject(ctx.session, target);
+      return result.ok
+        ? ok(result.message, { path: result.path })
+        : fail(result.error ?? "Save failed");
+    },
+  },
+  {
+    id: "export",
+    name: "export",
+    description: "Export the song (wav | mid | zip | fur)",
+    category: "file",
+    args: [
+      {
+        name: "format",
+        type: "enum",
+        required: true,
+        choices: ["wav", "mid", "zip", "png", "fur"],
+      },
+      pathArg,
+    ],
+    run: async (args, ctx) => {
+      const format = (arg(args, "format") ?? "wav").toLowerCase();
+      const song = ctx.session.getState().song;
+      const base =
+        arg(args, "path") ??
+        (song ? song.meta.name.replace(/[^\w.-]+/g, "_") : "export");
+      const lower = base.toLowerCase();
+      const target = extensionOf(lower)
+        ? base
+        : `${base}.${format === "mid" ? "mid" : format}`;
+      if (format === "wav") {
+        const loops =
+          args.flags.loops !== undefined ? Number(args.flags.loops) : 0;
+        const fadeOutMs =
+          args.flags.fade !== undefined ? Number(args.flags.fade) : 0;
+        const result = await exportWav(ctx.session, target, {
+          loops: Number.isFinite(loops) ? loops : 0,
+          fadeOutMs: Number.isFinite(fadeOutMs) ? fadeOutMs : 0,
+          normalize: !!args.flags.normalize,
+        });
+        return result.ok
+          ? ok(result.message, { path: result.path })
+          : fail(result.error ?? "Export failed");
+      }
+      if (format === "mid") {
+        const result = await exportMidi(ctx.session, target);
+        return result.ok
+          ? ok(result.message, { path: result.path })
+          : fail(result.error ?? "Export failed");
+      }
+      if (format === "zip") {
+        const result = await exportSamplesZip(ctx.session, target);
+        return result.ok
+          ? ok(result.message, { path: result.path })
+          : fail(result.error ?? "Export failed");
+      }
+      if (format === "png") {
+        const result = await exportCoverPng(ctx.session, target);
+        return result.ok
+          ? ok(result.message, { path: result.path })
+          : fail(result.error ?? "Export failed");
+      }
+      const result = await exportFur(
+        ctx.session,
+        target,
+        ctx.session.getState().furBytes,
+      );
+      return result.ok
+        ? ok(result.message, { path: result.path })
+        : fail(result.error ?? "Export failed");
     },
   },
 ];

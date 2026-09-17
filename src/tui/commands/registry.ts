@@ -126,6 +126,18 @@ export class CommandRegistry {
     return [];
   }
 
+  /**
+   * Whether pressing Enter should autocomplete the unfinished command (like
+   * Tab) or execute it: complete while the command name is not yet a real
+   * command and there is a suggestion to accept.
+   */
+  enterAction(input: string, hasSuggestions: boolean): "complete" | "run" {
+    const raw = input.trim().replace(/^\//, "");
+    const first = tokenize(raw)[0] ?? "";
+    if (this.get(first)) return "run";
+    return hasSuggestions ? "complete" : "run";
+  }
+
   async execute(input: string, ctx: CommandContext): Promise<CommandResult> {
     const trimmed = input.trim().replace(/^\//, "");
     if (!trimmed) return { ok: false, error: "Type a command (try /help)" };

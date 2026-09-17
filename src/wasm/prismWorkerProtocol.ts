@@ -3,7 +3,13 @@ import type { SpectralSettings } from "@/core/spectral";
 
 export type WorkerRequest =
   | { id: number; kind: "ping" }
-  | { id: number; kind: "render"; a: AudioClip; b: AudioClip | null; settings: SpectralSettings };
+  | {
+      id: number;
+      kind: "render";
+      a: AudioClip;
+      b: AudioClip | null;
+      settings: SpectralSettings;
+    };
 
 export type WorkerResponse =
   | { id: number; kind: "pong" }

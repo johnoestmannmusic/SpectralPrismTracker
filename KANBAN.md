@@ -4,62 +4,6 @@
 
 ## Features
 
-### FEAT-15 — Cover Art editor — mecha/power-suit part designer
-- priority: medium
-- tags: cover-art, ui, editor, project-json, library, dither, plan-cover-art-editor-mecha-power-suit-part-designer
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: cover-art-editor-mecha-power-suit-part-designer
-- kind: card
-
-**Plan:** Cover Art editor — mecha/power-suit part designer _(#plan-cover-art-editor-mecha-power-suit-part-designer)_
-
-**Plan summary**
-Future feature (requested by John). A dedicated Cover Art editor that opens as its own window and turns the animated cover into a part-based anime mecha / power-suit designer: equip, swap, transform and recolour individual parts to author a custom mech-suit, saved into the project file and backed by a reusable part library. Output stays the same 240×240 dithered artwork (4×4 Bayer).
-
-**Approach**
-Build a declarative, part-based cover-art model on top of the existing 32×32 compositor. A `CoverArtDesign` (palette + ordered part instances + animation options) lives in `ProjectFile`; a `PartLibrary` catalog provides part definitions (mask/primitive + palette roles + anchors + optional animation). The editor is a dedicated window/modal that previews the live 240×240 dithered canvas while the user browses slots and equips parts. Legacy projects with no `coverArt` design keep rendering the current procedural screen-wall/vat/plant scene unchanged.
-
-**Architecture**
-Data/model: add `coverArt?: CoverArtDesign | null` to `ProjectFile` (src/core/project.ts) and parse/serialise it (default = procedural scene). `CoverArtDesign = { version, palette: string[], slots: PartInstance[], background?: PartInstance[], animation: {...} }`; `PartInstance = { partId, x, y, flipX, flipY, scale, paletteMap, layer }`. Part library at `src/core/coverParts/` (or `assets/cover-parts/*.json`) with `PartDef = { id, name, category, size, primitives/mask, anchor, paletteRoles, defaultLayer, animation? }`. Rendering: refactor `src/renderer/components/CoverArt.tsx` so `render()` can paint either the procedural scene or a `CoverArtDesign` into the same `Float32Array(GRID*GRID*3)`; keep `dither()` (4×4 Bayer, 8 levels) and the 240 display / 1600 PNG output path shared. Editor UI: new `CoverArtEditor.tsx` opened from the Cover Art panel (reuse floating-window/modal pattern from SamplerEditor/MasterFxModal), with a zoomed grid canvas, slot/category browser, equip/remove/transform controls, palette swatches, layer order and an animation preview driven by the existing `CoverState` pulses/overall envelope. Library persistence: ship starter parts in-repo; support user part export/import and a persistent library (IndexedDB/localStorage) as a follow-up. Export unchanged: `CoverArtHandle.renderPngBytes()` and WAV embed continue to consume the live canvas.
-
-**Key decisions**
-- Part-based compositing, not a free pixel editor: the request is explicitly a mecha/power-suit kit-bash designer.
-- Keep the 240×240 dithered output and 4×4 Bayer dithering exactly as today; the editor only changes what is composited before dithering.
-- Reuse the existing 32×32 RGB float buffer + `blend`/`dither` pipeline rather than introducing a second renderer.
-- Store the authored design in the project file; store reusable part definitions in a separate library so designs stay small and parts are shareable.
-- Legacy projects (no coverArt field) must render the current procedural scene byte-for-byte.
-
-**Alternatives considered**
-- Pure free-pixel editor on 32×32 (Aseprite-style): rejected — no part reuse, and John wants swappable mecha parts.
-- Full 3D mech modeller: rejected — out of scope and unnecessary for a 32×32 dithered target.
-- Raster PNG sprite parts: workable but palette/scale edits and recolouring are harder than declarative mask/primitive definitions.
-- Store every part inside each project file: rejected — bloats projects and blocks a shared library.
-- Separate Electron BrowserWindow immediately: deferred — an in-app modal is simpler and consistent with existing editors; popping out can be added once the model is stable.
-
-**Open questions**
-- Should the editor open as a separate OS window (Electron BrowserWindow + IPC state sync) or an in-app floating window first?
-- Is the current vat/plant scene kept as one selectable background theme, or is mecha mode a separate art mode?
-- Internal resolution: stay at 32×32, or raise it (e.g. 80×80 / 120×120) so a mech-suit reads more clearly at 240×240?
-- How many palette colours should be allowed so 4×4 Bayer dithering still reads cleanly?
-- Part library scope: shipped starter set only, or user-authored + JSON import/export + persistent curated library?
-- Do parts author multi-frame sprite animation, or is animation limited to per-part transform/glow driven by note pulses and the overall envelope?
-- Does the mecha cover need to stay audio-reactive like the current scene (note pulses, overall level)?
-
-**Acceptance criteria**
-- A dedicated Cover Art editor opens from the cover panel and shows a live 240×240 dithered preview.
-- The user can browse part categories, equip/replace/remove parts per slot, apply per-part transform (x/y/flip/scale), and recolour via a palette.
-- The authored design round-trips through Project JSON, and projects without a design still render the existing procedural cover unchanged.
-- A reusable part library exists with a starter set across categories; adding a part to the library does not require editing a project.
-- Cover export still produces the crisp 1600×1600 PNG and the WAV embed uses the edited artwork.
-- Rendering is deterministic (same design + time → same 32×32 buffer) and dithering remains 4×4 Bayer to 240×240.
-- Unit tests cover model round-trip, compositor determinism and the library loader; an E2E test opens the editor, equips a part, and verifies the preview and saved project JSON change.
-
-**Comments**
-- Touches: src/renderer/components/CoverArt.tsx, src/renderer/App.tsx (coverRef/renderPngBytes usage), src/core/project.ts (ProjectFile + serialise/parse), src/renderer/styles.css, new src/renderer/components/CoverArtEditor.tsx and src/core/coverParts/.
-- Current render facts to preserve: GRID=32 internal buffer, BAYER 4×4 at 8 levels, display canvas 240×240 (`image-rendering: pixelated`), PNG export 1600×1600, `CoverArtHandle.renderPngBytes()` consumed by App.tsx WAV export.
-- Cover art is currently procedural and NOT stored in the project — this card introduces the first saved cover-art state.
-
 ### FEAT-17 — Terminal Lantern — TUI migration
 - priority: critical
 - tags: plan-terminal-lantern-tui-migration, epic
@@ -92,247 +36,199 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 - FEAT-31 — Deferred parity: graph editors (sampler, spectral/percussion, master FX graphs, cover art)
 - FEAT-32 — Deferred: scripting & live control channel (`.lmpscript`, agent automation)
 
-**Prototype status (2026-09-17)**
-`npm run dev:tui` (or `npm run build:tui && node dist/tui/main.mjs`) builds and runs a working Core-scope prototype. Done: Node runtime/IO, node-web-audio-api shim, Ink shell with persistent tracker + song info, slash-command engine with fuzzy suggestions and Tab completion, transport, basic pattern editing, mixer commands, `/save`, `/samples`, `/preview`, prism WASM loaded in-process. Verified by 109 unit tests and an interactive pty smoke. Still open on this plan: FEAT-20 worker hosting, FEAT-23 clipboard/transpose/order ops, FEAT-25 FX overlay, FEAT-26 open/export, FEAT-27 sampler overlay/waveform, FEAT-29 component + golden audio tests, FEAT-30 Electron cleanup.
+**Status (2026-09-17) — TUI migration plan complete**
+`npm run dev:tui` builds and runs the terminal app. All cards on this plan are Implemented: FEAT-18 Node runtime/IO, FEAT-19 node-web-audio-api shim, FEAT-20 prism worker thread, FEAT-21 Ink shell (persistent tracker + song info), FEAT-22 slash-command engine (fuzzy + Tab), FEAT-23 tracker editing (selection/clipboard/transpose/order ops), FEAT-24 transport, FEAT-25 mixer overlay, FEAT-26 open/new/export, FEAT-27 sample browser + waveform, FEAT-28 packaging, FEAT-29 tests, FEAT-30 Electron/React-DOM removal, FEAT-31 sampler/spectral/percussion/master-FX editors + headless cover art, FEAT-32 live control socket + `.lmpscript` runner. Verified by 23 test files / 144 tests, a real control-socket E2E (`examples/control-smoke.lmpscript`) and an interactive pty smoke. Remaining possible future work: FEAT-15 (mecha/power-suit cover *designer*, archived) and deeper modulation-route authoring in the TUI.
 
-### FEAT-20 — WASM + worker host: run prism DSP under Node worker_threads
-- priority: high
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, wasm, worker-threads, prism
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: terminal-lantern-tui-migration
-- kind: card
-- parent: FEAT-17
+## Bugs
 
-**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+## In Progress
 
-**Plan summary**
-Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+## Blocked
 
-Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+## Implemented
 
-**Approach**
-Replace the browser Web Worker with a node:worker_threads host while keeping the worker protocol messages identical. src/wasm/prism.ts loading of prism_wasm_bg.wasm stays the same via WebAssembly.instantiate from the bundled file bytes. Choose worker_threads for parity with the existing async render lifecycle (fusionRendering/fusionReady polling).
-
-**Architecture**
-New src/wasm/prismWorkerHost.node.ts (or make prismWorkerClient detect environment and construct a Worker from node:worker_threads using a .cjs/.mjs entry compiled by esbuild). Worker entry prism.worker.ts compiled for Node with the wasm path resolved via a runtime asset resolver. Keep prismWorkerProtocol.ts unchanged.
-
-**Key decisions**
-- Preserve the existing protocol and render lifecycle so core/spectral consumers do not change.
-- Ship the .wasm as a resolved asset (same file as src/renderer/vendor/prism/prism_wasm_bg.wasm) rather than importing it as a Vite URL.
-- Support a synchronous in-process fallback for tests.
-
-**Alternatives considered**
-- Run WASM on the main thread: rejected — modulation/percussion renders would jank the UI loop.
-- child_process: rejected — heavier, no structured-clone/SharedArrayBuffer ergonomics.
-
-**Open questions**
-- Can we reuse the already-built wasm32-unknown-unknown artifact from native/prism-wasm? (yes, but confirm the build script's output path).
-
-**Depends on**
-- FEAT audio shim
-
-**Acceptance criteria**
-- Unit test renders a modulated loop through the Node worker and compares against the golden fixture.
-- fusionRendering/fusionReady/takeFusionCompleted behave as before.
-- No Web Worker global is referenced in the Node path.
-
-**Prototype status (2026-09-17)**
-prism WASM now loads under Node via `src/wasm/prismNode.ts` (wasm-bindgen `initSync` + `registerPrismWasm`), synchronously on the calling thread. Spectral fusion and percussion renders therefore work in-process. NOT done: the async `worker_threads` host, the worker entry bundle, and the worker protocol regression test. Keep this card open for that.
-
-### FEAT-23 — Commands: tracker navigation and editing
-- priority: high
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, tracker, commands
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: terminal-lantern-tui-migration
-- kind: card
-- parent: FEAT-17
-
-**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
-
-**Plan summary**
-Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
-
-Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
-
-**Approach**
-Expose the existing tracker edit operations (src/core/tracker.ts) through commands and direct grid editing. The persistent PatternView renders channels×rows with note/ins/vol/fx columns; the cursor is (channel, order, row, column). Note entry works like the GUI: type note keys (piano layout), digits for hex, Del to clear, clipboard via system clipboard or an in-app register. Reuse applyEdit/PatternSnapshot, undo/redo, and the existing CLIPBOARD_TAG format.
-
-**Architecture**
-src/tui/components/PatternView.tsx renders from SongModel patterns plus a cursor/selection store. src/tui/state/trackerStore.ts wraps EditColumn/CellPos selection, undo/redo stacks, and calls core/tracker applyEdit. Commands: /goto order row, /channel n, /order add|remove|move, /select, /copy, /paste, /undo, /redo, /clear, /transpose, /octave n, /step n. Follow-playhead option toggled by /follow.
-
-**Key decisions**
-- Reuse src/core/tracker.ts helpers verbatim (columnLabel, flatColumnsForChannel, applyEdit, clipboard encode/decode) so semantics match the GUI.
-- Hex note entry layout mirrors the GUI exactly to avoid muscle-memory breakage.
-- Selection + clipboard implemented in-terminal (no OS clipboard dependency).
-
-**Alternatives considered**
-- Readline-style text editing of a line: rejected — not a tracker.
-- Third-party hex editor: rejected — must stay tied to SongModel semantics.
-
-**Open questions**
-- Multi-channel selection granularity (per-column vs per-cell block)?
-- Should the order list be its own editable pane in milestone 1 or later?
-
-**Depends on**
-- FEAT tui shell
-- FEAT slash-command engine
-
-**Acceptance criteria**
-- Cursor moves by keyboard across channels/orders/rows/columns; viewport scrolls to keep it visible.
-- Editing a cell updates the pattern, marks the project dirty, and is reflected in playback after the existing re-sequence path.
-- Undo/redo and copy/paste work across orders, with tests asserting round-trip through the CLIPBOARD_TAG format.
-- basic-tracker-edit sequences produce identical SongModel changes to the GUI unit tests.
-
-**Prototype status (2026-09-17)**
-Implemented in `src/tui/session.ts`: row/column/channel/order navigation, note + instrument entry (keyboard piano layout and `/note`, `/instrument`), `/clear`, undo/redo, and auto re-sequencing. Remaining: clipboard copy/paste (in-terminal + `CLIPBOARD_TAG`), transpose, order add/remove/move, step size, multi-cell selection.
-
-### FEAT-25 — Commands: mixer, master FX and channel settings overlay
+### FEAT-38 — [ / ] cycle orders from the main edit screen
 - priority: medium
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, mixer, master-fx, commands
+- tags: tui, tracker, keyboard
 - created: 2026-09-17
 - updated: 2026-09-17
-- plan: terminal-lantern-tui-migration
-- kind: card
-- parent: FEAT-17
 
-**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+Added `[` / `]` in tracker mode to move to the previous / next order, with an inline hint next to the header order strip (`order 00 01 02 03 04  [ / ] cycle orders`). Order movement now **cycles** (wrapping past the last order back to the first) for both `[`/`]` and PgUp/PgDn, while Shift+PgUp/PgDn still clamps for selection extension. Documented in the `?` help `keys (edit mode)` section. Verified live via the control socket (0→1→2→1→0) and a unit test covering the wrap boundary.
 
-**Plan summary**
-Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
-
-Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
-
-**Approach**
-Port the Mixer and Master FX to a keyboard-driven overlay reachable via /mixer and /masterfx, with numeric entry and arrow adjustments, plus commands /gain /pan (if present) /mastervol. Reuse MasterFxSettings and defaultMasterFx() from src/core/masterFx.ts and backend.setMasterFx. Graphs (ADSR, waveform) are out of milestone 1; show numbers and text meters instead.
-
-**Architecture**
-src/tui/components/MixerOverlay.tsx, MasterFxOverlay.tsx. Commands route to backend.setChannelVolume/setChannelMute/setMasterVolume/setMasterFx. State stays in the shared playback store so the header reflects changes.
-
-**Key decisions**
-- Overlay leaves header/command bar visible (non-modal).
-- Values edited numerically and by +/- keys; no mouse.
-- Visual graphs deferred; text bars for levels.
-
-**Alternatives considered**
-- Full-screen mixer: rejected to preserve the persistent tracker.
-- Skip mixer in milestone 1: rejected — user selected mixer/transport in Core scope.
-
-**Open questions**
-- Should meter levels animate in the overlay, and at what refresh rate to avoid render churn?
-
-**Depends on**
-- FEAT tui shell
-- FEAT transport commands
-
-**Acceptance criteria**
-- Changing a channel gain/mute or master FX applies live and survives overlay close.
-- Values match the existing default/clamp rules in core/masterFx.ts.
-- Unit tests cover command→setting mapping and clamping.
-
-**Prototype status (2026-09-17)**
-Mixer reachable by command (`/mute`, `/unmute`, `/volume`, `/mastervol`, `/meters`) over `Session`; state reflected in the header. Remaining: the keyboard-driven mixer/Master FX overlay and FX parameter editing.
-
-### FEAT-26 — Commands: file, project and export IO with path completion
-- priority: high
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, io, project, export, commands, completion
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: terminal-lantern-tui-migration
-- kind: card
-- parent: FEAT-17
-
-**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
-
-**Plan summary**
-Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
-
-Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
-
-**Approach**
-Replace Electron dialogs with commands that take paths and use a filesystem path completer for Tab. Commands: /open <file.fur|.lampjson> /save [path] /saveas /export wav|mid|zip|png|fur [path] /new /loadsamples /sample <n> <path> /info. Load paths reuse the existing core parse/serialize and buildSamplerSequence paths from App.tsx; export reuses src/core/export.ts (WAV/MIDI/ZIP) and CoverArt PNG path. Show a blocking progress indicator in the status line for long renders.
-
-**Architecture**
-src/runtime/files.ts (fs read/write, filter by extension). src/tui/commands/completers.ts (async directory listing with prefix filter, ~ expansion, relative-to-cwd and quoted paths). src/tui/state/projectStore.ts mirrors App.tsx project load/save/dirty logic incl. legacy .lampjson handling. Reuse export functions unchanged.
-
-**Key decisions**
-- No file picker in v1: typed/quoted paths with Tab completion.
-- Overwriting an existing file prompts in the status line (y/n) unless --force.
-- Exports are synchronous-or-promise with a status progress line; no modal dialog.
-
-**Alternatives considered**
-- Embed a TUI file browser overlay: deferred; path completion is faster for keyboard users.
-- Keep Electron dialogs: rejected.
-
-**Open questions**
-- Where do exports default to when no path is given (cwd, source dir, or a configured export dir)?
-- Should recent files be persisted and offered by fuzzy completion?
-
-**Depends on**
-- FEAT de-electron-ify
-- FEAT slash-command engine
-- FEAT tui shell
-
-**Acceptance criteria**
-- /open loads a .fur, a .lampjson and a project-only .lampjson with the same results as the GUI E2E fixtures.
-- /export wav produces a file byte-comparable (within documented tolerance) to the GUI export for a fixed project.
-- Tab completes directory and file paths including nested directories and quoted paths with spaces.
-- Failures (missing file, bad parse) surface as status errors and leave the current song loaded.
-
-**Prototype status (2026-09-17)**
-`/save <path>` writes `.lampjson` via `writeBytesSafe`; async path completion is wired in the command bar (`completePath`). Remaining: `/open` for `.fur` and `.lampjson`, `/new`, `/export wav|mid|zip|png|fur`, and overwrite prompts.
-
-### FEAT-27 — Commands: source samples and sampler browse + preview
+### FEAT-37 — One-shot option in Perc / Drum mode
 - priority: medium
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, sampler, commands, preview
+- tags: tui, percussion, spectral, parity
 - created: 2026-09-17
 - updated: 2026-09-17
-- plan: terminal-lantern-tui-migration
-- kind: card
-- parent: FEAT-17
 
-**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+The original percussion controls expose **One-shot (don't loop)** bound to `spectral.oneShot`, forced on when percussion is enabled or a preset is applied. `percussionGroups` now mirrors that: added the toggle, and enabling percussion / applying a preset sets `oneShot = true`. Component test asserts the control renders.
 
-**Plan summary**
-Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
-
-Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
-
-**Approach**
-Provide /samples (list source samples with names, durations, fused state), /sample <n> [path] (load/replace), /preview <n> and /waveform <n> (ASCII waveform), plus /instrument <n> for per-instrument effective clip info. Reuse backend.sampleWaveform, effectiveWaveform, preview, sampleClip and the SourceSamples UI data. The heavyweight Sampler/Spectral editors stay deferred.
-
-**Architecture**
-src/tui/components/SampleListOverlay.tsx and a text Waveform component (braille/block chars). Commands in builtins.ts route to backend methods already in AudioBackend. Sample names come from the existing settings/sampleNames state.
-
-**Key decisions**
-- Browse/preview only in milestone 1; parameter editing deferred.
-- ASCII/braille waveform, no image protocol.
-- All values read from the backend interface, no new DSP.
-
-**Alternatives considered**
-- Port the full SamplerEditor now: deferred by scope decision.
-
-**Open questions**
-- Braille vs block characters for the waveform given font support?
-- Should /sample with no path clear the slot (mirrors GUI 'Clear Source Samples')?
-
-**Depends on**
-- FEAT audio shim
-- FEAT slash-command engine
-
-**Acceptance criteria**
-- /samples lists all 6 bundled source samples with durations.
-- /sample n <path> replaces a sample and updates the waveform and preview.
-- /preview n auditions the rendered one-shot without leaving the tracker view.
-- Unit tests cover the sample-list command handlers against a mock backend.
-
-**Prototype status (2026-09-17)**
-`/samples` lists names + durations and `/preview <n>` auditions a source sample. Remaining: the sample-list overlay, ASCII/braille waveform, and per-instrument clip info.
-
-### FEAT-29 — Test strategy: port core tests, add headless TUI + audio regression
+### BUG-8 — Slash-command suggestion popup clipped a line
 - priority: high
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, tests, vitest, headless, regression
+- tags: tui, commands, layout
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported:** the slash-command suggestion popup had a missing line.
+
+**Cause:** the tracker viewport was sized `rows - 11` regardless of how many suggestion rows the palette added, so with the popup open the layout overflowed the terminal and Ink clipped a row.
+
+**Fix:** suggestions are capped to `min(8, rows - 11)` and the tracker viewport is now `max(3, rows - 8 - suggestions.length)`, so the popup always fits. Verified live: the final frame shows all 8 suggestion rows plus the input line with no clipping.
+
+### BUG-7 — Ctrl+Space did not play from the selected cell
+- priority: high
+- tags: tui, tracker, keyboard
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported:** Ctrl+Space didn't play from the selected cell.
+
+**Cause:** terminals send NUL (0x00) for Ctrl+Space, and Ink's key parser maps `\x00` through its ctrl+letter branch (`name = charCode + 96`), so it arrives as ``` ` ``` with `key.ctrl = true` — never as a space or NUL char.
+
+**Fix:** App now treats `key.ctrl && (char === " " || char === "\`")` as Ctrl+Space and calls `Session.playFromCursor()`. Verified via the control socket: cursor at row 8 → playing true, clock at 2.1s (i.e. started from row 8). Unit test added.
+
+### FEAT-36 — Ctrl+arrow jumps, cross-pattern row wrap, and full EDIT MODE key parity
+- priority: high
+- tags: tui, tracker, keyboard, parity
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Implemented the original app's EDIT MODE shortcuts (from `0008/src/renderer/components/PatternGrid.tsx` help menu):
+
+- Arrows move selection; rows now **wrap across pattern/order boundaries** (past the last row → next order, before the first → previous order).
+- **Ctrl+Up/Down** = move 16 rows; **Ctrl+Left/Right** = jump channel (NOTE column).
+- **Shift+arrows** extend selection; **PgUp/PgDn** move order.
+- **Z** last value, **X** clear cell/range, **C** note off, **Q/A** value ±1, **W/S** note ±1 octave (all operate on the selection).
+- **Ctrl+C/X/V** copy/cut/paste, **Ctrl+Shift+V** flood paste, **Ctrl+A** select column / all, **Ctrl+Z/Y** undo/redo, **Space** play from pattern start, **Ctrl+Space** play from the selected cell.
+- Note entry moved to **uppercase letters** (Z S X D C V G B H N J M) since lowercase z/x/c/q/a/w/s are the original edit keys; non-conflicting lowercase note keys (d/v/g/b/h/n/j/m/l) still work.
+
+Right-click context menus are the GUI equivalent and remain commands/editors in the TUI. Added a `keys (edit mode)` section to `?` help listing all of the above. Verified live: Ctrl+↓×4 → `order 1 row 0`, Ctrl+↑×4 back, PgDn clamps.
+
+### BUG-6 — Editing turned off playhead follow mode
+- priority: high
+- tags: tui, tracker, playback, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported:** editing turned follow off.
+
+**Cause:** `moveCursor`/`setCursor` explicitly disabled `follow`, and `editCell` advances the cursor via `moveCursor`, so every note entry or cursor move killed follow. Follow also moved the *cursor* rather than the view.
+
+**Fix:** follow now scrolls the **view** only — `refreshPlayhead` updates `viewOrder` + a new `viewRow` (the row PatternView scrolls to) and keeps the edit cursor in the playing order, but never moves the cursor row. No navigation or edit path disables follow any more. Test asserts follow stays true while navigating, `setCursor`-ing and entering a note.
+
+### FEAT-35 — Beat / bar markers in the pattern view
+- priority: medium
+- tags: tui, tracker, ux, visualisation
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Pattern rows now show musical structure from the song's `highlightA` (beat) and `highlightB` (bar): a `●` marker and a light grey row highlight on bar rows, a `·` marker and cyan row number on other beats, and a dim row number elsewhere — all within the existing 4-column row-number gutter, so alignment is unchanged. Verified live: `●00` bar, `·04/·08/·0C` beats.
+
+### BUG-5 — Overlay pagination sized to the whole terminal, clipping rows while scrolling
+- priority: high
+- tags: tui, help, ux, layout
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported (follow-up to BUG-4):** scrolling the help loses a line, and rows entering that line are missing.
+
+**Cause:** `HelpOverlay` paginated against the full terminal `rows` even though it renders inside the middle region (below the 3-row header and above the status/command bar), so the box overflowed and Ink clipped a row. Header `marginTop` also added unbudgeted rows.
+
+**Fix:** App now passes `viewportRows` (`rows - chrome`) as `height`; help uses `pageSize = height - 4` with one terminal row per entry (explicit spacer lines instead of margins) and the range folded into the hint. The same height-aware scrolling was added to `ParamEditorOverlay` (row-based window that keeps the selected param visible). Verified in a pty: help `1–9 of 65` → `3–11 of 65`, sampler `1-10` → `21-30`.
+
+### FEAT-34 — Enter autocompletes an unfinished slash command
+- priority: medium
+- tags: tui, commands, autocomplete
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported request:** pressing Enter before finishing a slash command should autocomplete it, just like Tab.
+
+**Fix:** `CommandRegistry.enterAction(input, hasSuggestions)` returns `complete` while the first token is not an exact command name and a suggestion exists, else `run`. The command bar applies the suggestion on Enter in the former case and executes in the latter. Unit tested for `/inf`, `/`, `/info`, `/info song` and unknown input.
+
+### FEAT-33 — Waveform previews in the Sampler, Sample and Spectral menus
+- priority: medium
+- tags: tui, sampler, spectral, waveform, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Added block-character waveform previews at the top of the Sampler editor (effective clip, or source-sample fallback), the Spectral editor (fused render when available, else source) and the Percussion editor (rendered hit). The existing Samples overlay waveform is retained. `Session.effectiveWaveform`/`fusionWaveform` expose the backend data; App ticks the editors every 300ms so previews refresh after a re-render. Covered by component tests asserting the Waveform groups render.
+
+### BUG-4 — /help does not show all commands (no scrolling)
+- priority: medium
+- tags: tui, help, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported:** `/help` doesn't show all commands.
+
+**Cause:** `HelpOverlay` rendered the whole catalogue with no scrolling, so the terminal clipped it.
+
+**Fix:** the overlay now builds a flat line list (headers + commands), shows a `rows - 5` page, scrolls with ↑↓/j/k and space/PgUp/PgDn, and shows a `x–y of N` range with the command count in the title. It owns its own `useInput` (App's global handler is inactive while help is open) and truncates long descriptions. Component test asserts the full command count and range indicator.
+
+### BUG-3 — Down arrow selects an invisible item in some menus (empty-list off-by-one)
+- priority: high
+- tags: tui, ux, selection
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported:** in a few menus, pressing Down moves the selection to an invisible item.
+
+**Cause:** every down-handler clamped only the upper bound (`Math.min(len - 1, i + 1)`); when the list was empty (e.g. a command palette after completing a command with no arg completions, or an editor with no params) this produced `-1`, so the highlight vanished.
+
+**Fix:** clamp both ends (`Math.max(0, Math.min(len - 1, i + 1))`) and guard empty lists in `ParamEditorOverlay`, `MixerOverlay`, `SamplesOverlay` and the App command palette; reset the palette selection to 0 whenever suggestions become empty. Also stopped blank enum values rendering as empty (`-` fallback).
+
+### BUG-2 — Tracker view does not follow the playhead
+- priority: high
+- tags: tui, tracker, playback, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+**Reported:** the pattern viewer does not follow the playhead during playback.
+
+**Fix:** added `SessionState.follow` (default on) and `Session.setFollow`; `refreshPlayhead` now moves the cursor (and thus the viewport/order) to `songPositionAt(time)` while playing when follow is on. Manual navigation and `setCursor` release follow so the user can browse while playing; `/follow on|off|toggle` (and the GUI's old behaviour) re-enables it. Covered by tests asserting the cursor advances with the playhead and that navigation releases follow.
+
+### FEAT-32 — Deferred: scripting & live control channel (`.lmpscript`, agent automation)
+- priority: low
+- tags: deferred, scripting, automation, control-socket, agents, lmpscript
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Status:** deliberately deferred by John (2026-09-17). Not in scope for the Core milestone. Captured so the command engine is built script-ready (FEAT-22) and the work is ready to schedule later.
+
+**Goal (when picked up)**
+Make every action automatable: users or agents run `.lmpscript` files / commands and get live feedback to test the program while it runs. Decided direction when last discussed: a **live control channel that agents attach to the running TUI**, rather than a separate headless mode.
+
+**Carry-over decisions already made**
+- Commands are the single source of action; a script/agent drives the same registry the TUI uses (FEAT-22).
+- `.lmpscript` is a sequence of commands with optional leading `/`, comments, variables/interpolation, waits and assertions.
+- Read/query commands plus an event stream provide feedback, not just fire-and-forget mutation.
+- Live feedback means attaching to the interactive app; transport/position/meter/render events are observable.
+
+**Open questions for later**
+- Transport: Unix domain socket + newline-delimited JSON (recommended, named pipe on Windows), vs TCP+token, vs WebSocket.
+- Protocol: request/response + event subscription shape; command ids, arg schema, result payloads; protocol versioning.
+- Script control flow in v1 (variables/assert/wait/loops) vs a minimal command list.
+- Security/sandbox: who may connect, fs write scope, dry-run.
+- Whether a headless `-c`/`--script` runner is also needed for CI, or the socket is the only host.
+- How `.lmpscript` scenario files become the E2E test format (superseding Playwright DOM tests; see FEAT-29).
+
+**Depends on**
+- FEAT-22 (scriptable command engine)
+- FEAT-21 (TUI shell) and FEAT-24 (playback/transport commands)
+
+**Acceptance criteria**
+- (Placeholder — define when scheduled.)
+
+**Completed (2026-09-17)**
+`src/control/server.ts` runs a local Unix socket (named pipe on Windows, 0600) speaking NDJSON; `ControlClient` drives it; `src/control/script.ts` runs `.lmpscript` files (commands + `@let/@query/@wait/@assert/@subscribe/@echo/@exit`, `$var` interpolation, `-> $var` capture) and `src/control/runScript.ts` is the `lantern-run` CLI (`--json` NDJSON for agents). Added `/query <path>` (structured state), `/socket`, and transport/tracker/mixer/status/samples/meters events. Disable with `LANTERN_CONTROL=0`; override the path with `LANTERN_SOCKET`. Verified by `tests/unit/control.test.ts` and a live E2E against the built app (`examples/control-smoke.lmpscript`, PASSED 13/0).
+
+### FEAT-31 — Deferred parity: graph editors (sampler, spectral/percussion, master FX graphs, cover art)
+- priority: low
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, parity, deferred, spectral, cover-art
 - created: 2026-09-17
 - updated: 2026-09-17
 - plan: terminal-lantern-tui-migration
@@ -347,36 +243,32 @@ Convert the Electron/React Lantern Music Player into a terminal app on Node + Ty
 Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
 
 **Approach**
-Keep all src/core unit tests running unchanged under Node (they are already environment-free). Add: (a) pure unit tests for the fuzzy matcher, command registry and each builtin handler with a mock CommandContext; (b) Ink component tests rendering to a string via ink-testing-library to assert the persistent layout, suggestion list and Tab completion; (c) a Node audio smoke/regression test that renders a fixed project offline and compares against a captured golden PCM; (d) a worker/WASM regression reusing tests/unit/prism-*.test.ts with the Node worker host.
+Follow-up epic after Core scope ships: bring the remaining GUI editors to the TUI. Each becomes a set of slash commands plus a non-modal overlay using text/braille plots instead of canvas. Covers: SamplerEditor (ADSR/loop/sample params), Spectral modulation + percussion controls incl. FEAT-16 auto-preview-on-slider-release, Master FX graphical response, Cover Art editor (needs a new TUI interaction model or headless export only).
 
 **Architecture**
-New tests/tui/*.test.tsx (ink-testing-library), tests/unit/commands.test.ts, tests/unit/fuzzy.test.ts, tests/unit/runtime-assets.test.ts, tests/unit/audio-node.test.ts. Update vitest.config.mts environment per-file (node default; jsdom only where still needed, ideally none). Capture golden PCM/WAV fixtures under tests/fixtures/golden/.
+New overlays under src/tui/components/ reusing src/core/sampler.ts, spectral.ts, masterFx.ts, and backend methods. Text plotting helper (braille line/bar) shared. Cover art: decide between headless authoring (JSON + command editing), sixel/kitty preview, or cancellation.
 
 **Key decisions**
-- Core tests must pass untouched — strongest evidence the migration preserved behavior.
-- TUI logic is tested through pure command handlers + string-rendered components, not a real terminal.
-- Audio golden tests use a fixed sample rate and a documented float tolerance.
+- Parity is additive; Core milestone must not block on it.
+- No canvas — text/braille only.
+- FEAT-16's slider-release preview maps to a command arg commit or an explicit /preview.
 
 **Alternatives considered**
-- Snapshot-test the whole TUI: brittle; assert targeted regions instead.
-- Manually verify audio: rejected — regressions in the DSP would be silent.
+- Never port editors: possible if Core scope proves sufficient; decided after user trial.
+- Keep GUI for editors alongside TUI: rejected by replacement decision.
 
 **Open questions**
-- What tolerance is acceptable for the node-web-audio-api offline render vs the previous browser output?
-- Future (once FEAT-32 scripting lands): should `.lmpscript` scenario files replace the string-rendered Ink component tests as the primary integration/E2E layer? Design command handlers so they can also be invoked from such a runner.
+- Is text/braille expressive enough for ADSR/envelope editing, or do we need an interactive numeric editor only?
+- Cover art: headless-only vs image protocol vs drop?
 
 **Depends on**
-- FEAT audio shim
-- FEAT worker host
-- FEAT slash-command engine
+- FEAT cleanup
 
 **Acceptance criteria**
-- `npm test` runs the full migrated core suite plus new TUI/runtime tests green under Node.
-- A deliberately broken fuzzy score or command handler fails the suite.
-- The audio golden test fails if the offline render changes beyond tolerance.
+- (Placeholder — define scope after Core milestone user feedback.)
 
-**Prototype status (2026-09-17)**
-All existing core unit tests pass untouched under Node (14 files / 109 tests). New: `tests/unit/runtime-assets.test.ts`, `tests/unit/audio-node.test.ts`, `tests/unit/tui-commands.test.ts` (fuzzy scoring, registry parsing/completion, session bootstrap, command execution, real playback advance). Remaining: `ink-testing-library` string-render component tests and the audio golden-PCM regression.
+**Completed (2026-09-17)**
+`ParamEditorOverlay.tsx` is a reusable keyboard-driven editor (↑↓ select, ←→ adjust, enter/p preview, `[`/`]` instrument, esc close) fed by `src/tui/editors.tsx`: sampler (source/trim/ADSR + envelope sparkline/tuning/vibrato/polyphony), spectral (enable/mode/sources/mix), percussion (presets + noise/transient/pitch/body/character), and master FX (delay+reverb). `/sampler`, `/spectral`, `/percussion`, `/fx` open them. `Session.updateSamplerSetting` mirrors the GUI's re-render/re-trim logic and `Session.previewAfterRender` is the FEAT-16 preview-on-adjust (350ms debounce). Cover art is now headless: `src/core/coverArt.ts` ports the procedural 32×32+4×4-Bayer scene, `src/runtime/cover.ts` adds a zlib PNG encoder, and `/export png` (plus WAV artwork embedding) uses it. Remaining out of scope: the FEAT-15 mecha/power-suit *part designer* (archived) and interactive modulation-route editing (routes are shown read-only; author via project JSON).
 
 ### FEAT-30 — Retire Electron + React DOM (cleanup)
 - priority: medium
@@ -424,9 +316,12 @@ Remove files and dependencies (electron, react-dom, vite, @vitejs/plugin-react, 
 **Comments**
 - Update FEAT-15: cover-art editor's 240x240 dithered PNG output can still be exported headlessly, but its React editor UI must be redesigned for the TUI or dropped.
 
-### FEAT-31 — Deferred parity: graph editors (sampler, spectral/percussion, master FX graphs, cover art)
-- priority: low
-- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, parity, deferred, spectral, cover-art
+**Completed (2026-09-17)**
+Removed `src/main`, `src/preload`, `src/renderer`, `src/shared/ipc.ts`, Vite/Playwright configs, DOM E2E/web tests, and the Electron/Vite build scripts. Moved the vendored prism glue to `src/wasm/vendor/prism/`. `package.json` now ships only ink / node-web-audio-api / react (+ esbuild, vitest, ink-testing-library, typescript). tsconfigs trimmed to the TUI surface. `npm run dev:tui` and the `lantern` bin remain; full test suite and build pass.
+
+### FEAT-29 — Test strategy: port core tests, add headless TUI + audio regression
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, tests, vitest, headless, regression
 - created: 2026-09-17
 - updated: 2026-09-17
 - plan: terminal-lantern-tui-migration
@@ -441,72 +336,271 @@ Convert the Electron/React Lantern Music Player into a terminal app on Node + Ty
 Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
 
 **Approach**
-Follow-up epic after Core scope ships: bring the remaining GUI editors to the TUI. Each becomes a set of slash commands plus a non-modal overlay using text/braille plots instead of canvas. Covers: SamplerEditor (ADSR/loop/sample params), Spectral modulation + percussion controls incl. FEAT-16 auto-preview-on-slider-release, Master FX graphical response, Cover Art editor (needs a new TUI interaction model or headless export only).
+Keep all src/core unit tests running unchanged under Node (they are already environment-free). Add: (a) pure unit tests for the fuzzy matcher, command registry and each builtin handler with a mock CommandContext; (b) Ink component tests rendering to a string via ink-testing-library to assert the persistent layout, suggestion list and Tab completion; (c) a Node audio smoke/regression test that renders a fixed project offline and compares against a captured golden PCM; (d) a worker/WASM regression reusing tests/unit/prism-*.test.ts with the Node worker host.
 
 **Architecture**
-New overlays under src/tui/components/ reusing src/core/sampler.ts, spectral.ts, masterFx.ts, and backend methods. Text plotting helper (braille line/bar) shared. Cover art: decide between headless authoring (JSON + command editing), sixel/kitty preview, or cancellation.
+New tests/tui/*.test.tsx (ink-testing-library), tests/unit/commands.test.ts, tests/unit/fuzzy.test.ts, tests/unit/runtime-assets.test.ts, tests/unit/audio-node.test.ts. Update vitest.config.mts environment per-file (node default; jsdom only where still needed, ideally none). Capture golden PCM/WAV fixtures under tests/fixtures/golden/.
 
 **Key decisions**
-- Parity is additive; Core milestone must not block on it.
-- No canvas — text/braille only.
-- FEAT-16's slider-release preview maps to a command arg commit or an explicit /preview.
+- Core tests must pass untouched — strongest evidence the migration preserved behavior.
+- TUI logic is tested through pure command handlers + string-rendered components, not a real terminal.
+- Audio golden tests use a fixed sample rate and a documented float tolerance.
 
 **Alternatives considered**
-- Never port editors: possible if Core scope proves sufficient; decided after user trial.
-- Keep GUI for editors alongside TUI: rejected by replacement decision.
+- Snapshot-test the whole TUI: brittle; assert targeted regions instead.
+- Manually verify audio: rejected — regressions in the DSP would be silent.
 
 **Open questions**
-- Is text/braille expressive enough for ADSR/envelope editing, or do we need an interactive numeric editor only?
-- Cover art: headless-only vs image protocol vs drop?
+- What tolerance is acceptable for the node-web-audio-api offline render vs the previous browser output?
+- Future (once FEAT-32 scripting lands): should `.lmpscript` scenario files replace the string-rendered Ink component tests as the primary integration/E2E layer? Design command handlers so they can also be invoked from such a runner.
 
 **Depends on**
-- FEAT cleanup
+- FEAT audio shim
+- FEAT worker host
+- FEAT slash-command engine
 
 **Acceptance criteria**
-- (Placeholder — define scope after Core milestone user feedback.)
+- `npm test` runs the full migrated core suite plus new TUI/runtime tests green under Node.
+- A deliberately broken fuzzy score or command handler fails the suite.
+- The audio golden test fails if the offline render changes beyond tolerance.
 
-### FEAT-32 — Deferred: scripting & live control channel (`.lmpscript`, agent automation)
-- priority: low
-- tags: deferred, scripting, automation, control-socket, agents, lmpscript
+**Completed (2026-09-17)**
+18 test files / 127 tests green under Node; core tests untouched. Added `ink-testing-library` component tests (`tui-components.test.tsx`), tracker/IO tests (`tui-tracker-ops.test.ts`), worker-handler tests, and a golden-PCM regression (`audio-golden.test.ts` + `tests/fixtures/golden/master-fx-delay.json`, regenerate with `UPDATE_GOLDEN=1`).
+
+### FEAT-27 — Commands: source samples and sampler browse + preview
+- priority: medium
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, sampler, commands, preview
 - created: 2026-09-17
 - updated: 2026-09-17
 - plan: terminal-lantern-tui-migration
 - kind: card
 - parent: FEAT-17
 
-**Status:** deliberately deferred by John (2026-09-17). Not in scope for the Core milestone. Captured so the command engine is built script-ready (FEAT-22) and the work is ready to schedule later.
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
 
-**Goal (when picked up)**
-Make every action automatable: users or agents run `.lmpscript` files / commands and get live feedback to test the program while it runs. Decided direction when last discussed: a **live control channel that agents attach to the running TUI**, rather than a separate headless mode.
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
 
-**Carry-over decisions already made**
-- Commands are the single source of action; a script/agent drives the same registry the TUI uses (FEAT-22).
-- `.lmpscript` is a sequence of commands with optional leading `/`, comments, variables/interpolation, waits and assertions.
-- Read/query commands plus an event stream provide feedback, not just fire-and-forget mutation.
-- Live feedback means attaching to the interactive app; transport/position/meter/render events are observable.
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
 
-**Open questions for later**
-- Transport: Unix domain socket + newline-delimited JSON (recommended, named pipe on Windows), vs TCP+token, vs WebSocket.
-- Protocol: request/response + event subscription shape; command ids, arg schema, result payloads; protocol versioning.
-- Script control flow in v1 (variables/assert/wait/loops) vs a minimal command list.
-- Security/sandbox: who may connect, fs write scope, dry-run.
-- Whether a headless `-c`/`--script` runner is also needed for CI, or the socket is the only host.
-- How `.lmpscript` scenario files become the E2E test format (superseding Playwright DOM tests; see FEAT-29).
+**Approach**
+Provide /samples (list source samples with names, durations, fused state), /sample <n> [path] (load/replace), /preview <n> and /waveform <n> (ASCII waveform), plus /instrument <n> for per-instrument effective clip info. Reuse backend.sampleWaveform, effectiveWaveform, preview, sampleClip and the SourceSamples UI data. The heavyweight Sampler/Spectral editors stay deferred.
+
+**Architecture**
+src/tui/components/SampleListOverlay.tsx and a text Waveform component (braille/block chars). Commands in builtins.ts route to backend methods already in AudioBackend. Sample names come from the existing settings/sampleNames state.
+
+**Key decisions**
+- Browse/preview only in milestone 1; parameter editing deferred.
+- ASCII/braille waveform, no image protocol.
+- All values read from the backend interface, no new DSP.
+
+**Alternatives considered**
+- Port the full SamplerEditor now: deferred by scope decision.
+
+**Open questions**
+- Braille vs block characters for the waveform given font support?
+- Should /sample with no path clear the slot (mirrors GUI 'Clear Source Samples')?
 
 **Depends on**
-- FEAT-22 (scriptable command engine)
-- FEAT-21 (TUI shell) and FEAT-24 (playback/transport commands)
+- FEAT audio shim
+- FEAT slash-command engine
 
 **Acceptance criteria**
-- (Placeholder — define when scheduled.)
+- /samples lists all 6 bundled source samples with durations.
+- /sample n <path> replaces a sample and updates the waveform and preview.
+- /preview n auditions the rendered one-shot without leaving the tracker view.
+- Unit tests cover the sample-list command handlers against a mock backend.
 
-## Bugs
+**Completed (2026-09-17)**
+`/samples` and `/mixer` open non-modal overlays. `SamplesOverlay.tsx` lists the six samples with durations, renders a block-character waveform for the selection, previews with `p`/Enter, and lists instruments with their source/spectral assignment. Command coverage verified by tests.
 
-## In Progress
+### FEAT-26 — Commands: file, project and export IO with path completion
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, io, project, export, commands, completion
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
 
-## Blocked
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
 
-## Implemented
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Replace Electron dialogs with commands that take paths and use a filesystem path completer for Tab. Commands: /open <file.fur|.lampjson> /save [path] /saveas /export wav|mid|zip|png|fur [path] /new /loadsamples /sample <n> <path> /info. Load paths reuse the existing core parse/serialize and buildSamplerSequence paths from App.tsx; export reuses src/core/export.ts (WAV/MIDI/ZIP) and CoverArt PNG path. Show a blocking progress indicator in the status line for long renders.
+
+**Architecture**
+src/runtime/files.ts (fs read/write, filter by extension). src/tui/commands/completers.ts (async directory listing with prefix filter, ~ expansion, relative-to-cwd and quoted paths). src/tui/state/projectStore.ts mirrors App.tsx project load/save/dirty logic incl. legacy .lampjson handling. Reuse export functions unchanged.
+
+**Key decisions**
+- No file picker in v1: typed/quoted paths with Tab completion.
+- Overwriting an existing file prompts in the status line (y/n) unless --force.
+- Exports are synchronous-or-promise with a status progress line; no modal dialog.
+
+**Alternatives considered**
+- Embed a TUI file browser overlay: deferred; path completion is faster for keyboard users.
+- Keep Electron dialogs: rejected.
+
+**Open questions**
+- Where do exports default to when no path is given (cwd, source dir, or a configured export dir)?
+- Should recent files be persisted and offered by fuzzy completion?
+
+**Depends on**
+- FEAT de-electron-ify
+- FEAT slash-command engine
+- FEAT tui shell
+
+**Acceptance criteria**
+- /open loads a .fur, a .lampjson and a project-only .lampjson with the same results as the GUI E2E fixtures.
+- /export wav produces a file byte-comparable (within documented tolerance) to the GUI export for a fixed project.
+- Tab completes directory and file paths including nested directories and quoted paths with spaces.
+- Failures (missing file, bad parse) surface as status errors and leave the current song loaded.
+
+**Completed (2026-09-17)**
+`src/tui/io.ts` implements `/open` (.lampjson with embedded or bundled samples; .fur via `parseFurFile` + default project), `/new`, `/save`, and `/export wav|mid|zip|fur` (loops/fade/normalize flags; WAV runs the Master FX offline). Async path completion is wired for path args. `/export png` stays with the deferred cover-art work (FEAT-31).
+
+### FEAT-25 — Commands: mixer, master FX and channel settings overlay
+- priority: medium
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, mixer, master-fx, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Port the Mixer and Master FX to a keyboard-driven overlay reachable via /mixer and /masterfx, with numeric entry and arrow adjustments, plus commands /gain /pan (if present) /mastervol. Reuse MasterFxSettings and defaultMasterFx() from src/core/masterFx.ts and backend.setMasterFx. Graphs (ADSR, waveform) are out of milestone 1; show numbers and text meters instead.
+
+**Architecture**
+src/tui/components/MixerOverlay.tsx, MasterFxOverlay.tsx. Commands route to backend.setChannelVolume/setChannelMute/setMasterVolume/setMasterFx. State stays in the shared playback store so the header reflects changes.
+
+**Key decisions**
+- Overlay leaves header/command bar visible (non-modal).
+- Values edited numerically and by +/- keys; no mouse.
+- Visual graphs deferred; text bars for levels.
+
+**Alternatives considered**
+- Full-screen mixer: rejected to preserve the persistent tracker.
+- Skip mixer in milestone 1: rejected — user selected mixer/transport in Core scope.
+
+**Open questions**
+- Should meter levels animate in the overlay, and at what refresh rate to avoid render churn?
+
+**Depends on**
+- FEAT tui shell
+- FEAT transport commands
+
+**Acceptance criteria**
+- Changing a channel gain/mute or master FX applies live and survives overlay close.
+- Values match the existing default/clamp rules in core/masterFx.ts.
+- Unit tests cover command→setting mapping and clamping.
+
+**Completed (2026-09-17)**
+`/mixer` opens `MixerOverlay.tsx`: per-channel volume bars with peak meters, mute toggles, master volume, and delay/reverb enable+mix. Keyboard-driven (↑↓ select, ←→ adjust, m toggle, esc close); commands `/mute /unmute /volume /mastervol /meters` remain. Deep FX params (delay time/feedback, reverb decay) are only reachable by editing the project JSON for now.
+
+### FEAT-23 — Commands: tracker navigation and editing
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, tracker, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Expose the existing tracker edit operations (src/core/tracker.ts) through commands and direct grid editing. The persistent PatternView renders channels×rows with note/ins/vol/fx columns; the cursor is (channel, order, row, column). Note entry works like the GUI: type note keys (piano layout), digits for hex, Del to clear, clipboard via system clipboard or an in-app register. Reuse applyEdit/PatternSnapshot, undo/redo, and the existing CLIPBOARD_TAG format.
+
+**Architecture**
+src/tui/components/PatternView.tsx renders from SongModel patterns plus a cursor/selection store. src/tui/state/trackerStore.ts wraps EditColumn/CellPos selection, undo/redo stacks, and calls core/tracker applyEdit. Commands: /goto order row, /channel n, /order add|remove|move, /select, /copy, /paste, /undo, /redo, /clear, /transpose, /octave n, /step n. Follow-playhead option toggled by /follow.
+
+**Key decisions**
+- Reuse src/core/tracker.ts helpers verbatim (columnLabel, flatColumnsForChannel, applyEdit, clipboard encode/decode) so semantics match the GUI.
+- Hex note entry layout mirrors the GUI exactly to avoid muscle-memory breakage.
+- Selection + clipboard implemented in-terminal (no OS clipboard dependency).
+
+**Alternatives considered**
+- Readline-style text editing of a line: rejected — not a tracker.
+- Third-party hex editor: rejected — must stay tied to SongModel semantics.
+
+**Open questions**
+- Multi-channel selection granularity (per-column vs per-cell block)?
+- Should the order list be its own editable pane in milestone 1 or later?
+
+**Depends on**
+- FEAT tui shell
+- FEAT slash-command engine
+
+**Acceptance criteria**
+- Cursor moves by keyboard across channels/orders/rows/columns; viewport scrolls to keep it visible.
+- Editing a cell updates the pattern, marks the project dirty, and is reflected in playback after the existing re-sequence path.
+- Undo/redo and copy/paste work across orders, with tests asserting round-trip through the CLIPBOARD_TAG format.
+- basic-tracker-edit sequences produce identical SongModel changes to the GUI unit tests.
+
+**Completed (2026-09-17)**
+`src/tui/session.ts` now supports row/column/channel/order navigation, note + instrument entry, `q`/`a` value adjust, `/clear`, undo/redo (grouped history), Shift+arrow block selection with blue highlight, in-app `CLIPBOARD_TAG` copy/cut/paste (--flood), transpose, interpolate, insert/remove order, clear-all, `/lastvalue`, and configurable `/step`. All verified in `tui-tracker-ops.test.ts`.
+
+### FEAT-20 — WASM + worker host: run prism DSP under Node worker_threads
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, wasm, worker-threads, prism
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Replace the browser Web Worker with a node:worker_threads host while keeping the worker protocol messages identical. src/wasm/prism.ts loading of prism_wasm_bg.wasm stays the same via WebAssembly.instantiate from the bundled file bytes. Choose worker_threads for parity with the existing async render lifecycle (fusionRendering/fusionReady polling).
+
+**Architecture**
+New src/wasm/prismWorkerHost.node.ts (or make prismWorkerClient detect environment and construct a Worker from node:worker_threads using a .cjs/.mjs entry compiled by esbuild). Worker entry prism.worker.ts compiled for Node with the wasm path resolved via a runtime asset resolver. Keep prismWorkerProtocol.ts unchanged.
+
+**Key decisions**
+- Preserve the existing protocol and render lifecycle so core/spectral consumers do not change.
+- Ship the .wasm as a resolved asset (same file as src/renderer/vendor/prism/prism_wasm_bg.wasm) rather than importing it as a Vite URL.
+- Support a synchronous in-process fallback for tests.
+
+**Alternatives considered**
+- Run WASM on the main thread: rejected — modulation/percussion renders would jank the UI loop.
+- child_process: rejected — heavier, no structured-clone/SharedArrayBuffer ergonomics.
+
+**Open questions**
+- Can we reuse the already-built wasm32-unknown-unknown artifact from native/prism-wasm? (yes, but confirm the build script's output path).
+
+**Depends on**
+- FEAT audio shim
+
+**Acceptance criteria**
+- Unit test renders a modulated loop through the Node worker and compares against the golden fixture.
+- fusionRendering/fusionReady/takeFusionCompleted behave as before.
+- No Web Worker global is referenced in the Node path.
+
+**Completed (2026-09-17)**
+`src/wasm/prism.worker.node.ts` is a `worker_threads` entry built to `dist/tui/prism-worker.mjs`; `src/wasm/prismNode.ts` starts it, adapts it to `WorkerLike`, pings it, and registers it via `registerPrismWasmWorker`, falling back to synchronous in-process `initSync` when the worker bundle is absent (tests/dev). The shared `handlePrismRequest` is unit-tested. Verified the built worker answers a ping.
 
 ### FEAT-28 — Packaging: single `lantern` bin, build pipeline, drop Electron/Vite
 - priority: high
@@ -1362,3 +1456,59 @@ src/core/spectral.ts (SpectralParamId + registry, ModRoute type, defaults, track
 - JSON round-trip unit test passes; a legacy project with no `modulation` field yields an unchanged render.
 
 ## Archived
+
+### FEAT-15 — Cover Art editor — mecha/power-suit part designer
+- priority: medium
+- tags: cover-art, ui, editor, project-json, library, dither, plan-cover-art-editor-mecha-power-suit-part-designer
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: cover-art-editor-mecha-power-suit-part-designer
+- kind: card
+
+**Plan:** Cover Art editor — mecha/power-suit part designer _(#plan-cover-art-editor-mecha-power-suit-part-designer)_
+
+**Plan summary**
+Future feature (requested by John). A dedicated Cover Art editor that opens as its own window and turns the animated cover into a part-based anime mecha / power-suit designer: equip, swap, transform and recolour individual parts to author a custom mech-suit, saved into the project file and backed by a reusable part library. Output stays the same 240×240 dithered artwork (4×4 Bayer).
+
+**Approach**
+Build a declarative, part-based cover-art model on top of the existing 32×32 compositor. A `CoverArtDesign` (palette + ordered part instances + animation options) lives in `ProjectFile`; a `PartLibrary` catalog provides part definitions (mask/primitive + palette roles + anchors + optional animation). The editor is a dedicated window/modal that previews the live 240×240 dithered canvas while the user browses slots and equips parts. Legacy projects with no `coverArt` design keep rendering the current procedural screen-wall/vat/plant scene unchanged.
+
+**Architecture**
+Data/model: add `coverArt?: CoverArtDesign | null` to `ProjectFile` (src/core/project.ts) and parse/serialise it (default = procedural scene). `CoverArtDesign = { version, palette: string[], slots: PartInstance[], background?: PartInstance[], animation: {...} }`; `PartInstance = { partId, x, y, flipX, flipY, scale, paletteMap, layer }`. Part library at `src/core/coverParts/` (or `assets/cover-parts/*.json`) with `PartDef = { id, name, category, size, primitives/mask, anchor, paletteRoles, defaultLayer, animation? }`. Rendering: refactor `src/renderer/components/CoverArt.tsx` so `render()` can paint either the procedural scene or a `CoverArtDesign` into the same `Float32Array(GRID*GRID*3)`; keep `dither()` (4×4 Bayer, 8 levels) and the 240 display / 1600 PNG output path shared. Editor UI: new `CoverArtEditor.tsx` opened from the Cover Art panel (reuse floating-window/modal pattern from SamplerEditor/MasterFxModal), with a zoomed grid canvas, slot/category browser, equip/remove/transform controls, palette swatches, layer order and an animation preview driven by the existing `CoverState` pulses/overall envelope. Library persistence: ship starter parts in-repo; support user part export/import and a persistent library (IndexedDB/localStorage) as a follow-up. Export unchanged: `CoverArtHandle.renderPngBytes()` and WAV embed continue to consume the live canvas.
+
+**Key decisions**
+- Part-based compositing, not a free pixel editor: the request is explicitly a mecha/power-suit kit-bash designer.
+- Keep the 240×240 dithered output and 4×4 Bayer dithering exactly as today; the editor only changes what is composited before dithering.
+- Reuse the existing 32×32 RGB float buffer + `blend`/`dither` pipeline rather than introducing a second renderer.
+- Store the authored design in the project file; store reusable part definitions in a separate library so designs stay small and parts are shareable.
+- Legacy projects (no coverArt field) must render the current procedural scene byte-for-byte.
+
+**Alternatives considered**
+- Pure free-pixel editor on 32×32 (Aseprite-style): rejected — no part reuse, and John wants swappable mecha parts.
+- Full 3D mech modeller: rejected — out of scope and unnecessary for a 32×32 dithered target.
+- Raster PNG sprite parts: workable but palette/scale edits and recolouring are harder than declarative mask/primitive definitions.
+- Store every part inside each project file: rejected — bloats projects and blocks a shared library.
+- Separate Electron BrowserWindow immediately: deferred — an in-app modal is simpler and consistent with existing editors; popping out can be added once the model is stable.
+
+**Open questions**
+- Should the editor open as a separate OS window (Electron BrowserWindow + IPC state sync) or an in-app floating window first?
+- Is the current vat/plant scene kept as one selectable background theme, or is mecha mode a separate art mode?
+- Internal resolution: stay at 32×32, or raise it (e.g. 80×80 / 120×120) so a mech-suit reads more clearly at 240×240?
+- How many palette colours should be allowed so 4×4 Bayer dithering still reads cleanly?
+- Part library scope: shipped starter set only, or user-authored + JSON import/export + persistent curated library?
+- Do parts author multi-frame sprite animation, or is animation limited to per-part transform/glow driven by note pulses and the overall envelope?
+- Does the mecha cover need to stay audio-reactive like the current scene (note pulses, overall level)?
+
+**Acceptance criteria**
+- A dedicated Cover Art editor opens from the cover panel and shows a live 240×240 dithered preview.
+- The user can browse part categories, equip/replace/remove parts per slot, apply per-part transform (x/y/flip/scale), and recolour via a palette.
+- The authored design round-trips through Project JSON, and projects without a design still render the existing procedural cover unchanged.
+- A reusable part library exists with a starter set across categories; adding a part to the library does not require editing a project.
+- Cover export still produces the crisp 1600×1600 PNG and the WAV embed uses the edited artwork.
+- Rendering is deterministic (same design + time → same 32×32 buffer) and dithering remains 4×4 Bayer to 240×240.
+- Unit tests cover model round-trip, compositor determinism and the library loader; an E2E test opens the editor, equips a part, and verifies the preview and saved project JSON change.
+
+**Comments**
+- Touches: src/renderer/components/CoverArt.tsx, src/renderer/App.tsx (coverRef/renderPngBytes usage), src/core/project.ts (ProjectFile + serialise/parse), src/renderer/styles.css, new src/renderer/components/CoverArtEditor.tsx and src/core/coverParts/.
+- Current render facts to preserve: GRID=32 internal buffer, BAYER 4×4 at 8 levels, display canvas 240×240 (`image-rendering: pixelated`), PNG export 1600×1600, `CoverArtHandle.renderPngBytes()` consumed by App.tsx WAV export.
+- Cover art is currently procedural and NOT stored in the project — this card introduces the first saved cover-art state.

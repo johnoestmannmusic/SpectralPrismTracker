@@ -15,11 +15,21 @@ export interface WavTags {
 const utf8 = new TextEncoder();
 
 function pushU32LE(out: number[], value: number): void {
-  out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+  out.push(
+    value & 0xff,
+    (value >>> 8) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 24) & 0xff,
+  );
 }
 
 function pushU32BE(out: number[], value: number): void {
-  out.push((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff);
+  out.push(
+    (value >>> 24) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 8) & 0xff,
+    value & 0xff,
+  );
 }
 
 function pushAscii(out: number[], text: string): void {
@@ -89,7 +99,12 @@ function buildId3Chunk(tags: WavTags): number[] {
 
   const size = frames.length;
   const tag: number[] = [0x49, 0x44, 0x33, 3, 0, 0]; // "ID3" v2.3.0, no flags
-  tag.push((size >>> 21) & 0x7f, (size >>> 14) & 0x7f, (size >>> 7) & 0x7f, size & 0x7f);
+  tag.push(
+    (size >>> 21) & 0x7f,
+    (size >>> 14) & 0x7f,
+    (size >>> 7) & 0x7f,
+    size & 0x7f,
+  );
   tag.push(...frames);
   return riffChunk("id3 ", Uint8Array.from(tag));
 }

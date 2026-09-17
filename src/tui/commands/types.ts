@@ -49,7 +49,12 @@ export interface CommandContext {
   exit?: () => void;
   /** Enumerates every registered command, for /help and agent discovery. */
   listCommands?: () => CommandDef[];
+  /** Opens a TUI overlay (mixer / samples / editors). No-op in non-UI hosts. */
+  openOverlay?: (name: OverlayName, arg?: number) => void;
 }
+
+export type OverlayName =
+  "mixer" | "samples" | "sampler" | "spectral" | "percussion" | "fx";
 
 export interface CommandDef {
   /** Stable id for scripting/tests. */

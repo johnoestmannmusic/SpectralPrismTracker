@@ -77,7 +77,7 @@ async function fetchJson(url) {
 function repoUrl(metadata) {
   const repo = metadata.repository;
   if (!repo) return null;
-  return typeof repo === "string" ? repo : repo.url ?? null;
+  return typeof repo === "string" ? repo : (repo.url ?? null);
 }
 
 function daysSince(dateString) {
@@ -85,7 +85,9 @@ function daysSince(dateString) {
   return (Date.now() - new Date(dateString).getTime()) / 86_400_000;
 }
 
-const pkg = JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+const pkg = JSON.parse(
+  readFileSync(path.join(projectRoot, "package.json"), "utf8"),
+);
 const lockPath = path.join(projectRoot, "package-lock.json");
 const lock = existsSync(lockPath)
   ? JSON.parse(readFileSync(lockPath, "utf8"))
@@ -99,7 +101,9 @@ const direct = {
 console.log("\nDirect dependency allowlist check");
 for (const name of Object.keys(direct)) {
   if (!ALLOWED[name]) {
-    fail(`unreviewed direct dependency "${name}" (possible slopsquat/hallucination)`);
+    fail(
+      `unreviewed direct dependency "${name}" (possible slopsquat/hallucination)`,
+    );
   }
 }
 
@@ -108,7 +112,9 @@ if (!offline) {
   for (const [name, expectedRepo] of Object.entries(ALLOWED)) {
     if (!(name in direct)) continue; // allowlist entry not currently a dependency
     try {
-      const meta = await fetchJson(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
+      const meta = await fetchJson(
+        `https://registry.npmjs.org/${encodeURIComponent(name)}`,
+      );
       const latest = meta["dist-tags"]?.latest;
       const versionMeta = latest ? meta.versions?.[latest] : undefined;
       if (!versionMeta) {
@@ -117,7 +123,9 @@ if (!offline) {
       }
       const repo = repoUrl(versionMeta) ?? repoUrl(meta);
       if (!repo || !expectedRepo.test(repo)) {
-        fail(`${name}: repository "${repo}" does not match expected ${expectedRepo}`);
+        fail(
+          `${name}: repository "${repo}" does not match expected ${expectedRepo}`,
+        );
       } else {
         ok(`${name}: repository ${repo}`);
       }
@@ -131,7 +139,9 @@ if (!offline) {
       if (installedVersion && lockEntry?.integrity) {
         const published = meta.versions[installedVersion]?.dist?.integrity;
         if (published && published !== lockEntry.integrity) {
-          fail(`${name}: lock integrity does not match registry for ${installedVersion}`);
+          fail(
+            `${name}: lock integrity does not match registry for ${installedVersion}`,
+          );
         } else {
           ok(`${name}: lock integrity matches registry (${installedVersion})`);
         }
@@ -139,7 +149,9 @@ if (!offline) {
 
       const created = meta.time?.created;
       if (daysSince(created) < MIN_AGE_DAYS) {
-        fail(`${name}: package is only ${daysSince(created).toFixed(1)} days old`);
+        fail(
+          `${name}: package is only ${daysSince(created).toFixed(1)} days old`,
+        );
       }
 
       const downloads = await fetchJson(
@@ -151,7 +163,9 @@ if (!offline) {
             `${name}: only ${downloads.downloads.toLocaleString()} weekly downloads (< ${MIN_WEEKLY_DOWNLOADS.toLocaleString()})`,
           );
         } else {
-          ok(`${name}: ${downloads.downloads.toLocaleString()} weekly downloads`);
+          ok(
+            `${name}: ${downloads.downloads.toLocaleString()} weekly downloads`,
+          );
         }
       }
       void installedRange;
@@ -170,7 +184,10 @@ let badIntegrity = 0;
 for (const [key, entry] of Object.entries(lock.packages ?? {})) {
   if (!key || key === "") continue;
   locked += 1;
-  if (entry.resolved && !entry.resolved.startsWith("https://registry.npmjs.org/")) {
+  if (
+    entry.resolved &&
+    !entry.resolved.startsWith("https://registry.npmjs.org/")
+  ) {
     badResolved += 1;
     fail(`${key}: resolved URL is not the npm registry (${entry.resolved})`);
   }
@@ -183,7 +200,9 @@ for (const [key, entry] of Object.entries(lock.packages ?? {})) {
     fail(`${key}: missing integrity hash`);
   }
 }
-ok(`${locked} locked packages inspected (${badResolved} bad resolved URLs, ${badIntegrity} bad integrity)`);
+ok(
+  `${locked} locked packages inspected (${badResolved} bad resolved URLs, ${badIntegrity} bad integrity)`,
+);
 
 console.log("\nSummary");
 console.log(`  checks passed: ${checks.length}`);

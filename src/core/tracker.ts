@@ -21,7 +21,11 @@ export type CellValue =
   | { kind: "vol"; value: number | null }
   | { kind: "fx"; value: { effect: number | null; value: number | null } };
 
-export const FX_CATALOG: Array<{ code: number; label: string; description: string }> = [
+export const FX_CATALOG: Array<{
+  code: number;
+  label: string;
+  description: string;
+}> = [
   { code: 0x01, label: "01xx", description: "Pitch slide up" },
   { code: 0x02, label: "02xx", description: "Pitch slide down" },
   { code: 0x09, label: "09xx", description: "Set Speed 1" },
@@ -56,14 +60,26 @@ export function sameColumn(a: EditColumn, b: EditColumn): boolean {
   return true;
 }
 
-export function flatColumnsForChannel(song: SongModel, channel: number): EditColumn[] {
+export function flatColumnsForChannel(
+  song: SongModel,
+  channel: number,
+): EditColumn[] {
   const effectColumns = Math.max(song.channels[channel]?.effectColumns ?? 1, 1);
-  const columns: EditColumn[] = [{ kind: "note" }, { kind: "ins" }, { kind: "vol" }];
-  for (let i = 0; i < effectColumns; i++) columns.push({ kind: "fx", index: i });
+  const columns: EditColumn[] = [
+    { kind: "note" },
+    { kind: "ins" },
+    { kind: "vol" },
+  ];
+  for (let i = 0; i < effectColumns; i++)
+    columns.push({ kind: "fx", index: i });
   return columns;
 }
 
-export function columnIndex(song: SongModel, channel: number, column: EditColumn): number {
+export function columnIndex(
+  song: SongModel,
+  channel: number,
+  column: EditColumn,
+): number {
   const columns = flatColumnsForChannel(song, channel);
   return columns.findIndex((c) => sameColumn(c, column));
 }
@@ -83,22 +99,36 @@ export function readValue(cell: PatternCell, column: EditColumn): CellValue {
   }
 }
 
-export function writeValue(cell: PatternCell, column: EditColumn, value: CellValue): PatternCell {
+export function writeValue(
+  cell: PatternCell,
+  column: EditColumn,
+  value: CellValue,
+): PatternCell {
   const next = cloneCell(cell);
-  if (column.kind === "note" && value.kind === "note") next.note = value.value ? { ...value.value } : null;
-  else if (column.kind === "ins" && value.kind === "ins") next.instrument = value.value;
-  else if (column.kind === "vol" && value.kind === "vol") next.volume = value.value;
+  if (column.kind === "note" && value.kind === "note")
+    next.note = value.value ? { ...value.value } : null;
+  else if (column.kind === "ins" && value.kind === "ins")
+    next.instrument = value.value;
+  else if (column.kind === "vol" && value.kind === "vol")
+    next.volume = value.value;
   else if (column.kind === "fx" && value.kind === "fx") {
-    if (next.effects[column.index]) next.effects[column.index] = { ...value.value };
+    if (next.effects[column.index])
+      next.effects[column.index] = { ...value.value };
   }
   return next;
 }
 
 export function clearValue(cell: PatternCell, column: EditColumn): PatternCell {
-  if (column.kind === "note") return writeValue(cell, column, { kind: "note", value: null });
-  if (column.kind === "ins") return writeValue(cell, column, { kind: "ins", value: null });
-  if (column.kind === "vol") return writeValue(cell, column, { kind: "vol", value: null });
-  return writeValue(cell, column, { kind: "fx", value: { effect: null, value: null } });
+  if (column.kind === "note")
+    return writeValue(cell, column, { kind: "note", value: null });
+  if (column.kind === "ins")
+    return writeValue(cell, column, { kind: "ins", value: null });
+  if (column.kind === "vol")
+    return writeValue(cell, column, { kind: "vol", value: null });
+  return writeValue(cell, column, {
+    kind: "fx",
+    value: { effect: null, value: null },
+  });
 }
 
 /**
@@ -119,10 +149,17 @@ export function defaultLastValues(): LastValues {
 }
 
 /** Writes the tracked "last value" for this column's type into a copy of the cell (the `Z` keybind). */
-export function applyLastValue(cell: PatternCell, column: EditColumn, last: LastValues): PatternCell {
+export function applyLastValue(
+  cell: PatternCell,
+  column: EditColumn,
+  last: LastValues,
+): PatternCell {
   switch (column.kind) {
     case "note":
-      return writeValue(cell, column, { kind: "note", value: { kind: "note", note: last.note } });
+      return writeValue(cell, column, {
+        kind: "note",
+        value: { kind: "note", note: last.note },
+      });
     case "ins":
       return writeValue(cell, column, { kind: "ins", value: last.ins });
     case "vol":
@@ -136,7 +173,11 @@ export function applyLastValue(cell: PatternCell, column: EditColumn, last: Last
  * Updates the "last value" memory from a just-committed cell, mirroring Rust's
  * `commit_edit`: only real values update the memory (Off/Release/clear do not).
  */
-export function recordLastValue(last: LastValues, column: EditColumn, cell: PatternCell): void {
+export function recordLastValue(
+  last: LastValues,
+  column: EditColumn,
+  cell: PatternCell,
+): void {
   switch (column.kind) {
     case "note":
       if (cell.note && cell.note.kind === "note") last.note = cell.note.note;
@@ -158,7 +199,11 @@ export function recordLastValue(last: LastValues, column: EditColumn, cell: Patt
 export function adjustNote(cell: PatternCell, delta: number): PatternCell {
   if (!cell.note || cell.note.kind !== "note") return cell;
   const note = Math.min(Math.max(cell.note.note + delta, 0), 179);
-  return writeValue(cell, { kind: "note" }, { kind: "note", value: { kind: "note", note } });
+  return writeValue(
+    cell,
+    { kind: "note" },
+    { kind: "note", value: { kind: "note", note } },
+  );
 }
 
 export function adjustCell(
@@ -170,7 +215,10 @@ export function adjustCell(
   if (column.kind === "note") return adjustNote(cell, delta);
   const value = readValue(cell, column);
   if (value.kind === "ins" && value.value !== null) {
-    const next = Math.min(Math.max(value.value + delta, 0), Math.max(instrumentCount - 1, 0));
+    const next = Math.min(
+      Math.max(value.value + delta, 0),
+      Math.max(instrumentCount - 1, 0),
+    );
     return writeValue(cell, column, { kind: "ins", value: next });
   }
   if (value.kind === "vol" && value.value !== null) {
@@ -197,7 +245,8 @@ export function flatColumns(song: SongModel): FlatColumn[] {
   const out: FlatColumn[] = [];
   const channelCount = Math.min(song.channels.length, 4);
   for (let channel = 0; channel < channelCount; channel++) {
-    for (const column of flatColumnsForChannel(song, channel)) out.push({ channel, column });
+    for (const column of flatColumnsForChannel(song, channel))
+      out.push({ channel, column });
   }
   return out;
 }
@@ -237,7 +286,11 @@ export function selectionRect(
   anchor: CellPos | null,
 ): SelectionRect | null {
   if (!selected) return null;
-  const selectedIndex = globalColumnIndex(song, selected.channel, selected.column);
+  const selectedIndex = globalColumnIndex(
+    song,
+    selected.channel,
+    selected.column,
+  );
   if (!anchor || anchor.order !== selected.order) {
     return {
       order: selected.order,
@@ -274,8 +327,10 @@ export function interpolateColumn(
   for (let row = rowLo + 1; row < rowHi; row++) {
     const t = (row - rowLo) / span;
     if (first.kind === "note" && last.kind === "note") {
-      const a = first.value && first.value.kind === "note" ? first.value.note : null;
-      const b = last.value && last.value.kind === "note" ? last.value.note : null;
+      const a =
+        first.value && first.value.kind === "note" ? first.value.note : null;
+      const b =
+        last.value && last.value.kind === "note" ? last.value.note : null;
       if (a === null || b === null) return false;
       const value = Math.round(a + (b - a) * t);
       applyEdit(song, {
@@ -295,7 +350,10 @@ export function interpolateColumn(
         channel,
         order,
         row,
-        cell: writeValue(cellFrom(song, channel, order, row), column, { kind: "ins", value }),
+        cell: writeValue(cellFrom(song, channel, order, row), column, {
+          kind: "ins",
+          value,
+        }),
       });
       changed = true;
     } else if (first.kind === "vol" && last.kind === "vol") {
@@ -305,12 +363,17 @@ export function interpolateColumn(
         channel,
         order,
         row,
-        cell: writeValue(cellFrom(song, channel, order, row), column, { kind: "vol", value }),
+        cell: writeValue(cellFrom(song, channel, order, row), column, {
+          kind: "vol",
+          value,
+        }),
       });
       changed = true;
     } else if (first.kind === "fx" && last.kind === "fx") {
       if (first.value.value === null || last.value.value === null) return false;
-      const value = Math.round(first.value.value + (last.value.value - first.value.value) * t);
+      const value = Math.round(
+        first.value.value + (last.value.value - first.value.value) * t,
+      );
       applyEdit(song, {
         channel,
         order,
@@ -328,13 +391,26 @@ export function interpolateColumn(
   return changed;
 }
 
-function cellFrom(song: SongModel, channel: number, order: number, row: number): PatternCell {
+function cellFrom(
+  song: SongModel,
+  channel: number,
+  order: number,
+  row: number,
+): PatternCell {
   const ch = song.channels[channel];
   if (!ch) return { note: null, instrument: null, volume: null, effects: [] };
   const patternIndex = ch.orderList[order];
-  if (patternIndex === undefined) return { note: null, instrument: null, volume: null, effects: [] };
+  if (patternIndex === undefined)
+    return { note: null, instrument: null, volume: null, effects: [] };
   const pattern = ch.patterns.get(patternIndex);
-  return pattern?.rows[row] ?? { note: null, instrument: null, volume: null, effects: [] };
+  return (
+    pattern?.rows[row] ?? {
+      note: null,
+      instrument: null,
+      volume: null,
+      effects: [],
+    }
+  );
 }
 
 // ---- Pattern Manager snapshot helpers ----
@@ -347,7 +423,10 @@ export function insertPatternAfter(
 ): void {
   snapshot.orderLength += 1;
   for (const channel of snapshot.channels) {
-    const maxIndex = channel.patterns.reduce((max, [index]) => Math.max(max, index), -1);
+    const maxIndex = channel.patterns.reduce(
+      (max, [index]) => Math.max(max, index),
+      -1,
+    );
     const nextIndex = Math.min(maxIndex + 1, 0xffff);
     let rows: PatternCell[] = Array.from({ length: patternLength }, () => ({
       note: null,
@@ -357,11 +436,17 @@ export function insertPatternAfter(
     }));
     if (duplicate) {
       const sourceIndex = channel.orderList[pos];
-      const source = channel.patterns.find(([index]) => index === sourceIndex)?.[1];
+      const source = channel.patterns.find(
+        ([index]) => index === sourceIndex,
+      )?.[1];
       if (source) rows = source.map(cloneCell);
     }
     channel.patterns.push([nextIndex, rows]);
-    channel.orderList.splice(Math.min(pos + 1, channel.orderList.length), 0, nextIndex);
+    channel.orderList.splice(
+      Math.min(pos + 1, channel.orderList.length),
+      0,
+      nextIndex,
+    );
   }
 }
 
@@ -402,19 +487,24 @@ export function reassignInstrument(
   deletedIndex: number,
   targetIndex: number,
 ): void {
-  const targetAfterDelete = targetIndex < deletedIndex ? targetIndex : targetIndex - 1;
+  const targetAfterDelete =
+    targetIndex < deletedIndex ? targetIndex : targetIndex - 1;
   for (const channel of snapshot.channels) {
     for (const [, rows] of channel.patterns) {
       for (const cell of rows) {
         if (cell.instrument === null) continue;
-        if (cell.instrument === deletedIndex) cell.instrument = targetAfterDelete;
+        if (cell.instrument === deletedIndex)
+          cell.instrument = targetAfterDelete;
         else if (cell.instrument > deletedIndex) cell.instrument -= 1;
       }
     }
   }
 }
 
-export function clearPatternsSnapshot(snapshot: PatternSnapshot, patternLength: number): void {
+export function clearPatternsSnapshot(
+  snapshot: PatternSnapshot,
+  patternLength: number,
+): void {
   snapshot.orderLength = 1;
   for (const channel of snapshot.channels) {
     channel.orderList = [0];
@@ -425,7 +515,10 @@ export function clearPatternsSnapshot(snapshot: PatternSnapshot, patternLength: 
           note: null,
           instrument: null,
           volume: null,
-          effects: Array.from({ length: 8 }, () => ({ effect: null, value: null })),
+          effects: Array.from({ length: 8 }, () => ({
+            effect: null,
+            value: null,
+          })),
         })),
       ],
     ];

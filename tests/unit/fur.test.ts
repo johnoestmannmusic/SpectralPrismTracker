@@ -4,7 +4,9 @@ import { fixtureBytes } from "./fixtures";
 
 describe("Furnace .fur parser", () => {
   it("parses the bundled Game Boy fixture", () => {
-    const module = parseFurFile(fixtureBytes("tests/fixtures/flight_school_night_shift.fur"));
+    const module = parseFurFile(
+      fixtureBytes("tests/fixtures/flight_school_night_shift.fur"),
+    );
 
     expect(module.formatVersion).toBe(251);
     expect(module.info.name).toBe("flight_school_night_shift");
@@ -44,7 +46,9 @@ describe("Furnace .fur parser", () => {
 
   it("parses the Furnace 0.6 golden-battletrain fixture with effects", () => {
     const module = parseFurFile(
-      fixtureBytes("tests/fixtures/golden-battletrain/06-golden_battletrain.fur"),
+      fixtureBytes(
+        "tests/fixtures/golden-battletrain/06-golden_battletrain.fur",
+      ),
     );
     expect(module.formatVersion).toBe(181);
     expect(module.info.name).toBe("6-golden_battletrain");

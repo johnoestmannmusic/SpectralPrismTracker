@@ -107,7 +107,10 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
-function buildInstrumentTimeline(ch: Channel, patternLength: number): (number | null)[][] {
+function buildInstrumentTimeline(
+  ch: Channel,
+  patternLength: number,
+): (number | null)[][] {
   let current: number | null = null;
   return ch.orderList.map((pIdx) => {
     const pat = ch.patterns.get(pIdx);
@@ -126,7 +129,10 @@ function buildInstrumentTimeline(ch: Channel, patternLength: number): (number | 
   });
 }
 
-function buildNoteTimeline(ch: Channel, patternLength: number): (NoteValue | null)[][] {
+function buildNoteTimeline(
+  ch: Channel,
+  patternLength: number,
+): (NoteValue | null)[][] {
   let current: NoteValue | null = null;
   return ch.orderList.map((pIdx) => {
     const pat = ch.patterns.get(pIdx);
@@ -163,7 +169,10 @@ export function buildSongModel(raw: RawFurModule): SongModel {
       insTimeline: [],
       noteTimeline: [],
     };
-    channel.insTimeline = buildInstrumentTimeline(channel, subsong.patternLength);
+    channel.insTimeline = buildInstrumentTimeline(
+      channel,
+      subsong.patternLength,
+    );
     channel.noteTimeline = buildNoteTimeline(channel, subsong.patternLength);
     channels.push(channel);
   }
@@ -224,7 +233,9 @@ export interface ProjectSongSource {
  * that ship as a project + Source Samples with no Furnace `.fur` (and so no
  * CHIP MODE). Pattern length defaults to 64 rows.
  */
-export function buildSongModelFromProject(project: ProjectSongSource): SongModel {
+export function buildSongModelFromProject(
+  project: ProjectSongSource,
+): SongModel {
   const snapshot = project.patternSnapshot ?? null;
   const patternLength = 64;
   const orderLength = snapshot?.orderLength ?? 1;
@@ -247,7 +258,8 @@ export function buildSongModelFromProject(project: ProjectSongSource): SongModel
         for (const cell of rows) {
           for (let e = 0; e < cell.effects.length; e++) {
             const slot = cell.effects[e]!;
-            if (slot.effect !== null || slot.value !== null) effectColumns = Math.max(effectColumns, e + 1);
+            if (slot.effect !== null || slot.value !== null)
+              effectColumns = Math.max(effectColumns, e + 1);
           }
         }
       }
@@ -266,12 +278,15 @@ export function buildSongModelFromProject(project: ProjectSongSource): SongModel
   }
 
   const instrumentCount = Math.max(project.instruments.length, 1);
-  const instruments: InstrumentInfo[] = Array.from({ length: instrumentCount }, (_, i) => ({
-    name: `Instrument ${(i + 1).toString().padStart(2, "0")}`,
-    insType: 2,
-    gameBoy: null,
-    colorRgb: instrumentColor(i),
-  }));
+  const instruments: InstrumentInfo[] = Array.from(
+    { length: instrumentCount },
+    (_, i) => ({
+      name: `Instrument ${(i + 1).toString().padStart(2, "0")}`,
+      insType: 2,
+      gameBoy: null,
+      colorRgb: instrumentColor(i),
+    }),
+  );
 
   const song: SongModel = {
     meta: {
@@ -292,7 +307,9 @@ export function buildSongModelFromProject(project: ProjectSongSource): SongModel
     channels,
     instruments,
     wavetables: [],
-    chips: [{ chipId: 4, channelCount: 4, volume: 1, panning: 0, frontRear: 0 }],
+    chips: [
+      { chipId: 4, channelCount: 4, volume: 1, panning: 0, frontRear: 0 },
+    ],
     rowTimes: [],
     rowTicks: [],
   };
@@ -306,18 +323,30 @@ export function patternSnapshot(song: SongModel): PatternSnapshot {
   return {
     orderLength: song.meta.orderLength,
     channels: song.channels.map((channel) => {
-      const patterns: Array<[number, PatternCell[]]> = Array.from(channel.patterns.entries())
-        .map(([index, pattern]) => [index, pattern.rows.map(cloneCell)] as [number, PatternCell[]])
+      const patterns: Array<[number, PatternCell[]]> = Array.from(
+        channel.patterns.entries(),
+      )
+        .map(
+          ([index, pattern]) =>
+            [index, pattern.rows.map(cloneCell)] as [number, PatternCell[]],
+        )
         .sort((a, b) => a[0] - b[0]);
       return { orderList: channel.orderList.slice(), patterns };
     }),
   };
 }
 
-export function applySnapshot(song: SongModel, snapshot: PatternSnapshot): void {
+export function applySnapshot(
+  song: SongModel,
+  snapshot: PatternSnapshot,
+): void {
   song.meta.orderLength = snapshot.orderLength;
   const patternLength = song.meta.patternLength;
-  for (let i = 0; i < song.channels.length && i < snapshot.channels.length; i++) {
+  for (
+    let i = 0;
+    i < song.channels.length && i < snapshot.channels.length;
+    i++
+  ) {
     const channel = song.channels[i]!;
     const snap = snapshot.channels[i]!;
     channel.orderList = snap.orderList.slice();
@@ -343,7 +372,12 @@ export function retime(song: SongModel): void {
   song.rowTicks = timing.ticks;
 }
 
-export function cellAt(song: SongModel, channel: number, order: number, row: number): PatternCell {
+export function cellAt(
+  song: SongModel,
+  channel: number,
+  order: number,
+  row: number,
+): PatternCell {
   const ch = song.channels[channel];
   if (!ch) return emptyPatternCell();
   const patternIndex = ch.orderList[order];

@@ -105,5 +105,10 @@ export function tagEquals(tag: Uint8Array, text: string): boolean {
 }
 
 export function tagToString(tag: Uint8Array): string {
-  return String.fromCharCode(tag[0] ?? 0, tag[1] ?? 0, tag[2] ?? 0, tag[3] ?? 0);
+  return String.fromCharCode(
+    tag[0] ?? 0,
+    tag[1] ?? 0,
+    tag[2] ?? 0,
+    tag[3] ?? 0,
+  );
 }

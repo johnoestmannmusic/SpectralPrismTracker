@@ -13,7 +13,11 @@ function pushVarlen(out: number[], value: number): void {
   for (let i = bytes.length - 1; i >= 0; i--) out.push(bytes[i]!);
 }
 
-function pushDelta(out: number[], lastTick: { value: number }, tick: number): void {
+function pushDelta(
+  out: number[],
+  lastTick: { value: number },
+  tick: number,
+): void {
   pushVarlen(out, Math.max(tick - lastTick.value, 0));
   lastTick.value = tick;
 }
@@ -23,7 +27,12 @@ function pushU16Be(out: number[], value: number): void {
 }
 
 function pushU32Be(out: number[], value: number): void {
-  out.push((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff);
+  out.push(
+    (value >>> 24) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 8) & 0xff,
+    value & 0xff,
+  );
 }
 
 function pushMetaText(
@@ -101,7 +110,8 @@ function buildChannelTrack(song: SongModel, channel: number): number[] {
     const note = cell.note;
     if (note) {
       if (note.kind === "note") {
-        if (sounding !== null) pushNoteOff(out, lastTick, midiChannel, sounding, tick);
+        if (sounding !== null)
+          pushNoteOff(out, lastTick, midiChannel, sounding, tick);
         const midiNote = noteToMidi(note)!;
         const velocity =
           cell.volume === null
@@ -113,7 +123,9 @@ function buildChannelTrack(song: SongModel, channel: number): number[] {
         lastNoteOnTick = tick;
       } else if (
         sounding !== null &&
-        (note.kind === "off" || note.kind === "release" || note.kind === "macroRelease")
+        (note.kind === "off" ||
+          note.kind === "release" ||
+          note.kind === "macroRelease")
       ) {
         pushNoteOff(out, lastTick, midiChannel, sounding, tick);
         sounding = null;
@@ -133,7 +145,8 @@ function buildChannelTrack(song: SongModel, channel: number): number[] {
 export function writeMidi(song: SongModel): Uint8Array {
   const channelCount = Math.min(song.channels.length, 4);
   const tracks = [buildTempoTrack(song)];
-  for (let c = 0; c < channelCount; c++) tracks.push(buildChannelTrack(song, c));
+  for (let c = 0; c < channelCount; c++)
+    tracks.push(buildChannelTrack(song, c));
 
   const out: number[] = [];
   for (const ch of "MThd") out.push(ch.charCodeAt(0));

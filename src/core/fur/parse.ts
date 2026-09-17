@@ -10,7 +10,13 @@ import {
 } from "./blocks";
 import { FurError } from "./error";
 import { Reader, tagEquals, tagToString } from "./reader";
-import { GAME_BOY_CHIP_ID, type Instrument, type RawFurModule, type Subsong, type Wavetable } from "./types";
+import {
+  GAME_BOY_CHIP_ID,
+  type Instrument,
+  type RawFurModule,
+  type Subsong,
+  type Wavetable,
+} from "./types";
 
 export const MAGIC_TEXT = "-Furnace module-";
 
@@ -72,7 +78,12 @@ export function parse(bytes: Uint8Array, inflate?: InflateFn): RawFurModule {
 
   const block = readBlockHeader(raw, header.songInfoPtr);
   if (tagEquals(block.tag, "INFO")) {
-    return parseLegacy(raw, header.formatVersion, block.dataStart, block.dataEnd);
+    return parseLegacy(
+      raw,
+      header.formatVersion,
+      block.dataStart,
+      block.dataEnd,
+    );
   }
   if (!tagEquals(block.tag, "INF2")) {
     throw new FurError(
@@ -147,7 +158,11 @@ export function parse(bytes: Uint8Array, inflate?: InflateFn): RawFurModule {
       throw FurError.eof(b.dataStart, 1, raw.length);
     }
     const patternLength = subsongs[subsongIdx]?.patternLength ?? 0;
-    const pattern = parsePatn(new Reader(raw, b.dataStart), patternLength, b.dataEnd);
+    const pattern = parsePatn(
+      new Reader(raw, b.dataStart),
+      patternLength,
+      b.dataEnd,
+    );
     const target = subsongs[subsongIdx];
     if (target) target.patterns.push(pattern);
   }
@@ -167,7 +182,11 @@ function parseLegacy(
   dataStart: number,
   dataEnd: number,
 ): RawFurModule {
-  const legacy = parseOldInfo(new Reader(raw, dataStart), formatVersion, dataEnd);
+  const legacy = parseOldInfo(
+    new Reader(raw, dataStart),
+    formatVersion,
+    dataEnd,
+  );
   const subsong = legacy.subsong;
 
   const instruments: Instrument[] = [];

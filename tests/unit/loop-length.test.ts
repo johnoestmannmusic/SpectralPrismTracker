@@ -4,7 +4,7 @@ import {
   initSync,
   render_fused,
   render_fused_loop_lengths,
-} from "@/renderer/vendor/prism/prism_wasm.js";
+} from "@/wasm/vendor/prism/prism_wasm.js";
 import { makeSpectralRenderer, type PrismWasmModule } from "@/wasm/prism";
 import {
   MOD_CONTROL_POINTS,
@@ -22,7 +22,7 @@ const LOOP_LENGTH_INDEX = SPECTRAL_PARAMS.find(
 
 beforeAll(() => {
   const bytes = readFileSync(
-    projectPath("src/renderer/vendor/prism/prism_wasm_bg.wasm"),
+    projectPath("src/wasm/vendor/prism/prism_wasm_bg.wasm"),
   );
   initSync({ module: bytes });
 });

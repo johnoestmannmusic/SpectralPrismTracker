@@ -1,0 +1,27 @@
+# Lantern control smoke test.
+# Run the app (npm run dev:tui), then:
+#   node dist/tui/run-script.mjs examples/control-smoke.lmpscript
+# Override the socket with LANTERN_SOCKET or --socket.
+
+# Inspect state (results stream to stdout as they run).
+/query song.name
+@assert transport.mode == sampler
+
+# Play briefly and verify the transport advances.
+/play
+@wait 400ms
+@assert transport.playing == true
+/stop
+
+# Mixer round-trip.
+/mute 1
+@assert mixer.channelMuted contains true
+/unmute 1
+
+# Capture a value into a variable and echo it.
+/query song.name -> $name
+@let greeting = loaded
+@echo ${greeting} ${name}
+
+# Export the headless cover art.
+/export png /tmp/lantern-cover.png

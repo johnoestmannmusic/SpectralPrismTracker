@@ -19,7 +19,10 @@ describe("node web audio shim", () => {
     expect(clip.channels[0]!.length).toBeGreaterThan(0);
     expect(clip.sampleRate).toBe(44_100);
     // The clip should contain actual signal, not silence.
-    const peak = clip.channels[0]!.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
+    const peak = clip.channels[0]!.reduce(
+      (max, sample) => Math.max(max, Math.abs(sample)),
+      0,
+    );
     expect(peak).toBeGreaterThan(0);
   });
 });

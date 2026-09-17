@@ -8,13 +8,17 @@ class FakeWorker implements WorkerLike {
   onerror: ((event: ErrorEvent | Event) => void) | null = null;
   sent: WorkerRequest[] = [];
 
-  constructor(private respond: (request: WorkerRequest) => WorkerResponse | null) {}
+  constructor(
+    private respond: (request: WorkerRequest) => WorkerResponse | null,
+  ) {}
 
   postMessage(message: WorkerRequest): void {
     this.sent.push(message);
     const response = this.respond(message);
     if (response) {
-      queueMicrotask(() => this.onmessage?.({ data: response } as MessageEvent<WorkerResponse>));
+      queueMicrotask(() =>
+        this.onmessage?.({ data: response } as MessageEvent<WorkerResponse>),
+      );
     }
   }
 
@@ -35,17 +39,37 @@ describe("PrismWorkerClient", () => {
   });
 
   it("resolves render() with the worker's result", async () => {
-    const clip = makeClip([[1, 2], [3, 4]], 44_100);
-    const fake = new FakeWorker((req) => ({ id: req.id, kind: "result", result: clip }));
+    const clip = makeClip(
+      [
+        [1, 2],
+        [3, 4],
+      ],
+      44_100,
+    );
+    const fake = new FakeWorker((req) => ({
+      id: req.id,
+      kind: "result",
+      result: clip,
+    }));
     const client = new PrismWorkerClient(fake);
-    const result = await client.render(makeClip([[0]], 44_100), null, {} as never);
+    const result = await client.render(
+      makeClip([[0]], 44_100),
+      null,
+      {} as never,
+    );
     expect(result).toBe(clip);
   });
 
   it("rejects render() with the worker's error", async () => {
-    const fake = new FakeWorker((req) => ({ id: req.id, kind: "error", error: "boom" }));
+    const fake = new FakeWorker((req) => ({
+      id: req.id,
+      kind: "error",
+      error: "boom",
+    }));
     const client = new PrismWorkerClient(fake);
-    await expect(client.render(makeClip([[0]], 44_100), null, {} as never)).rejects.toThrow("boom");
+    await expect(
+      client.render(makeClip([[0]], 44_100), null, {} as never),
+    ).rejects.toThrow("boom");
   });
 
   it("matches concurrent requests to their own response by id", async () => {
@@ -59,8 +83,12 @@ describe("PrismWorkerClient", () => {
 
     const [idA, idB] = fake.sent.map((r) => r.id);
     // Respond out of order to confirm each promise resolves with its own result.
-    fake.onmessage?.({ data: { id: idB!, kind: "result", result: clipB } } as MessageEvent<WorkerResponse>);
-    fake.onmessage?.({ data: { id: idA!, kind: "result", result: clipA } } as MessageEvent<WorkerResponse>);
+    fake.onmessage?.({
+      data: { id: idB!, kind: "result", result: clipB },
+    } as MessageEvent<WorkerResponse>);
+    fake.onmessage?.({
+      data: { id: idA!, kind: "result", result: clipA },
+    } as MessageEvent<WorkerResponse>);
 
     expect(await first).toBe(clipA);
     expect(await second).toBe(clipB);
@@ -71,7 +99,10 @@ describe("PrismWorkerClient", () => {
     const fake = new FakeWorker((req) => ({ id: req.id, kind: "pong" }));
     const client = new PrismWorkerClient(fake);
     void client.render(source, null, {} as never);
-    const sentRequest = fake.sent[0] as Extract<WorkerRequest, { kind: "render" }>;
+    const sentRequest = fake.sent[0] as Extract<
+      WorkerRequest,
+      { kind: "render" }
+    >;
     expect(sentRequest.a.channels[0]).not.toBe(source.channels[0]);
     expect(Array.from(sentRequest.a.channels[0]!)).toEqual([1, 2, 3]);
   });

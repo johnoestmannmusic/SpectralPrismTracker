@@ -83,6 +83,7 @@ function OrderStrip({ state, playhead }: Props) {
       <Text dimColor>order </Text>
       {items}
       {end < total ? <Text dimColor>…</Text> : null}
+      <Text dimColor> [ / ] cycle orders</Text>
     </Box>
   );
 }

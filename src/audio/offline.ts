@@ -57,8 +57,14 @@ export async function applyMasterFxOffline(
   const ctx = new OfflineAudioContext(2, frames + tail, rate);
   const graph = createMasterFxGraph(ctx, settings);
 
-  const buffer = ctx.createBuffer(Math.max(1, clip.channels.length), frames, rate);
-  clip.channels.forEach((channel, index) => buffer.getChannelData(index).set(channel));
+  const buffer = ctx.createBuffer(
+    Math.max(1, clip.channels.length),
+    frames,
+    rate,
+  );
+  clip.channels.forEach((channel, index) =>
+    buffer.getChannelData(index).set(channel),
+  );
 
   const source = ctx.createBufferSource();
   source.buffer = buffer;

@@ -27,7 +27,13 @@ export interface MasterFxSettings {
 
 export function defaultMasterFx(): MasterFxSettings {
   return {
-    delay: { enabled: false, timeSec: 0.25, feedback: 0.45, toneHz: 2600, mix: 0.35 },
+    delay: {
+      enabled: false,
+      timeSec: 0.25,
+      feedback: 0.45,
+      toneHz: 2600,
+      mix: 0.35,
+    },
     reverb: { enabled: false, decaySec: 2.0, mix: 0.25 },
   };
 }
@@ -35,7 +41,13 @@ export function defaultMasterFx(): MasterFxSettings {
 /** The iconic PlayStation echo: short, dark, repeats a few times. */
 export function ps1EchoPreset(): MasterFxSettings {
   return {
-    delay: { enabled: true, timeSec: 0.19, feedback: 0.5, toneHz: 2200, mix: 0.4 },
+    delay: {
+      enabled: true,
+      timeSec: 0.19,
+      feedback: 0.5,
+      toneHz: 2200,
+      mix: 0.4,
+    },
     reverb: { enabled: false, decaySec: 2.0, mix: 0.25 },
   };
 }

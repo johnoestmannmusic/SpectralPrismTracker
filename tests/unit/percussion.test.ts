@@ -4,7 +4,7 @@ import {
   initSync,
   render_fused,
   render_percussion,
-} from "@/renderer/vendor/prism/prism_wasm.js";
+} from "@/wasm/vendor/prism/prism_wasm.js";
 import { makeSpectralRenderer, type PrismWasmModule } from "@/wasm/prism";
 import { defaultSpectralSettings, percussionPreset } from "@/core/spectral";
 import {
@@ -18,7 +18,7 @@ import { projectPath } from "./fixtures";
 
 beforeAll(() => {
   const bytes = readFileSync(
-    projectPath("src/renderer/vendor/prism/prism_wasm_bg.wasm"),
+    projectPath("src/wasm/vendor/prism/prism_wasm_bg.wasm"),
   );
   initSync({ module: bytes });
 });
