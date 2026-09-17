@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, type LanternApi } from "../shared/types";
+import { IPC, type LanternApi } from "../shared/ipc";
 
 const api: LanternApi = {
   loadDefaultSong: () => ipcRenderer.invoke(IPC.loadDefaultSong),

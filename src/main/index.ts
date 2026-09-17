@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "node:path";
 import { chooseAudioFile, loadDefaultSong, saveFile } from "./assetLoader";
-import { IPC, type SaveFileRequest } from "../shared/types";
+import { IPC } from "../shared/ipc";
+import type { SaveFileRequest } from "../shared/types";
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 
@@ -40,7 +41,8 @@ app.whenReady().then(() => {
     saveFile(request.suggestedName, request.bytes),
   );
   ipcMain.handle(IPC.openExternal, (_event, url: string) => {
-    if (typeof url === "string" && /^https?:\/\//i.test(url)) return shell.openExternal(url);
+    if (typeof url === "string" && /^https?:\/\//i.test(url))
+      return shell.openExternal(url);
     return Promise.resolve();
   });
 

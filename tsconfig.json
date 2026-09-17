@@ -25,6 +25,8 @@
     "src/audio",
     "src/wasm",
     "src/shared",
+    "src/runtime",
+    "src/tui",
     "tests/unit",
     "tests/e2e",
     "tests/web"

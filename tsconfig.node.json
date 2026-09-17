@@ -17,5 +17,15 @@
     },
     "types": ["node"]
   },
-  "include": ["src/main", "src/preload", "src/shared", "scripts", "vite.config.mts", "vitest.config.mts", "playwright.config.ts", "playwright.web.config.ts"]
+  "include": [
+    "src/main",
+    "src/preload",
+    "src/shared",
+    "src/runtime",
+    "scripts",
+    "vite.config.mts",
+    "vitest.config.mts",
+    "playwright.config.ts",
+    "playwright.web.config.ts"
+  ]
 }

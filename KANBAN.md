@@ -60,6 +60,446 @@ Data/model: add `coverArt?: CoverArtDesign | null` to `ProjectFile` (src/core/pr
 - Current render facts to preserve: GRID=32 internal buffer, BAYER 4×4 at 8 levels, display canvas 240×240 (`image-rendering: pixelated`), PNG export 1600×1600, `CoverArtHandle.renderPngBytes()` consumed by App.tsx WAV export.
 - Cover art is currently procedural and NOT stored in the project — this card introduces the first saved cover-art state.
 
+### FEAT-17 — Terminal Lantern — TUI migration
+- priority: critical
+- tags: plan-terminal-lantern-tui-migration, epic
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: epic
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+Scriptability constraint (design-only, build deferred to FEAT-32): the command registry is the single source of action so that a future `.lmpscript` runner or an agent control channel can drive the exact same commands the TUI uses, with structured (machine-readable) results and no Ink coupling. See FEAT-22.
+
+**Cards**
+- FEAT-18 — De-Electron-ify: shared Node asset loader + file IO layer
+- FEAT-19 — Audio: node-web-audio-api backend shim
+- FEAT-20 — WASM + worker host: run prism DSP under Node worker_threads
+- FEAT-21 — TUI shell: persistent tracker + song info layout
+- FEAT-22 — Slash-command engine: registry, fuzzy match, suggestions, Tab completion
+- FEAT-23 — Commands: tracker navigation and editing
+- FEAT-24 — Commands: transport, playback and song info
+- FEAT-25 — Commands: mixer, master FX and channel settings overlay
+- FEAT-26 — Commands: file, project and export IO with path completion
+- FEAT-27 — Commands: source samples and sampler browse + preview
+- FEAT-28 — Packaging: single `lantern` bin, build pipeline, drop Electron/Vite
+- FEAT-29 — Test strategy: port core tests, add headless TUI + audio regression
+- FEAT-30 — Retire Electron + React DOM (cleanup)
+- FEAT-31 — Deferred parity: graph editors (sampler, spectral/percussion, master FX graphs, cover art)
+- FEAT-32 — Deferred: scripting & live control channel (`.lmpscript`, agent automation)
+
+**Prototype status (2026-09-17)**
+`npm run dev:tui` (or `npm run build:tui && node dist/tui/main.mjs`) builds and runs a working Core-scope prototype. Done: Node runtime/IO, node-web-audio-api shim, Ink shell with persistent tracker + song info, slash-command engine with fuzzy suggestions and Tab completion, transport, basic pattern editing, mixer commands, `/save`, `/samples`, `/preview`, prism WASM loaded in-process. Verified by 109 unit tests and an interactive pty smoke. Still open on this plan: FEAT-20 worker hosting, FEAT-23 clipboard/transpose/order ops, FEAT-25 FX overlay, FEAT-26 open/export, FEAT-27 sampler overlay/waveform, FEAT-29 component + golden audio tests, FEAT-30 Electron cleanup.
+
+### FEAT-20 — WASM + worker host: run prism DSP under Node worker_threads
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, wasm, worker-threads, prism
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Replace the browser Web Worker with a node:worker_threads host while keeping the worker protocol messages identical. src/wasm/prism.ts loading of prism_wasm_bg.wasm stays the same via WebAssembly.instantiate from the bundled file bytes. Choose worker_threads for parity with the existing async render lifecycle (fusionRendering/fusionReady polling).
+
+**Architecture**
+New src/wasm/prismWorkerHost.node.ts (or make prismWorkerClient detect environment and construct a Worker from node:worker_threads using a .cjs/.mjs entry compiled by esbuild). Worker entry prism.worker.ts compiled for Node with the wasm path resolved via a runtime asset resolver. Keep prismWorkerProtocol.ts unchanged.
+
+**Key decisions**
+- Preserve the existing protocol and render lifecycle so core/spectral consumers do not change.
+- Ship the .wasm as a resolved asset (same file as src/renderer/vendor/prism/prism_wasm_bg.wasm) rather than importing it as a Vite URL.
+- Support a synchronous in-process fallback for tests.
+
+**Alternatives considered**
+- Run WASM on the main thread: rejected — modulation/percussion renders would jank the UI loop.
+- child_process: rejected — heavier, no structured-clone/SharedArrayBuffer ergonomics.
+
+**Open questions**
+- Can we reuse the already-built wasm32-unknown-unknown artifact from native/prism-wasm? (yes, but confirm the build script's output path).
+
+**Depends on**
+- FEAT audio shim
+
+**Acceptance criteria**
+- Unit test renders a modulated loop through the Node worker and compares against the golden fixture.
+- fusionRendering/fusionReady/takeFusionCompleted behave as before.
+- No Web Worker global is referenced in the Node path.
+
+**Prototype status (2026-09-17)**
+prism WASM now loads under Node via `src/wasm/prismNode.ts` (wasm-bindgen `initSync` + `registerPrismWasm`), synchronously on the calling thread. Spectral fusion and percussion renders therefore work in-process. NOT done: the async `worker_threads` host, the worker entry bundle, and the worker protocol regression test. Keep this card open for that.
+
+### FEAT-23 — Commands: tracker navigation and editing
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, tracker, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Expose the existing tracker edit operations (src/core/tracker.ts) through commands and direct grid editing. The persistent PatternView renders channels×rows with note/ins/vol/fx columns; the cursor is (channel, order, row, column). Note entry works like the GUI: type note keys (piano layout), digits for hex, Del to clear, clipboard via system clipboard or an in-app register. Reuse applyEdit/PatternSnapshot, undo/redo, and the existing CLIPBOARD_TAG format.
+
+**Architecture**
+src/tui/components/PatternView.tsx renders from SongModel patterns plus a cursor/selection store. src/tui/state/trackerStore.ts wraps EditColumn/CellPos selection, undo/redo stacks, and calls core/tracker applyEdit. Commands: /goto order row, /channel n, /order add|remove|move, /select, /copy, /paste, /undo, /redo, /clear, /transpose, /octave n, /step n. Follow-playhead option toggled by /follow.
+
+**Key decisions**
+- Reuse src/core/tracker.ts helpers verbatim (columnLabel, flatColumnsForChannel, applyEdit, clipboard encode/decode) so semantics match the GUI.
+- Hex note entry layout mirrors the GUI exactly to avoid muscle-memory breakage.
+- Selection + clipboard implemented in-terminal (no OS clipboard dependency).
+
+**Alternatives considered**
+- Readline-style text editing of a line: rejected — not a tracker.
+- Third-party hex editor: rejected — must stay tied to SongModel semantics.
+
+**Open questions**
+- Multi-channel selection granularity (per-column vs per-cell block)?
+- Should the order list be its own editable pane in milestone 1 or later?
+
+**Depends on**
+- FEAT tui shell
+- FEAT slash-command engine
+
+**Acceptance criteria**
+- Cursor moves by keyboard across channels/orders/rows/columns; viewport scrolls to keep it visible.
+- Editing a cell updates the pattern, marks the project dirty, and is reflected in playback after the existing re-sequence path.
+- Undo/redo and copy/paste work across orders, with tests asserting round-trip through the CLIPBOARD_TAG format.
+- basic-tracker-edit sequences produce identical SongModel changes to the GUI unit tests.
+
+**Prototype status (2026-09-17)**
+Implemented in `src/tui/session.ts`: row/column/channel/order navigation, note + instrument entry (keyboard piano layout and `/note`, `/instrument`), `/clear`, undo/redo, and auto re-sequencing. Remaining: clipboard copy/paste (in-terminal + `CLIPBOARD_TAG`), transpose, order add/remove/move, step size, multi-cell selection.
+
+### FEAT-25 — Commands: mixer, master FX and channel settings overlay
+- priority: medium
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, mixer, master-fx, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Port the Mixer and Master FX to a keyboard-driven overlay reachable via /mixer and /masterfx, with numeric entry and arrow adjustments, plus commands /gain /pan (if present) /mastervol. Reuse MasterFxSettings and defaultMasterFx() from src/core/masterFx.ts and backend.setMasterFx. Graphs (ADSR, waveform) are out of milestone 1; show numbers and text meters instead.
+
+**Architecture**
+src/tui/components/MixerOverlay.tsx, MasterFxOverlay.tsx. Commands route to backend.setChannelVolume/setChannelMute/setMasterVolume/setMasterFx. State stays in the shared playback store so the header reflects changes.
+
+**Key decisions**
+- Overlay leaves header/command bar visible (non-modal).
+- Values edited numerically and by +/- keys; no mouse.
+- Visual graphs deferred; text bars for levels.
+
+**Alternatives considered**
+- Full-screen mixer: rejected to preserve the persistent tracker.
+- Skip mixer in milestone 1: rejected — user selected mixer/transport in Core scope.
+
+**Open questions**
+- Should meter levels animate in the overlay, and at what refresh rate to avoid render churn?
+
+**Depends on**
+- FEAT tui shell
+- FEAT transport commands
+
+**Acceptance criteria**
+- Changing a channel gain/mute or master FX applies live and survives overlay close.
+- Values match the existing default/clamp rules in core/masterFx.ts.
+- Unit tests cover command→setting mapping and clamping.
+
+**Prototype status (2026-09-17)**
+Mixer reachable by command (`/mute`, `/unmute`, `/volume`, `/mastervol`, `/meters`) over `Session`; state reflected in the header. Remaining: the keyboard-driven mixer/Master FX overlay and FX parameter editing.
+
+### FEAT-26 — Commands: file, project and export IO with path completion
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, io, project, export, commands, completion
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Replace Electron dialogs with commands that take paths and use a filesystem path completer for Tab. Commands: /open <file.fur|.lampjson> /save [path] /saveas /export wav|mid|zip|png|fur [path] /new /loadsamples /sample <n> <path> /info. Load paths reuse the existing core parse/serialize and buildSamplerSequence paths from App.tsx; export reuses src/core/export.ts (WAV/MIDI/ZIP) and CoverArt PNG path. Show a blocking progress indicator in the status line for long renders.
+
+**Architecture**
+src/runtime/files.ts (fs read/write, filter by extension). src/tui/commands/completers.ts (async directory listing with prefix filter, ~ expansion, relative-to-cwd and quoted paths). src/tui/state/projectStore.ts mirrors App.tsx project load/save/dirty logic incl. legacy .lampjson handling. Reuse export functions unchanged.
+
+**Key decisions**
+- No file picker in v1: typed/quoted paths with Tab completion.
+- Overwriting an existing file prompts in the status line (y/n) unless --force.
+- Exports are synchronous-or-promise with a status progress line; no modal dialog.
+
+**Alternatives considered**
+- Embed a TUI file browser overlay: deferred; path completion is faster for keyboard users.
+- Keep Electron dialogs: rejected.
+
+**Open questions**
+- Where do exports default to when no path is given (cwd, source dir, or a configured export dir)?
+- Should recent files be persisted and offered by fuzzy completion?
+
+**Depends on**
+- FEAT de-electron-ify
+- FEAT slash-command engine
+- FEAT tui shell
+
+**Acceptance criteria**
+- /open loads a .fur, a .lampjson and a project-only .lampjson with the same results as the GUI E2E fixtures.
+- /export wav produces a file byte-comparable (within documented tolerance) to the GUI export for a fixed project.
+- Tab completes directory and file paths including nested directories and quoted paths with spaces.
+- Failures (missing file, bad parse) surface as status errors and leave the current song loaded.
+
+**Prototype status (2026-09-17)**
+`/save <path>` writes `.lampjson` via `writeBytesSafe`; async path completion is wired in the command bar (`completePath`). Remaining: `/open` for `.fur` and `.lampjson`, `/new`, `/export wav|mid|zip|png|fur`, and overwrite prompts.
+
+### FEAT-27 — Commands: source samples and sampler browse + preview
+- priority: medium
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, sampler, commands, preview
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Provide /samples (list source samples with names, durations, fused state), /sample <n> [path] (load/replace), /preview <n> and /waveform <n> (ASCII waveform), plus /instrument <n> for per-instrument effective clip info. Reuse backend.sampleWaveform, effectiveWaveform, preview, sampleClip and the SourceSamples UI data. The heavyweight Sampler/Spectral editors stay deferred.
+
+**Architecture**
+src/tui/components/SampleListOverlay.tsx and a text Waveform component (braille/block chars). Commands in builtins.ts route to backend methods already in AudioBackend. Sample names come from the existing settings/sampleNames state.
+
+**Key decisions**
+- Browse/preview only in milestone 1; parameter editing deferred.
+- ASCII/braille waveform, no image protocol.
+- All values read from the backend interface, no new DSP.
+
+**Alternatives considered**
+- Port the full SamplerEditor now: deferred by scope decision.
+
+**Open questions**
+- Braille vs block characters for the waveform given font support?
+- Should /sample with no path clear the slot (mirrors GUI 'Clear Source Samples')?
+
+**Depends on**
+- FEAT audio shim
+- FEAT slash-command engine
+
+**Acceptance criteria**
+- /samples lists all 6 bundled source samples with durations.
+- /sample n <path> replaces a sample and updates the waveform and preview.
+- /preview n auditions the rendered one-shot without leaving the tracker view.
+- Unit tests cover the sample-list command handlers against a mock backend.
+
+**Prototype status (2026-09-17)**
+`/samples` lists names + durations and `/preview <n>` auditions a source sample. Remaining: the sample-list overlay, ASCII/braille waveform, and per-instrument clip info.
+
+### FEAT-29 — Test strategy: port core tests, add headless TUI + audio regression
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, tests, vitest, headless, regression
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Keep all src/core unit tests running unchanged under Node (they are already environment-free). Add: (a) pure unit tests for the fuzzy matcher, command registry and each builtin handler with a mock CommandContext; (b) Ink component tests rendering to a string via ink-testing-library to assert the persistent layout, suggestion list and Tab completion; (c) a Node audio smoke/regression test that renders a fixed project offline and compares against a captured golden PCM; (d) a worker/WASM regression reusing tests/unit/prism-*.test.ts with the Node worker host.
+
+**Architecture**
+New tests/tui/*.test.tsx (ink-testing-library), tests/unit/commands.test.ts, tests/unit/fuzzy.test.ts, tests/unit/runtime-assets.test.ts, tests/unit/audio-node.test.ts. Update vitest.config.mts environment per-file (node default; jsdom only where still needed, ideally none). Capture golden PCM/WAV fixtures under tests/fixtures/golden/.
+
+**Key decisions**
+- Core tests must pass untouched — strongest evidence the migration preserved behavior.
+- TUI logic is tested through pure command handlers + string-rendered components, not a real terminal.
+- Audio golden tests use a fixed sample rate and a documented float tolerance.
+
+**Alternatives considered**
+- Snapshot-test the whole TUI: brittle; assert targeted regions instead.
+- Manually verify audio: rejected — regressions in the DSP would be silent.
+
+**Open questions**
+- What tolerance is acceptable for the node-web-audio-api offline render vs the previous browser output?
+- Future (once FEAT-32 scripting lands): should `.lmpscript` scenario files replace the string-rendered Ink component tests as the primary integration/E2E layer? Design command handlers so they can also be invoked from such a runner.
+
+**Depends on**
+- FEAT audio shim
+- FEAT worker host
+- FEAT slash-command engine
+
+**Acceptance criteria**
+- `npm test` runs the full migrated core suite plus new TUI/runtime tests green under Node.
+- A deliberately broken fuzzy score or command handler fails the suite.
+- The audio golden test fails if the offline render changes beyond tolerance.
+
+**Prototype status (2026-09-17)**
+All existing core unit tests pass untouched under Node (14 files / 109 tests). New: `tests/unit/runtime-assets.test.ts`, `tests/unit/audio-node.test.ts`, `tests/unit/tui-commands.test.ts` (fuzzy scoring, registry parsing/completion, session bootstrap, command execution, real playback advance). Remaining: `ink-testing-library` string-render component tests and the audio golden-PCM regression.
+
+### FEAT-30 — Retire Electron + React DOM (cleanup)
+- priority: medium
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, cleanup, electron-removal, react
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Once the TUI passes Core-scope acceptance and packaging builds, delete the obsolete GUI surface: src/main, src/preload, src/renderer (except assets that are reused, e.g. Medodica font if needed and vendor/prism as a wasm source), React DOM components, styles.css, index.html, Vite configs, Playwright web config and web/E2E tests that targeted the DOM. Update KANBAN cards and scripts. Do this last so the GUI can still be run for comparison during migration.
+
+**Architecture**
+Remove files and dependencies (electron, react-dom, vite, @vitejs/plugin-react, playwright web config). Keep react (Ink uses it), typescript, esbuild, vitest, @types. Move src/renderer/vendor/prism/prism_wasm_bg.wasm to a runtime wasm asset path. Re-point FEAT-15 (cover art) to a TUI-appropriate future design.
+
+**Key decisions**
+- Delete rather than archive, history retains the GUI in git.
+- Preserve MEDODICA? No — TUI uses the terminal font; drop the OTF asset.
+- Keep src/core, src/audio, src/wasm (Node-hosted), src/shared (trimmed), src/runtime, src/tui.
+
+**Alternatives considered**
+- Keep the GUI in-tree: rejected by the 'replace entirely' decision.
+
+**Open questions**
+- Should the old GUI be taggged/released before deletion for reference?
+- Does FEAT-15 cover art get cancelled or rewritten for a sixel/kitty header?
+
+**Depends on**
+- FEAT packaging
+- FEAT test strategy
+
+**Acceptance criteria**
+- No electron/react-dom/vite dependencies or entrypoints remain.
+- Build and full test suite still pass after deletion.
+- README/scripts describe the TUI-only workflow and `lantern` command.
+
+**Comments**
+- Update FEAT-15: cover-art editor's 240x240 dithered PNG output can still be exported headlessly, but its React editor UI must be redesigned for the TUI or dropped.
+
+### FEAT-31 — Deferred parity: graph editors (sampler, spectral/percussion, master FX graphs, cover art)
+- priority: low
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, parity, deferred, spectral, cover-art
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Follow-up epic after Core scope ships: bring the remaining GUI editors to the TUI. Each becomes a set of slash commands plus a non-modal overlay using text/braille plots instead of canvas. Covers: SamplerEditor (ADSR/loop/sample params), Spectral modulation + percussion controls incl. FEAT-16 auto-preview-on-slider-release, Master FX graphical response, Cover Art editor (needs a new TUI interaction model or headless export only).
+
+**Architecture**
+New overlays under src/tui/components/ reusing src/core/sampler.ts, spectral.ts, masterFx.ts, and backend methods. Text plotting helper (braille line/bar) shared. Cover art: decide between headless authoring (JSON + command editing), sixel/kitty preview, or cancellation.
+
+**Key decisions**
+- Parity is additive; Core milestone must not block on it.
+- No canvas — text/braille only.
+- FEAT-16's slider-release preview maps to a command arg commit or an explicit /preview.
+
+**Alternatives considered**
+- Never port editors: possible if Core scope proves sufficient; decided after user trial.
+- Keep GUI for editors alongside TUI: rejected by replacement decision.
+
+**Open questions**
+- Is text/braille expressive enough for ADSR/envelope editing, or do we need an interactive numeric editor only?
+- Cover art: headless-only vs image protocol vs drop?
+
+**Depends on**
+- FEAT cleanup
+
+**Acceptance criteria**
+- (Placeholder — define scope after Core milestone user feedback.)
+
+### FEAT-32 — Deferred: scripting & live control channel (`.lmpscript`, agent automation)
+- priority: low
+- tags: deferred, scripting, automation, control-socket, agents, lmpscript
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Status:** deliberately deferred by John (2026-09-17). Not in scope for the Core milestone. Captured so the command engine is built script-ready (FEAT-22) and the work is ready to schedule later.
+
+**Goal (when picked up)**
+Make every action automatable: users or agents run `.lmpscript` files / commands and get live feedback to test the program while it runs. Decided direction when last discussed: a **live control channel that agents attach to the running TUI**, rather than a separate headless mode.
+
+**Carry-over decisions already made**
+- Commands are the single source of action; a script/agent drives the same registry the TUI uses (FEAT-22).
+- `.lmpscript` is a sequence of commands with optional leading `/`, comments, variables/interpolation, waits and assertions.
+- Read/query commands plus an event stream provide feedback, not just fire-and-forget mutation.
+- Live feedback means attaching to the interactive app; transport/position/meter/render events are observable.
+
+**Open questions for later**
+- Transport: Unix domain socket + newline-delimited JSON (recommended, named pipe on Windows), vs TCP+token, vs WebSocket.
+- Protocol: request/response + event subscription shape; command ids, arg schema, result payloads; protocol versioning.
+- Script control flow in v1 (variables/assert/wait/loops) vs a minimal command list.
+- Security/sandbox: who may connect, fs write scope, dry-run.
+- Whether a headless `-c`/`--script` runner is also needed for CI, or the socket is the only host.
+- How `.lmpscript` scenario files become the E2E test format (superseding Playwright DOM tests; see FEAT-29).
+
+**Depends on**
+- FEAT-22 (scriptable command engine)
+- FEAT-21 (TUI shell) and FEAT-24 (playback/transport commands)
+
+**Acceptance criteria**
+- (Placeholder — define when scheduled.)
+
 ## Bugs
 
 ## In Progress
@@ -67,6 +507,308 @@ Data/model: add `coverArt?: CoverArtDesign | null` to `ProjectFile` (src/core/pr
 ## Blocked
 
 ## Implemented
+
+### FEAT-28 — Packaging: single `lantern` bin, build pipeline, drop Electron/Vite
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, build, packaging, esbuild
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Add a TUI build to scripts/build.mjs (esbuild) producing a Node CJS/ESM bundle plus the worker entry and copying assets. Add package.json bin (`lantern`) so `npx`/global install runs the app. Remove Electron from dependencies and delete Vite/React-DOM/web build scripts once the TUI reaches parity for Core scope. Keep the wasm build/vendor scripts (vendor:prism-dsp, build:prism-wasm) intact.
+
+**Architecture**
+scripts/build-tui.mjs: esbuild entry src/tui/main.tsx → dist/tui/main.cjs (node platform, external: node-* builtins + node-web-audio-api native), second entry for the worker, copy assets + wasm. package.json: "bin": {"lantern": "dist/tui/main.cjs"}, scripts dev:tui/start:tui/test:tui. tsconfig.node.json updated. Remove electron, vite, @vitejs/plugin-react, react-dom, playwright web config after the cleanup card.
+
+**Key decisions**
+- Node >= 22 (matches @types/node).
+- Bundle the TUI but leave the audio native binding external.
+- Keep vitest for unit tests; Playwright DOM E2E is removed with the GUI.
+
+**Alternatives considered**
+- tsx at runtime: fine for dev, not for distribution; use esbuild for the shipped bin.
+- pkg/SEA single executable: nice-to-have later, not milestone 1.
+
+**Open questions**
+- Do we need prebuilds of node-web-audio-api for each platform, or rely on its prebuilt binaries?
+- Should the bin auto-detect no-TTY (e.g. piped) and refuse to start?
+
+**Depends on**
+- FEAT tui shell
+- FEAT audio shim
+- FEAT worker host
+
+**Acceptance criteria**
+- `npm run build:tui && ./dist/tui/main.cjs` starts the app from a clean checkout with assets and wasm resolved.
+- `npm link` exposes a working `lantern` command.
+- No electron/vite/react-dom imports remain in the shipped bundles.
+
+**Implementation (2026-09-17)**
+Added `scripts/build-tui.mjs` (esbuild ESM bundle to `dist/tui/main.mjs`, copies `assets/` and `prism_wasm_bg.wasm` beside it), `bin.lantern`, and `build:tui` / `dev:tui` / `start:tui` scripts. Ink/React/`node-web-audio-api`/`react-devtools-core` stay external so Ink's optional devtools import resolves normally and React is single-instance. Electron/Vite removal is FEAT-30.
+
+### FEAT-24 — Commands: transport, playback and song info
+- priority: high
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, playback, transport, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Wire AudioBackend playback into the TUI: /play /pause /stop /seek mm:ss|row /mode chip|sampler /volume /mute /solo /follow, plus an animated position/row readout in the header. Reuse the existing timing (rowTimes/rowTicks) for row<->time mapping. Playhead highlight in PatternView follows the active order/row.
+
+**Architecture**
+src/tui/state/playbackStore.ts drives backend.play/seek/currentTime plus the existing useAnimationFrame-equivalent poll (setInterval / Ink useInterval) to update the position line. Commands call backend methods and update channel/mute/master state exactly as App.tsx does today. Status toasts replace the GUI status string.
+
+**Key decisions**
+- Backend interface unchanged; TUI is a new consumer.
+- Position display shows both elapsed/total time and current order:row.
+- Mode switch chip/sampler preserved; chip mode uses the bundled chip mix.
+
+**Alternatives considered**
+- Poll via requestAnimationFrame: unavailable/inefficient in Node; use a bounded timer (e.g. 30–60 fps).
+
+**Open questions**
+- Should the transport act while an overlay (mixer) is open?
+- Loop/seek granularity: row, order, or seconds?
+
+**Depends on**
+- FEAT audio shim
+- FEAT tracker commands
+
+**Acceptance criteria**
+- /play starts audio; the header position advances; the pattern playhead highlights the correct order:row.
+- Pause/resume/stop/seek behave as in the GUI and never desync the displayed row.
+- Channel mute/solo and master volume are reflected in meterLevels and are reversible.
+
+**Implementation (2026-09-17)**
+Transport is in `src/tui/session.ts` and exposed via `/play /pause /stop /toggle /seek /mode /reference`, plus the playhead highlighted in the pattern view and a live `mm:ss / mm:ss` header clock. Verified by a unit test that plays through the Node backend and asserts the clock advances.
+
+### FEAT-22 — Slash-command engine: registry, fuzzy match, suggestions, Tab completion
+- priority: critical
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, commands, fuzzy, autocomplete
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Build a command framework independent of Ink: a registry of command definitions with name, aliases, description, category, args (with completers), and a handler operating on app state. A pure fuzzy scorer ranks commands and arg values. The Ink CommandBar renders the top N suggestions with matched-character highlighting; Tab accepts the highlighted completion, Up/Down move selection, Enter executes, Esc cancels. Completers are async-capable (file paths, instrument names, channel ids).
+
+**Architecture**
+New src/tui/commands/registry.ts (CommandDef, CommandContext, register/resolve), src/tui/commands/fuzzy.ts (pure score+rank, unit-testable), src/tui/commands/builtins.ts (all built-in commands), src/tui/components/CommandBar.tsx, src/tui/components/Suggestions.tsx. All commands operate on a CommandContext exposing song/project/backend/playback state and setters, so commands are testable headlessly. Slash is also the default mode (typing / focuses the bar).
+
+**Key decisions**
+- Fuzzy match: subsequence scoring with bonuses for prefix, word-boundary and camelCase matches; deterministic tie-break by name.
+- Tab completes the selected suggestion; repeated Tab cycles; Tab on an arg completes arg values.
+- Command grammar: `/name arg1 arg2 --flag value`; unknown command shows a did-you-mean from the fuzzy list.
+- Every GUI action gets a command; keybindings are shortcuts for commands, not a parallel code path.
+- All commands are pure functions over CommandContext so they can be tested without a terminal.
+- Scriptable-by-design (deferred build): commands must not depend on Ink, the TUI store or terminal height. Each command declares stable id/args/result and returns a typed, JSON-serialisable result; human formatting is a separate layer. This lets a future `.lmpscript` runner or agent control channel drive the identical registry with zero refactor (see FEAT-32).
+
+**Scriptability requirements (design-only; wiring is FEAT-32)**
+- Session factory: build the CommandContext from a plain object (song/project/backend/playback/settings) so a non-UI host can construct a session. The TUI and any future runner must use the same factory.
+- Typed results: `CommandResult<T> = { ok: true; data?: T; message?: string } | { ok: false; error: string }`. Every handler returns this; nothing returns only a display string.
+- Stable command ids + declared arg schema (name/type/required/completer) so a script can enumerate commands and validate calls.
+- Side effects confined to explicit CommandContext methods (backend playback, fs writes) so a runner can audit, dry-run or log them.
+- Read/query commands included from the start (e.g. song info, transport position, pattern cell, meter levels) so automation and feedback can observe state, not just mutate it.
+
+**Alternatives considered**
+- : command prefix like vim: rejected — user asked for slash commands.
+- Command menu-only browsing with no typing: rejected — user asked for fuzzy typing + Tab.
+- Embed a third-party CLI framework (commander/yargs): rejected — their fuzzy/interactive needs don't fit an in-TUI palette.
+
+**Open questions**
+- Should commands record history (Up/Down at prompt) and support a `:repeat`?
+- Alias policy for multiword commands (e.g. /sampler vs /smp)?
+- Should `?`/F1 open command help with the full catalog grouped by category?
+
+**Depends on**
+- FEAT tui shell
+
+**Acceptance criteria**
+- Typing `/` shows a ranked command list; typing partial text filters fuzzily with visible match highlighting.
+- Tab completes the highlighted command and, for commands with args, completes arg values (paths, instrument/channel names).
+- Unit tests cover fuzzy scoring edge cases and every builtin command handler against a mock CommandContext.
+- A command with a bad argument reports an inline error in the status line without crashing.
+- Every handler returns a typed, JSON-serialisable `CommandResult`; no handler depends on Ink or terminal dimensions.
+- A session can be constructed headlessly from a plain object and used to execute/inspect commands in a unit test (this is the seed for FEAT-32).
+
+**Implementation (2026-09-17)**
+`src/tui/commands/` — `fuzzy.ts` (pure subsequence scorer), `registry.ts` (tokenizer, arg parser/flags, fuzzy suggestions, async arg completers), `builtins.ts` (~24 commands), `types.ts` (`CommandResult<T>`, `CommandContext` with `exit`/`listCommands`). Commands are pure over `Session` and Ink-free, satisfying the scriptability constraint. The Ink command bar renders ranked suggestions with Tab completion.
+
+### FEAT-21 — TUI shell: persistent tracker + song info layout
+- priority: critical
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, layout, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Build the Ink app shell with a fixed three-zone layout: header (song title/author/system/tuning/tempo + transport state), body (persistent tracker pattern grid viewport, always visible), and command bar (input + suggestion list) at the bottom with a status/toast line. The tracker is never replaced by a full-screen modal; other views (mixer, sample list) open as overlays that leave the header and command bar intact.
+
+**Architecture**
+New src/tui/App.tsx (Ink), src/tui/components/SongHeader.tsx, PatternView.tsx, StatusBar.tsx, CommandBar.tsx, Overlay.tsx. A useSongModel/usePlayback hook layer mirrors App.tsx state (song, project, settings, mode, channelVolume/mute, masterVolume, currentTime, status). Entry src/tui/main.tsx. Rendering uses monospace, fixed columns; channel colors from existing theme.ts. Bootstraps exactly like App.tsx: loadDefaultSong → parseFurFile → parseProject → buildSamplerSequence → backend.loadSampler.
+
+**Key decisions**
+- Persistent tracker means the pattern grid is always mounted and only its cursor/scroll changes.
+- Header/command bar/status are fixed rows; tracker takes all remaining vertical space.
+- Keyboard-first: arrow/PageUp/Down/Home/End track, Space play/pause, Esc clears command or closes overlay.
+- No mouse dependency (Ink is keyboard-first).
+
+**Alternatives considered**
+- OpenTUI for render performance: deferred; revisit only if Ink re-render cost is measurable.
+- Separate screens per feature: rejected — user explicitly wants a persistent tracker view.
+
+**Open questions**
+- Minimum terminal size to support, and how to degrade below it?
+- Sixel/kitty-graphics cover art in the header — in scope or text-only for milestone 1?
+
+**Depends on**
+- FEAT de-electron-ify
+- FEAT audio shim
+
+**Acceptance criteria**
+- Running `node dist/tui/main.cjs` (or the bin) opens the TUI, loads the bundled song and shows the tracker without errors.
+- Resizing the terminal reflows header/status while keeping the tracker usable.
+- Song title/author/tempo/position/play state are visible at all times.
+
+**Comments**
+- FEAT-15 (cover art editor) is React-DOM bound; its renderer can later feed a sixel/kitty image in the header, but that is out of milestone 1.
+
+**Implementation (2026-09-17)**
+`src/tui/App.tsx` renders a fixed layout: `SongHeader` (title/author/system/tempo/order strip/transport clock), always-visible `PatternView` (4 channels, cursor + playhead highlight), `StatusBar`, and the `CommandBar` with suggestions. `src/tui/session.ts` is the framework-agnostic session (also the seed for FEAT-32). Entry `src/tui/main.tsx`; viewport follows terminal resize via `useWindowSize`.
+
+### FEAT-19 — Audio: node-web-audio-api backend shim
+- priority: critical
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, audio, web-audio
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Make src/audio backend-agnostic by depending only on a minimal Web Audio surface. Add a runtime module that supplies createAudioContext()/createOfflineAudioContext()/decodeAudioData from node-web-audio-api in Node and the browser globals in the (legacy) web build. webAudioBackend.ts, webSampler.ts and offline.ts should need only type/import changes.
+
+**Architecture**
+Add dependency node-web-audio-api. New src/runtime/audioContext.ts exporting createRealtimeContext(), createOfflineContext(), decode(ctx,bytes). Change webAudioBackend.ts/offline.ts to import from it instead of using global AudioContext/OfflineAudioContext. Introduce a local type alias (e.g. LanternAudioContext) based on the constructor return type to avoid DOM lib coupling. tsconfig: keep DOM types for now but isolate them behind the runtime module.
+
+**Key decisions**
+- Keep the existing AudioBackend interface unchanged so downstream UI/TUI code is isolated from the host swap.
+- Use node-web-audio-api's realtime output (default device); document selecting a device later.
+- Reuse src/audio/offline.ts as-is for WAV export bounce (no browser needed).
+
+**Alternatives considered**
+- audify/RtAudio: rejected — would require a new synth graph implementation.
+- Port the synth to Rust/native: rejected — duplicates DSP work and breaks parity.
+- Web Audio inside a hidden Electron process: rejected with the Electron retirement.
+
+**Open questions**
+- Does node-web-audio-api support every node type the chain uses (waveshaper, delay, convolver, AudioWorklet)? Verify per-node and document gaps.
+- Is OfflineAudioContext fully supported for the MASTER FX render path?
+- Sample-rate negotiation: fixed 44100 or follow device?
+
+**Depends on**
+- FEAT de-electron-ify
+
+**Acceptance criteria**
+- A Node smoke script plays the bundled stems through node-web-audio-api and reports currentTime advancing.
+- src/audio unit tests (webSampler) run under Node against the shim.
+- Offline FX render produces byte-comparable output to the previous browser build for a fixed input (documented tolerance).
+
+**Comments**
+- Primary risk card: if a required node type is missing, fall back to a scoped native implementation for that node only, behind the same AudioBackend interface.
+
+### FEAT-18 — De-Electron-ify: shared Node asset loader + file IO layer
+- priority: critical
+- tags: tui, terminal, ink, node, migration, plan-terminal-lantern-tui-migration, io, electron-removal, architecture
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: terminal-lantern-tui-migration
+- kind: card
+- parent: FEAT-17
+
+**Plan:** Terminal Lantern — TUI migration _(#plan-terminal-lantern-tui-migration)_
+
+**Plan summary**
+Convert the Electron/React Lantern Music Player into a terminal app on Node + TypeScript + Ink. Strategy: keep the framework-agnostic domain layer (src/core: .fur parser, songModel, tracker edit ops, project JSON, DSP/spectral/percussion, export) and the existing vitest unit tests untouched; swap only the shell (Electron+React DOM → Ink TUI), the file-dialog layer (Electron IPC → Node fs + path-completion), the audio host (browser Web Audio → node-web-audio-api), and the worker host (Web Worker → node worker_threads). The TUI shows a persistent tracker pattern view plus a song title/info header, and every action is reachable through a slash-command bar with fuzzy suggestions and Tab auto-completion. First milestone is Core scope: playback, persistent tracker, song info, file/project IO, mixer/transport. Graph-heavy editors (spectral/percussion modulation, sampler, master FX, cover art) are deferred to a later parity phase.
+
+Why TypeScript: ~4.4k lines of tested core logic reuse directly, node-web-audio-api provides a real Web Audio API in Node so src/audio ports with a shim rather than being rewritten, the WASM DSP already runs in Node, and Ink reuses the existing React component/state mental model. Rust/Go would force a full rewrite of the parser, audio engine, and test suite for a single-binary benefit that is not needed for a 4-channel tracker.
+
+**Approach**
+Create a platform/runtime module that replaces src/main (Electron) with pure Node. Asset loading reads bundled assets from a resolved assets dir (repo-relative in dev, next to the bundle when packaged); file open/save becomes direct fs read/write plus a TUI path prompt. Keep the IPC-facing shape (LoadedSong, SaveFileRequest, AudioFileChoice) so core/UI code that consumed window.lantern is a thin adapter away.
+
+**Architecture**
+New src/runtime/assets.ts (loadDefaultSong, readAsset, listSourceSamples) built on node:fs/promises; new src/runtime/files.ts (readFileSafe, writeFileSafe, ensureExt, saveFilters). Refactor src/shared/types.ts to a dependency-free LoadedSong/SaveFileRequest (drop IPC enum and LanternApi, or keep as Arc). src/main/assetLoader.ts and src/preload/index.ts are deleted at the cleanup card. Assets currently loaded: assets/lmp-default-proj.lampjson, assets/0..3.ogg stems, assets/SourceSamples/0..5.ogg, flight_school_night_shift.wav/.fur.
+
+**Key decisions**
+- Domain/file format stays identical; no changes to .lampjson, .fur, WAV/MIDI/PNG output.
+- Assets resolve relative to a single resolved root, overridable by env (LANTERN_ASSETS).
+- No Electron APIs may remain in the import graph of the TUI entrypoint.
+
+**Alternatives considered**
+- Keep Electron hidden in the background: rejected — 'retire Electron' decision and no need for Chromium.
+- Use an npm file-picker package: rejected for v1; argument is a path in the command bar with Tab completion.
+
+**Open questions**
+- Where should assets live when the package is installed globally — inside the package, or a user data dir?
+- Should missing bundled assets be a hard error or a graceful empty project?
+
+**Acceptance criteria**
+- loadDefaultSong succeeds under plain node with no Electron present.
+- Unit test loads the bundled project + stems + samples from disk and asserts LoadedSong fields.
+- grep of src/runtime and the TUI entrypoint shows zero electron imports.
+
+**Comments**
+- Implemented 2026-09-17. Added src/runtime/assets.ts (resolveAssetsDir, readAsset/readAssetText, readBytesIfPresent/readTextIfPresent, listSourceSamples, async loadDefaultSong) and src/runtime/files.ts (SAVE_FILTERS, ensureExtension/extensionOf, fileExists, readBytesSafe/readTextSafe, writeBytesSafe with optional overwrite/createDirs, readAudioChoice).
+- Asset root resolution order: explicit root > LANTERN_ASSETS > <cwd>/assets > <scriptDir>/assets and two parents up; a candidate containing lmp-default-proj.lampjson wins. Deliberately avoids import.meta.url/__dirname so it works both CJS-bundled and ESM.
+- src/shared/types.ts is now dependency-free (LoadedSong, AudioFileChoice, SaveFileRequest only). The Electron bridge surface moved to src/shared/ipc.ts (IPC + LanternApi); main/preload/renderer global.d.ts updated to import from there.
+- src/main/assetLoader.ts is now a thin Electron dialog adapter delegating to the runtime modules; the three `from "electron"` imports remaining in the tree are main/index.ts, main/assetLoader.ts and preload/index.ts, all deleted in FEAT-30.
+- Note: this repo ships no bundled stems, chip mix or .fur (only lmp-default-proj.lampjson + SourceSamples/0..5.ogg), so loadDefaultSong returns raw=undefined, stems=[null×4], chipMix=null — matching the current GUI behaviour.
+- Verification: `npm test` 12 files / 92 tests green (new tests/unit/runtime-assets.test.ts, 7 tests); both tsconfigs typecheck clean. ESLint has no config in-repo (npx eslint fails on missing eslint.config.*), so only Prettier was applied.
 
 ### FEAT-16 — Perc mode: auto-preview the rendered one-shot on parameter slider release
 - priority: medium

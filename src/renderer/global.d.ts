@@ -1,4 +1,4 @@
-import type { LanternApi } from "../shared/types";
+import type { LanternApi } from "../shared/ipc";
 
 declare global {
   interface Window {
