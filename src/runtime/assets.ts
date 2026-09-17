@@ -117,9 +117,9 @@ export async function listSourceSamples(
 }
 
 /**
- * Loads the bundled default song. The `.fur`, its stems and the chip mix are
- * all optional: a project-only song loads without CHIP MODE, reconstructing
- * its model from the project's pattern snapshot.
+ * Loads the bundled default song. The `.fur` is optional: a project-only song
+ * loads without it, reconstructing its model from the project's pattern
+ * snapshot.
  */
 export async function loadDefaultSong(
   options: AssetRootOptions = {},
@@ -140,16 +140,12 @@ export async function loadDefaultSong(
     return { error: `Cannot find the bundled project assets in ${dir}` };
   }
 
-  const [stems, samples, chipMix, furBytes] = await Promise.all([
-    Promise.all(
-      [0, 1, 2, 3].map((i) => readBytesIfPresent(path.join(dir, `${i}.ogg`))),
-    ),
+  const [samples, furBytes] = await Promise.all([
     Promise.all(
       [0, 1, 2, 3, 4, 5].map((i) =>
         readBytesIfPresent(path.join(dir, "SourceSamples", `${i}.ogg`)),
       ),
     ),
-    readBytesIfPresent(path.join(dir, "flight_school_night_shift.wav")),
     readBytesIfPresent(path.join(dir, "flight_school_night_shift.fur")),
   ]);
 
@@ -166,9 +162,7 @@ export async function loadDefaultSong(
     raw,
     furBytes: furBytes ?? undefined,
     project,
-    stems,
     samples,
-    chipMix,
   };
 }
 

@@ -7,9 +7,7 @@ export interface LoadedSong {
   furBytes?: Uint8Array;
   /** `lmp-default-proj.lampjson` contents as text. */
   project: string;
-  stems: Array<Uint8Array | null>;
   samples: Array<Uint8Array | null>;
-  chipMix: Uint8Array | null;
   error?: string;
 }
 

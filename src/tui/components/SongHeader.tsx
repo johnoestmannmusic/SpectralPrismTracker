@@ -5,10 +5,12 @@ import { formatClock } from "../format";
 interface Props {
   state: SessionState;
   playhead: { order: number; row: number } | null;
+  /** When a menu is open, replaces the tracker order strip with its context. */
+  context?: { title: string; hint: string } | null;
 }
 
-export function SongHeader({ state, playhead }: Props) {
-  const { song, mode, playing, time, duration, viewOrder } = state;
+export function SongHeader({ state, playhead, context }: Props) {
+  const { song, playing, time, duration, viewOrder } = state;
   if (!song) {
     return (
       <Box flexDirection="column">
@@ -35,7 +37,6 @@ export function SongHeader({ state, playhead }: Props) {
         <Text> </Text>
         <Text color={playing ? "green" : "gray"}>{transport}</Text>
         <Text dimColor> {position}</Text>
-        <Text dimColor> [{mode}]</Text>
         {state.dirty ? <Text color="yellow"> ●</Text> : null}
       </Box>
       <Box>
@@ -46,14 +47,24 @@ export function SongHeader({ state, playhead }: Props) {
           {song.instruments.length} ins
         </Text>
       </Box>
-      <OrderStrip state={state} playhead={playhead} />
+      <OrderStrip state={state} playhead={playhead} context={context} />
     </Box>
   );
 }
 
-function OrderStrip({ state, playhead }: Props) {
+function OrderStrip({ state, playhead, context }: Props) {
   const { song, viewOrder } = state;
   if (!song) return null;
+  if (context) {
+    return (
+      <Box>
+        <Text bold color="green">
+          {context.title}
+        </Text>
+        <Text dimColor> · {context.hint}</Text>
+      </Box>
+    );
+  }
   const total = song.meta.orderLength;
   // Show a window of orders around the viewed one.
   const window = 16;

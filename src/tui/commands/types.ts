@@ -54,7 +54,13 @@ export interface CommandContext {
 }
 
 export type OverlayName =
-  "mixer" | "samples" | "sampler" | "spectral" | "percussion" | "fx";
+  | "mixer"
+  | "samples"
+  | "instruments"
+  | "sampler"
+  | "spectral"
+  | "percussion"
+  | "fx";
 
 export interface CommandDef {
   /** Stable id for scripting/tests. */

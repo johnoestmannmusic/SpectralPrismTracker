@@ -53,10 +53,10 @@ describe("control socket", () => {
   });
 
   it("answers queries with structured values", async () => {
-    const response = await client.query("transport.mode");
+    const response = await client.query("transport.order");
     expect(response.data).toMatchObject({
-      path: "transport.mode",
-      value: "sampler",
+      path: "transport.order",
+      value: session.getState().viewOrder,
     });
   });
 

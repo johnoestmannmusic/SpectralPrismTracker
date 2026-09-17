@@ -1,4 +1,3 @@
-import type { PlaybackMode } from "@/audio/backend";
 import { WebAudioBackend } from "@/audio/webAudioBackend";
 import type { NoteValue, PatternCell } from "@/core/fur/types";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
@@ -65,16 +64,13 @@ export interface SessionState {
   project: ProjectFile | null;
   settings: SamplerSettings[];
   sampleNames: string[];
-  mode: PlaybackMode;
   channelVolume: number[];
   channelMuted: boolean[];
   masterVolume: number;
   masterFx: MasterFxSettings;
   reference: boolean;
-  stemsAvailable: boolean;
   /** Original `.fur` bytes, for `/export fur` (null for project-only songs). */
   furBytes: Uint8Array | null;
-  chipMix: Uint8Array | null;
   wasmReady: boolean;
   playing: boolean;
   time: number;
@@ -88,6 +84,8 @@ export interface SessionState {
   step: number;
   /** When true, the tracker view follows the playhead while playing. */
   follow: boolean;
+  /** When true, pattern cells are tinted by the instrument of the held note. */
+  colorInstruments: boolean;
   /** Row the view scrolls to while following (null when not following). */
   viewRow: number | null;
   dirty: boolean;
@@ -115,15 +113,12 @@ function initialState(): SessionState {
     project: null,
     settings: [],
     sampleNames: [],
-    mode: "sampler",
     channelVolume: [1, 1, 1, 1],
     channelMuted: [false, false, false, false],
     masterVolume: 1,
     masterFx: defaultMasterFx(),
     reference: false,
-    stemsAvailable: false,
     furBytes: null,
-    chipMix: null,
     wasmReady: false,
     playing: false,
     time: 0,
@@ -133,6 +128,7 @@ function initialState(): SessionState {
     selectionAnchor: null,
     step: 1,
     follow: true,
+    colorInstruments: true,
     viewRow: null,
     dirty: false,
     commandHistory: [],
@@ -241,11 +237,6 @@ export class Session {
       (_, i) => result.samples[i] ?? null,
     );
     engine.loadSampler(sequenceFromSong(model), settings, sampleBytes);
-    const haveStems = result.stems.some((stem) => stem && stem.length > 0);
-    if (haveStems) engine.loadStems(result.stems);
-    const initialMode: PlaybackMode =
-      loadedProject.samplerModeEnabled || !haveStems ? "sampler" : "chip";
-    engine.setMode(initialMode);
     this.engine = engine;
 
     this.history = [];
@@ -264,10 +255,7 @@ export class Session {
       masterVolume: loadedProject.masterVolume,
       masterFx: loadedProject.masterFx,
       reference: loadedProject.refPitchEnabled,
-      stemsAvailable: haveStems,
       furBytes: result.furBytes ?? null,
-      chipMix: result.chipMix ?? null,
-      mode: initialMode,
       status: `${model.meta.name} — ${model.instruments.length} instruments`,
       dirty: false,
       viewOrder: 0,
@@ -316,6 +304,10 @@ export class Session {
 
   setFollow(follow: boolean): void {
     this.patch({ follow });
+  }
+
+  setColorInstruments(colorInstruments: boolean): void {
+    this.patch({ colorInstruments });
   }
 
   /** Current order/row under the playhead, or null when not playing. */
@@ -391,15 +383,6 @@ export class Session {
       viewOrder: clamped,
       cursor: { ...this.state.cursor, order: clamped },
     });
-  }
-
-  setMode(mode: PlaybackMode): void {
-    this.engine?.setMode(mode);
-    this.patch({ mode });
-  }
-
-  toggleMode(): void {
-    this.setMode(this.state.mode === "sampler" ? "chip" : "sampler");
   }
 
   // ---- cursor / selection --------------------------------------------------
@@ -1252,7 +1235,6 @@ export class Session {
         playing: state.playing,
         time: state.time,
         duration: state.duration,
-        mode: state.mode,
         order: state.viewOrder,
       },
       tracker: {
@@ -1262,6 +1244,7 @@ export class Session {
         column,
         columnIndex: cursor.column,
         step: state.step,
+        colorInstruments: state.colorInstruments,
       },
       mixer: {
         channelVolume: state.channelVolume,
@@ -1306,6 +1289,41 @@ export class Session {
 
   sampleDurations(): number[] {
     return this.engine?.sampleDurations() ?? [];
+  }
+
+  /** Display name for a source sample slot (empty when unset). */
+  sampleName(slot: number): string {
+    return this.state.sampleNames[slot] ?? "";
+  }
+
+  /** Free-text comments for a source sample slot. */
+  sampleComments(slot: number): string {
+    return this.state.project?.sourceSamples[slot]?.comments ?? "";
+  }
+
+  /** Persists a source sample's name/comments into the project + sample names. */
+  updateSampleInfo(
+    slot: number,
+    patch: { name?: string; comments?: string },
+  ): void {
+    const sampleNames = this.state.sampleNames.slice();
+    while (sampleNames.length < 6) sampleNames.push("");
+    if (patch.name !== undefined) sampleNames[slot] = patch.name;
+    const project = this.state.project;
+    let nextProject = project;
+    if (project) {
+      const sourceSamples = project.sourceSamples.slice();
+      while (sourceSamples.length < 6) sourceSamples.push(null);
+      const existing = sourceSamples[slot];
+      sourceSamples[slot] = {
+        name: sampleNames[slot] ?? "",
+        url: existing?.url ?? null,
+        comments: patch.comments ?? existing?.comments ?? "",
+        dataUrl: existing?.dataUrl ?? null,
+      };
+      nextProject = { ...project, sourceSamples };
+    }
+    this.patch({ sampleNames, project: nextProject, dirty: true });
   }
 
   setStatus(status: string): void {

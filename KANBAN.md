@@ -47,6 +47,110 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 
 ## Implemented
 
+### FEAT-50 — Instrument editor UX streamlining (tab status, mode cycling, conditional options)
+- priority: medium
+- tags: tui, instruments, spectral, percussion, sampler, ux, streamlining
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Instrument editor UX pass: (1) tab bar bolds/colours Spectral and Percussion green when their modes are enabled (Sampler stays neutral; active tab is inverse); (2) `[`/`]` now cycle the Sampler/Spectral/Percussion tabs for consistency, with `,`/`.` taking over instrument switching and hints updated; (3) Spectral hides the Source B selector + whole Source B group unless the selected fusion mode uses B, and the Mix group shows only the current algorithm's amount slider (Mix/Cross-Synth/Convolve/Ring-Modulate) plus Stereo width; (4) Percussion hides Noise/Transient/Pitch & amp/Body/Character groups until Percussion is enabled; (5) Sampler hides Ping-pong unless looping, Trim start/end unless a source is assigned, and Voice cap unless polyphonic. Verified live in a pty (tab attrs: active=reverse, Spectral=bold green, Percussion=dim) and via updated component tests.
+
+### FEAT-49 — Select the source sample from the Spectral editor
+- priority: medium
+- tags: tui, spectral, source-sample, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Added a "Source sample" selector to the Spectral editor's Source A group (previously only Source B was selectable there), so the sample to fuse can be chosen without leaving Spectral. It calls Session.updateSamplerSetting({ sourceIndex }) which re-trims/re-renders via the existing path. Verified by the spectral render test now asserting "Source sample".
+
+### FEAT-48 — /instruments list menu with tabbed instrument editor
+- priority: high
+- tags: tui, instruments, menus, instruments-list, tabs, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Added `/instruments` (alias `ilist`) opening a new InstrumentsOverlay: a scrollable list of index, name, sampler/spectral/percussion + source + mute. ↑↓ moves, Enter opens the Sampler tab, 1/2/3 open Sampler/Spectral/Percussion, m toggles mute, p previews, Esc closes. ParamEditorOverlay gained an optional tab bar (Sampler | Spectral | Percussion) switched by Tab/Shift+Tab or 1-3; Esc returns to the instrument list when the editor was opened from it. Reuses existing editor groups and `[`/`]` instrument switching. Verified live in a pty and by new component/command tests.
+
+### FEAT-47 — New projects name source samples from their filenames
+- priority: low
+- tags: tui, samples, project, new, naming
+- created: 2026-09-17
+- updated: 2026-09-17
+
+On `/new` (and when opening a bare `.fur`), empty source-sample slots are now named from their source file (basename without extension) instead of being blank. `bundledSamples()` now returns `{ bytes, names }` and a `withSampleNames()` helper fills only empty names, preserving any existing name/url/comments/dataUrl. Verified with a `/new` command test asserting `sampleNames` matches the bundled filenames.
+
+### FEAT-46 — Rename /samples to /sourcesamples
+- priority: low
+- tags: tui, commands, rename, samples
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Renamed the source-sample browser slash command from /samples to /sourcesamples (id + name), keeping `samples` and `src` as aliases so existing typed commands and scripts still resolve.
+
+### BUG-9 — Multi-line status broke Ink repainting (missing pattern rows)
+- priority: high
+- tags: tui, ink, rendering, statusbar, layout, bug
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Opening Source Samples (whose /samples command returned a multi-line message) pushed that message into Session.status, and StatusBar rendered every line. That made the whole layout taller than the terminal, so after exiting the overlay and while scrolling, Ink skipped repainting pattern rows (rows 02, 0B, 14, 1D… vanished even though the cursor moved to them). Fix: return a concise single-line status from /sourcesamples, and make StatusBar defensively collapse newlines and truncate to one line. Also sized the explainer panel to the full content height (was 2 rows short) and passed the available content width/height into SamplesOverlay so its waveform no longer wraps. Reproduced and verified with a pty + pyte terminal emulator: no missing rows after open → escape → scroll.
+
+### FEAT-45 — Edit Source Sample name and info from Source Samples
+- priority: medium
+- tags: tui, sampler, samples, editing, project
+- created: 2026-09-17
+- updated: 2026-09-17
+
+In Source Samples, Enter now opens an inline info editor for the highlighted slot (name + comments), matching the original app's "Source Sample N" modal. Field switching via ↑↓/Tab, Enter advances then saves from Comments, Esc cancels, and `p` previews. Added Session.sampleName/sampleComments/updateSampleInfo, persisting into sampleNames + ProjectFile.sourceSamples (preserving url/dataUrl) and marking the project dirty. Verified with an ink-testing-library interaction test (Enter → name → Enter → comments → Enter saves) and the full suite.
+
+### FEAT-44 — Menu-aware top and bottom instructions
+- priority: medium
+- tags: tui, menus, layout, ux, statusbar
+- created: 2026-09-17
+- updated: 2026-09-17
+
+When a menu/overlay is open, the persistent TUI chrome no longer shows tracker instructions. SongHeader's order strip (and its misleading "[ / ] cycle orders") is replaced by the active menu's title + controls, and StatusBar's hint switches to the same menu hint. Covers Help, Sampler/Spectral/Percussion/Master-FX editors, Mixer and Source Samples; the tracker hint returns when all menus close. Verified with an App render test that runs `/samples` and asserts the header shows "Source Samples" and not "cycle orders".
+
+### FEAT-43 — Menu param editor: Enter types a value, Ctrl+←/→ coarse adjust
+- priority: medium
+- tags: tui, menus, keyboard, ux, parameters
+- created: 2026-09-17
+- updated: 2026-09-17
+
+In ParamEditorOverlay: keep `p` as the preview key, repurpose Enter to open an inline value-entry buffer for the selected parameter (numbers parsed and clamped to min/max/integer, toggles accept on/off/true/false/1/0, enums accept a choice name case-insensitively or its numeric index; invalid input keeps the editor open). Ctrl+←/→ now adjusts numeric params by ×10 the normal step. Hints and explainer copy updated. Verified with parse/seed unit tests plus ink-testing-library interaction tests (Enter→type→Enter applies; Ctrl+arrows step by 10).
+
+### FEAT-42 — Ctrl+Up/Down jumps to the next menu category
+- priority: medium
+- tags: tui, menus, keyboard, ux
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Ctrl+↑/↓ now jumps to the previous/next category: ParamEditorOverlay groups (Waveform, Source, Amp envelope, …), MixerOverlay groups (channels / master / delay / reverb), and HelpOverlay command sections. Plain arrows keep their one-row behaviour. Hints updated. Verified by typecheck + full 160-test suite.
+
+### FEAT-41 — Explainer panel on the right-hand side of the terminal
+- priority: high
+- tags: tui, explainer, ux, layout
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Ported the 0008 explainer to `src/tui/explainer.ts` (cell/row/channel/patterns/instrument text, FX_CATALOG effect meaning) and added a persistent right-hand `ExplainerPanel`. Cursor drives the tracker explanation; ParamEditorOverlay, MixerOverlay and SamplesOverlay push the highlighted setting via an `onExplain` callback. Layout is now a horizontal row (main view + panel), shown at ≥84 terminal columns. Verified live in a pty (panel showed the note-off explanation for the cursor cell) and with new explainer unit tests.
+
+### FEAT-40 — Highlight pattern cells by instrument (on by default)
+- priority: high
+- tags: tui, tracker, visualisation, instrument-colour
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Pattern cells are tinted by the held instrument's `colorRgb` (via channel.insTimeline, only while a note is held), using a darkened truecolor Ink background that approximates the original 0.18-alpha cell highlight; scaled brighter on the playhead row. Added `colorInstruments` session flag (default true) and `/colors on|off|toggle`. Cursor/selection still take precedence. Verified live in a pty: truecolor `48;2;…` backgrounds emitted; toggle tested in PatternView render tests.
+
+### FEAT-39 — Remove chip mode and playback-mode switching entirely
+- priority: high
+- tags: tui, audio, cleanup, chip-mode
+- created: 2026-09-17
+- updated: 2026-09-17
+
+Chip mode / sampler-vs-chip switching removed end to end: PlaybackMode + setMode/loadStems/stemsReady from the audio backend interface and WebAudioBackend; `mode`, `setMode`, `toggleMode`, `stemsAvailable`, `chipMix` from Session; `/mode` command; `[mode]` from SongHeader; `mode` from the session snapshot; `samplerModeEnabled` from the ProjectFile schema; stems/chipMix from LoadedSong, runtime/assets and tui/io. Export already used the sampler mixdown. Verified: typecheck clean, 160 tests pass (updated tui-commands, control transport.order, runtime-assets, core round-trip).
+
 ### FEAT-38 — [ / ] cycle orders from the main edit screen
 - priority: medium
 - tags: tui, tracker, keyboard

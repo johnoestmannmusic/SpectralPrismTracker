@@ -196,6 +196,23 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "colors",
+    name: "colors",
+    aliases: ["tint"],
+    description: "Toggle instrument colouring of pattern cells",
+    category: "tracker",
+    args: [{ name: "state", type: "enum", choices: ["on", "off", "toggle"] }],
+    run: (args, ctx) => {
+      const state = arg(args, "state") ?? "toggle";
+      const next =
+        state === "toggle"
+          ? !ctx.session.getState().colorInstruments
+          : state === "on";
+      ctx.session.setColorInstruments(next);
+      return ok(`Instrument colours ${next ? "on" : "off"}`);
+    },
+  },
+  {
     id: "goto",
     name: "goto",
     aliases: ["order"],
@@ -231,27 +248,6 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
-    id: "mode",
-    name: "mode",
-    description: "Switch playback mode (sampler | chip)",
-    category: "transport",
-    args: [
-      {
-        name: "mode",
-        type: "enum",
-        required: true,
-        choices: ["sampler", "chip"],
-      },
-    ],
-    run: (args, ctx) => {
-      const mode = arg(args, "mode");
-      if (mode !== "sampler" && mode !== "chip")
-        return fail("mode must be sampler or chip");
-      ctx.session.setMode(mode);
-      return ok(`Mode: ${mode}`);
-    },
-  },
-  {
     id: "note",
     name: "note",
     aliases: ["n"],
@@ -278,6 +274,19 @@ export const builtinCommands: CommandDef[] = [
         return fail("instrument index must be a number");
       ctx.session.editCell({ instrument: index });
       return ok(`Instrument ${index}`);
+    },
+  },
+  {
+    id: "instruments",
+    name: "instruments",
+    aliases: ["ilist"],
+    description: "List instruments and edit their sampler/spectral/percussion",
+    category: "edit",
+    run: (_args, ctx) => {
+      ctx.openOverlay?.("instruments");
+      const { song } = ctx.session.getState();
+      const count = song?.instruments.length ?? 0;
+      return ok(`Instruments (${count})`, { instruments: count });
     },
   },
   {
@@ -488,9 +497,9 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
-    id: "samples",
-    name: "samples",
-    aliases: ["src"],
+    id: "sourcesamples",
+    name: "sourcesamples",
+    aliases: ["samples", "src"],
     description: "List source samples with names and durations",
     category: "samples",
     run: (_args, ctx) => {
@@ -502,12 +511,7 @@ export const builtinCommands: CommandDef[] = [
         name: name || `(sample ${index})`,
         duration: durations[index] ?? 0,
       }));
-      return ok(
-        rows
-          .map((row) => `${row.index}: ${row.name} ${row.duration.toFixed(2)}s`)
-          .join("\n"),
-        { samples: rows },
-      );
+      return ok(`Source samples (${rows.length})`, { samples: rows });
     },
   },
   {

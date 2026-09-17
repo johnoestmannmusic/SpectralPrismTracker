@@ -11,7 +11,6 @@ import {
   NUM_CHANNELS,
   type AudioBackend,
   type PatternNote,
-  type PlaybackMode,
   type SamplePlayhead,
 } from "./backend";
 import { SamplerEngine, Voice, buildVoice } from "./webSampler";
@@ -57,7 +56,6 @@ export class WebAudioBackend implements AudioBackend {
   private channelMuted = [false, false, false, false];
   private masterVolume = 1;
 
-  private mode: PlaybackMode = "chip";
   private tuning = 440;
   private webError: string | null = null;
 
@@ -72,18 +70,7 @@ export class WebAudioBackend implements AudioBackend {
     start: number;
     duration: number;
   } | null = null;
-  private patternStemPreview: AudioBufferSourceNode[] = [];
   private patternSamplerPreview: Voice[] = [];
-
-  private stemBuffers: Array<AudioBuffer | null> = [null, null, null, null];
-  private stemsReadyFlag = false;
-  private chipDuration = 0;
-  private stemSources: Array<AudioBufferSourceNode | null> = [
-    null,
-    null,
-    null,
-    null,
-  ];
 
   private songStartOffset = 0;
   private songStartCtxTime = 0;
@@ -390,8 +377,8 @@ export class WebAudioBackend implements AudioBackend {
   }
 
   previewPattern(
-    channels: number[],
-    offset: number,
+    _channels: number[],
+    _offset: number,
     duration: number,
     notes: PatternNote[],
   ): void {
@@ -400,21 +387,6 @@ export class WebAudioBackend implements AudioBackend {
     const ctx = this.ctx!;
     void ctx.resume();
     const when = ctx.currentTime + 0.01;
-    if (this.mode === "chip") {
-      for (const channel of channels) {
-        const buffer = this.stemBuffers[channel];
-        if (!buffer) continue;
-        const available = Math.max(buffer.duration - offset, 0);
-        const playFor = Math.min(duration, available);
-        if (playFor <= 0) continue;
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start(when, offset, playFor);
-        this.patternStemPreview.push(source);
-      }
-      return;
-    }
     for (const note of notes) {
       const settings = this.sampler.settings[note.instrument];
       if (!settings || settings.muted || settings.sourceIndex === null)
@@ -445,15 +417,6 @@ export class WebAudioBackend implements AudioBackend {
   }
 
   stopPatternPreview(): void {
-    for (const node of this.patternStemPreview) {
-      try {
-        node.stop();
-        node.disconnect();
-      } catch {
-        /* ignore */
-      }
-    }
-    this.patternStemPreview = [];
     for (const voice of this.patternSamplerPreview) voice.dispose();
     this.patternSamplerPreview = [];
   }
@@ -480,70 +443,27 @@ export class WebAudioBackend implements AudioBackend {
     this.sampler.loops = settings.map(() => null);
   }
 
-  setMode(mode: PlaybackMode): void {
-    if (mode === this.mode) return;
-    const wasPlaying = this.isPlaying();
-    const position = this.currentTime();
-    this.stopSources();
-    this.songStarted = false;
-    this.mode = mode;
-    this.songStartOffset = position;
-    if (wasPlaying) this.play(this.songStartOffset);
-  }
-
   error(): string | null {
     return this.webError ?? this.sampler.error;
   }
 
-  loadStems(bytes: Array<Uint8Array | null>): void {
-    this.ensureStarted();
-    const ctx = this.ctx!;
-    void (async () => {
-      try {
-        for (let i = 0; i < NUM_CHANNELS; i++) {
-          const data = bytes[i];
-          if (!data || data.length === 0) {
-            this.stemBuffers[i] = null;
-            continue;
-          }
-          const buffer = await decodeBytes(ctx, data);
-          this.stemBuffers[i] = buffer;
-          if (i === 0) this.chipDuration = buffer.duration;
-        }
-        this.stemsReadyFlag = true;
-      } catch (e) {
-        this.webError = `Cannot decode stem: ${String(e)}`;
-      }
-    })();
-  }
-
-  stemsReady(): boolean {
-    return this.stemsReadyFlag;
-  }
-
   songDuration(): number {
-    if (this.mode === "sampler") {
-      return this.sequence
-        ? (this.sequence.rowTimes[this.sequence.rowTimes.length - 1] ?? 0)
-        : 0;
-    }
-    return this.chipDuration;
+    return this.sequence
+      ? (this.sequence.rowTimes[this.sequence.rowTimes.length - 1] ?? 0)
+      : 0;
   }
 
   play(offset: number): void {
     this.ensureStarted();
     const ctx = this.ctx!;
-    if (this.mode === "chip" && !this.stemsReady()) return;
-    if (this.mode === "sampler" && !this.samplerReady()) return;
+    if (!this.samplerReady()) return;
     const wasSuspended = ctx.state !== "running";
     if (!this.songStarted) {
       const startTime = ctx.currentTime + 0.05;
       this.songStartOffset = offset;
       this.songStartCtxTime = startTime;
       this.songStarted = true;
-      if (this.mode === "chip") {
-        this.createStemSources(offset, startTime);
-      } else if (this.sequence) {
+      if (this.sequence) {
         this.sampler.scheduler = new Scheduler(
           this.sequence,
           startTime,
@@ -562,38 +482,12 @@ export class WebAudioBackend implements AudioBackend {
     this.timer = setInterval(tick, 25);
   }
 
-  private createStemSources(offset: number, startCtxTime: number): void {
-    const ctx = this.ctx!;
-    for (let c = 0; c < NUM_CHANNELS; c++) {
-      const buffer = this.stemBuffers[c];
-      const destination = this.channelGain[c];
-      if (!buffer || !destination) continue;
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
-      source.connect(destination);
-      source.start(startCtxTime, offset);
-      this.stemSources[c] = source;
-    }
-  }
-
   private stopSources(): void {
     if (this.timer !== null) {
       clearInterval(this.timer);
       this.timer = null;
     }
     this.sampler.clear();
-    for (let c = 0; c < NUM_CHANNELS; c++) {
-      const source = this.stemSources[c];
-      if (!source) continue;
-      try {
-        source.stop();
-        source.disconnect();
-      } catch {
-        /* ignore */
-      }
-      this.stemSources[c] = null;
-    }
   }
 
   pause(): void {

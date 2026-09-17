@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { DEFAULT_EXPLAINER, type ExplainerText } from "../explainer";
 
 export interface EditorParam {
   label: string;
@@ -15,6 +16,8 @@ export interface EditorParam {
   set: (value: number | boolean | string) => void;
   /** Ask the host to audition after the change (spectral/percussion). */
   preview?: boolean;
+  /** Short explanation shown in the right-hand explainer panel. */
+  explain?: string;
 }
 
 export interface EditorGroup {
@@ -32,8 +35,42 @@ interface Props {
   hint?: string;
   onPrev?: () => void;
   onNext?: () => void;
+  /** Receives the highlighted setting for the right-hand explainer panel. */
+  onExplain?: (content: ExplainerText) => void;
+  /** Optional tab bar (e.g. Sampler / Spectral / Percussion). */
+  tabs?: {
+    labels: string[];
+    active: number;
+    onSelect: (index: number) => void;
+    /** Per-tab flag to bold/colour the tab when its mode is enabled. */
+    highlight?: boolean[];
+  };
   /** Rows available to the overlay (excludes app header/status/command bar). */
   height: number;
+}
+
+function describeParam(groupTitle: string, param: EditorParam): ExplainerText {
+  const body: string[] = [];
+  if (groupTitle) body.push(`${groupTitle}.`);
+  if (param.explain) body.push(param.explain);
+  if (param.kind === "number") {
+    const bits: string[] = [];
+    if (param.min !== undefined || param.max !== undefined)
+      bits.push(
+        `range ${param.min ?? "–"}–${param.max ?? "–"}${param.unit ? ` ${param.unit}` : ""}`,
+      );
+    bits.push(`step ${param.step ?? 1}`);
+    body.push(
+      `←→ adjust, Ctrl+←→ ×10 (${bits.join(", ")}). Enter types a value.`,
+    );
+  } else if (param.kind === "toggle") {
+    body.push("←→ toggles on/off. Enter types on/off.");
+  } else {
+    body.push(
+      `←→ cycles: ${(param.choices ?? []).join(", ")}. Enter types a value.`,
+    );
+  }
+  return { title: `${groupTitle} · ${param.label}`, body: body.join("\n") };
 }
 
 type Row =
@@ -70,6 +107,53 @@ function proportion(param: EditorParam): number | null {
   return ((param.value as number) - param.min) / (param.max - param.min);
 }
 
+/** Multiplier applied to `step` when Ctrl+←/→ is held. */
+const LARGE_STEP_FACTOR = 10;
+
+/** Seed text for the inline value-entry buffer. */
+export function initialEditText(param: EditorParam): string {
+  if (param.kind === "toggle") return param.value ? "on" : "off";
+  if (param.kind === "enum") return String(param.value);
+  const value = param.value as number;
+  return param.integer ? String(Math.round(value)) : String(value);
+}
+
+/** Parses typed text for a parameter, or null when it is not valid. */
+export function parseEditText(
+  param: EditorParam,
+  text: string,
+): number | boolean | string | null {
+  const trimmed = text.trim();
+  if (param.kind === "number") {
+    if (trimmed === "") return null;
+    const value = Number(trimmed);
+    if (!Number.isFinite(value)) return null;
+    const clamped = clamp(
+      param.integer ? Math.round(value) : value,
+      param.min,
+      param.max,
+    );
+    return param.integer ? Math.round(clamped) : clamped;
+  }
+  if (param.kind === "toggle") {
+    const lower = trimmed.toLowerCase();
+    if (["on", "true", "1", "yes", "y"].includes(lower)) return true;
+    if (["off", "false", "0", "no", "n"].includes(lower)) return false;
+    return null;
+  }
+  const choices = param.choices ?? [];
+  const exact = choices.find((choice) => choice === trimmed);
+  if (exact !== undefined) return exact;
+  const insensitive = choices.findIndex(
+    (choice) => choice.toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (insensitive >= 0) return choices[insensitive]!;
+  const index = Number(trimmed);
+  if (Number.isInteger(index) && index >= 0 && index < choices.length)
+    return choices[index]!;
+  return null;
+}
+
 /**
  * Keyboard-driven parameter editor used by the sampler, spectral, percussion
  * and master-FX overlays. Params are supplied as live closures, so edits apply
@@ -86,11 +170,22 @@ export function ParamEditorOverlay({
   hint,
   onPrev,
   onNext,
+  onExplain,
+  tabs,
   height,
 }: Props) {
   const flat = groups.flatMap((group, groupIndex) =>
     group.params.map((param) => ({ groupIndex, param })),
   );
+  // Flat index of each group's first param, for Ctrl+↑/↓ category skips.
+  const groupFirstFlat: number[] = [];
+  {
+    let cursor = 0;
+    for (const group of groups) {
+      groupFirstFlat.push(cursor);
+      cursor += group.params.length;
+    }
+  }
   const rows: Row[] = [];
   let flatIndex = 0;
   groups.forEach((group, groupIndex) => {
@@ -104,6 +199,7 @@ export function ParamEditorOverlay({
   });
 
   const [selected, setSelected] = useState(0);
+  const [editing, setEditing] = useState<string | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const current = flat[Math.max(0, Math.min(selected, flat.length - 1))];
@@ -128,13 +224,33 @@ export function ParamEditorOverlay({
     };
   }, []);
 
+  // Reset the highlighted row when switching tabs (the group list changes).
+  useEffect(() => {
+    setSelected(0);
+  }, [tabs?.active]);
+
+  useEffect(() => {
+    if (!onExplain) return;
+    const current = flat[Math.max(0, Math.min(selected, flat.length - 1))];
+    if (!current) {
+      onExplain(DEFAULT_EXPLAINER);
+      return;
+    }
+    onExplain(
+      describeParam(groups[current.groupIndex]?.title ?? "", current.param),
+    );
+    // `flat`/`groups` are rebuilt each render; selection/title are the real
+    // triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, title, onExplain]);
+
   const schedulePreview = (param: EditorParam) => {
     if (!param.preview || !onPreview) return;
     if (previewTimer.current) clearTimeout(previewTimer.current);
     previewTimer.current = setTimeout(() => onPreview(), 350);
   };
 
-  const adjust = (param: EditorParam, direction: 1 | -1) => {
+  const adjust = (param: EditorParam, direction: 1 | -1, large = false) => {
     if (param.kind === "toggle") {
       param.set(!(param.value as boolean));
     } else if (param.kind === "enum") {
@@ -144,7 +260,7 @@ export function ParamEditorOverlay({
         (index + direction + choices.length) % Math.max(choices.length, 1);
       param.set(choices[next] ?? param.value);
     } else {
-      const step = param.step ?? 1;
+      const step = (param.step ?? 1) * (large ? LARGE_STEP_FACTOR : 1);
       const raw = (param.value as number) + step * direction;
       const value = clamp(
         param.integer ? Math.round(raw) : raw,
@@ -156,25 +272,110 @@ export function ParamEditorOverlay({
     schedulePreview(param);
   };
 
+  const commitEdit = () => {
+    if (!current || editing === null) return;
+    const parsed = parseEditText(current.param, editing);
+    if (parsed !== null) {
+      current.param.set(parsed);
+      schedulePreview(current.param);
+    }
+    setEditing(null);
+  };
+
   useInput(
     (char, key) => {
+      // Inline value entry swallows every key until Enter/Escape.
+      if (editing !== null) {
+        if (key.escape) {
+          setEditing(null);
+          return;
+        }
+        if (key.return) {
+          commitEdit();
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setEditing((text) => (text ?? "").slice(0, -1));
+          return;
+        }
+        if (
+          key.ctrl ||
+          key.meta ||
+          key.tab ||
+          key.upArrow ||
+          key.downArrow ||
+          key.leftArrow ||
+          key.rightArrow
+        ) {
+          return;
+        }
+        if (char) setEditing((text) => (text ?? "") + char);
+        return;
+      }
+
       if (key.escape) {
         onClose();
         return;
       }
-      if (char === "[" && onPrev) {
+      if (tabs) {
+        if (key.tab) {
+          const step = key.shift ? -1 : 1;
+          const next =
+            (tabs.active + step + tabs.labels.length) % tabs.labels.length;
+          tabs.onSelect(next);
+          return;
+        }
+        if (char === "[" || char === "]") {
+          const step = char === "[" ? -1 : 1;
+          const next =
+            (tabs.active + step + tabs.labels.length) % tabs.labels.length;
+          tabs.onSelect(next);
+          return;
+        }
+        const tabIndex = Number(char);
+        if (
+          Number.isInteger(tabIndex) &&
+          tabIndex >= 1 &&
+          tabIndex <= tabs.labels.length &&
+          char
+        ) {
+          tabs.onSelect(tabIndex - 1);
+          return;
+        }
+      }
+      if (char === "," && onPrev) {
         onPrev();
         return;
       }
-      if (char === "]" && onNext) {
+      if (char === "." && onNext) {
+        onNext();
+        return;
+      }
+      if (!tabs && char === "[" && onPrev) {
+        onPrev();
+        return;
+      }
+      if (!tabs && char === "]" && onNext) {
         onNext();
         return;
       }
       if (key.upArrow) {
+        if (key.ctrl) {
+          const group = current?.groupIndex ?? 0;
+          const target = Math.max(group - 1, 0);
+          setSelected(groupFirstFlat[target] ?? 0);
+          return;
+        }
         setSelected((index) => Math.max(0, index - 1));
         return;
       }
       if (key.downArrow) {
+        if (key.ctrl) {
+          const group = current?.groupIndex ?? 0;
+          const target = Math.min(group + 1, groups.length - 1);
+          setSelected(groupFirstFlat[target] ?? Math.max(0, flat.length - 1));
+          return;
+        }
         setSelected((index) =>
           flat.length === 0
             ? 0
@@ -183,10 +384,14 @@ export function ParamEditorOverlay({
         return;
       }
       if (key.leftArrow || key.rightArrow) {
-        if (current) adjust(current.param, key.leftArrow ? -1 : 1);
+        if (current) adjust(current.param, key.leftArrow ? -1 : 1, key.ctrl);
         return;
       }
-      if (key.return || char === "p") {
+      if (key.return) {
+        if (current) setEditing(initialEditText(current.param));
+        return;
+      }
+      if (char === "p") {
         if (onPreview) onPreview();
       }
     },
@@ -204,9 +409,33 @@ export function ParamEditorOverlay({
       <Text bold color="green">
         {title}
       </Text>
-      <Text dimColor>
-        {hint ?? "↑↓ select · ←→ adjust · enter preview · esc close"}
-        {rows.length > visibleRows
+      {tabs ? (
+        <Box>
+          {tabs.labels.map((label, tabIndex) => {
+            const isActive = tabIndex === tabs.active;
+            const isOn = tabs.highlight?.[tabIndex] ?? false;
+            return (
+              <Text key={label}>
+                <Text
+                  bold={isOn}
+                  inverse={isActive}
+                  color={isOn ? "green" : isActive ? "black" : "gray"}
+                >
+                  {` ${label} `}
+                </Text>
+                {tabIndex < tabs.labels.length - 1 ? <Text> </Text> : null}
+              </Text>
+            );
+          })}
+          <Text dimColor> · [ ]/tab/1-3 switch · , . instrument</Text>
+        </Box>
+      ) : null}
+      <Text dimColor wrap="truncate-end">
+        {editing !== null
+          ? `type ${current?.param.label ?? "value"}: ${editing}▏ · enter apply · esc cancel`
+          : (hint ??
+            "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · esc")}
+        {editing === null && rows.length > visibleRows
           ? ` · ${offset + 1}-${Math.min(offset + visibleRows, rows.length)}`
           : ""}
       </Text>
@@ -241,7 +470,9 @@ export function ParamEditorOverlay({
               {ratio !== null
                 ? `${"█".repeat(Math.round(ratio * 12))}${"░".repeat(12 - Math.round(ratio * 12))} `
                 : ""}
-              {displayValue(row.param)}
+              {isSelected && editing !== null
+                ? `${editing}▏`
+                : displayValue(row.param)}
             </Text>
           </Box>
         );

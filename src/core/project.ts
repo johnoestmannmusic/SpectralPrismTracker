@@ -33,7 +33,6 @@ export interface SourceSampleRef {
 
 export interface ProjectFile {
   version: number;
-  samplerModeEnabled: boolean;
   channelVolume: number[];
   masterVolume: number;
   mutedChannels: boolean[];
@@ -65,7 +64,6 @@ export interface ProjectFile {
 export function defaultProject(): ProjectFile {
   return {
     version: 1,
-    samplerModeEnabled: true,
     channelVolume: [1, 1, 1, 1],
     masterVolume: 1,
     mutedChannels: [false, false, false, false],
@@ -464,10 +462,6 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
   return {
     ...base,
     version: num("version", 1),
-    samplerModeEnabled:
-      typeof value.samplerModeEnabled === "boolean"
-        ? value.samplerModeEnabled
-        : true,
     channelVolume: arr<number>(value.channelVolume, [1, 1, 1, 1]).slice(0, 4),
     masterVolume: num("masterVolume", 1),
     mutedChannels: arr<boolean>(value.mutedChannels, [
@@ -523,7 +517,6 @@ export function projectToJson(project: ProjectFile, pretty = false): string {
 export function projectToValue(project: ProjectFile): Record<string, unknown> {
   const value: Record<string, unknown> = {
     version: project.version,
-    samplerModeEnabled: project.samplerModeEnabled,
     channelVolume: project.channelVolume,
     masterVolume: project.masterVolume,
     refPitchEnabled: project.refPitchEnabled,

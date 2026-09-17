@@ -2,8 +2,6 @@ import type { AudioClip } from "@/core/dsp";
 import type { MasterFxSettings } from "@/core/masterFx";
 import type { SamplerSettings, Sequence } from "@/core/sampler";
 
-export type PlaybackMode = "chip" | "sampler";
-
 export const NUM_CHANNELS = 4;
 
 export interface SamplePlayhead {
@@ -56,11 +54,8 @@ export interface AudioBackend {
   samplerReady(): boolean;
   sampleDurations(): number[];
   setSamplerSettings(instrument: number, settings: SamplerSettings): void;
-  setMode(mode: PlaybackMode): void;
   error(): string | null;
   ensureStarted(): void;
-  loadStems(bytes: Array<Uint8Array | null>): void;
-  stemsReady(): boolean;
   songDuration(): number;
   play(offset: number): void;
   pause(): void;

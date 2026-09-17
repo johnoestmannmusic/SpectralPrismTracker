@@ -4,6 +4,8 @@ import { fuzzyScore, rank } from "@/tui/commands/fuzzy";
 import { tokenize } from "@/tui/commands/registry";
 import type { CommandContext } from "@/tui/commands/types";
 import { Session } from "@/tui/session";
+import { listSourceSamples } from "@/runtime/assets";
+import { basenameNoExt } from "@/runtime/files";
 
 const registry = createRegistry();
 
@@ -27,8 +29,8 @@ describe("fuzzy command matching", () => {
 
   it("ranks the intended command first", () => {
     const commands = registry.all();
-    const top = rank("mode", commands, (command) => command.name)[0];
-    expect(top?.item.name).toBe("mode");
+    const top = rank("stop", commands, (command) => command.name)[0];
+    expect(top?.item.name).toBe("stop");
   });
 
   it("tokenizes quoted arguments", () => {
@@ -55,11 +57,11 @@ describe("command registry", () => {
   });
 
   it("completes enum choices", async () => {
-    const def = registry.get("mode")!;
+    const def = registry.get("follow")!;
     const choices = await registry.completeArg(def, 0, "", {
       session: new Session(),
     });
-    expect(choices).toEqual(["sampler", "chip"]);
+    expect(choices).toEqual(["on", "off", "toggle"]);
   });
 
   it("autocompletes an unfinished command on Enter", () => {
@@ -87,7 +89,6 @@ describe("session commands over the bundled song", () => {
     expect(state.error).toBeNull();
     expect(state.song?.meta.name).toBeTruthy();
     expect(state.song?.instruments.length).toBeGreaterThan(0);
-    expect(state.mode).toBe("sampler");
   });
 
   it("/info reports song metadata", async () => {
@@ -131,11 +132,13 @@ describe("session commands over the bundled song", () => {
     expect(session.getState().channelMuted[1]).toBe(false);
   });
 
-  it("/samples lists the bundled source samples", async () => {
-    const result = await run(session, "samples");
+  it("/sourcesamples lists the bundled source samples with a one-line status", async () => {
+    const result = await run(session, "sourcesamples");
     expect(result.ok).toBe(true);
     const data = result.data as { samples: unknown[] };
     expect(data.samples).toHaveLength(6);
+    // A multi-line status would grow the StatusBar and break Ink repainting.
+    expect(result.message ?? "").not.toContain("\n");
   });
 
   it("plays through the Node audio backend and advances the clock", async () => {
@@ -169,5 +172,21 @@ describe("session commands over the bundled song", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it("/instruments reports the instrument count", async () => {
+    const result = await run(session, "instruments");
+    expect(result.ok).toBe(true);
+    const data = result.data as { instruments: number };
+    expect(data.instruments).toBeGreaterThan(0);
+  });
+
+  it("/new names source samples from their filenames", async () => {
+    const result = await run(session, "new");
+    expect(result.ok).toBe(true);
+    const assets = await listSourceSamples();
+    const expected = assets.map((asset) => basenameNoExt(asset.path));
+    expect(expected.every((name) => name.length > 0)).toBe(true);
+    expect(session.getState().sampleNames.slice(0, 6)).toEqual(expected);
   });
 });

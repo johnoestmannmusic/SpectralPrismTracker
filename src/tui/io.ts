@@ -9,6 +9,7 @@ import {
 import { parseFurFile } from "@/core/fur/node";
 import { writeMidi } from "@/core/midi";
 import { defaultProject, projectFromJson, projectToJson } from "@/core/project";
+import type { ProjectFile } from "@/core/project";
 import { defaultSamplerSettings, sequenceFromSong } from "@/core/sampler";
 import { applyMasterFxOffline } from "@/audio/offline";
 import { listSourceSamples } from "@/runtime/assets";
@@ -29,9 +30,36 @@ export interface IoResult {
   path?: string;
 }
 
-async function bundledSamples(): Promise<Array<Uint8Array | null>> {
+async function bundledSamples(): Promise<{
+  bytes: Array<Uint8Array | null>;
+  names: string[];
+}> {
   const samples = await listSourceSamples();
-  return samples.map((sample) => sample.bytes);
+  return {
+    bytes: samples.map((sample) => sample.bytes),
+    // New projects name each slot from its file (e.g. "kick.ogg" -> "kick").
+    names: samples.map((sample) =>
+      sample.present ? basenameNoExt(sample.path) : "",
+    ),
+  };
+}
+
+/** Fills empty source-sample names from the bundled asset filenames. */
+function withSampleNames(project: ProjectFile, names: string[]): ProjectFile {
+  const sourceSamples = project.sourceSamples.slice();
+  while (sourceSamples.length < 6) sourceSamples.push(null);
+  for (let i = 0; i < 6; i++) {
+    const name = names[i] ?? "";
+    if (!name || sourceSamples[i]?.name) continue;
+    const existing = sourceSamples[i];
+    sourceSamples[i] = {
+      name,
+      url: existing?.url ?? null,
+      comments: existing?.comments ?? "",
+      dataUrl: existing?.dataUrl ?? null,
+    };
+  }
+  return { ...project, sourceSamples };
 }
 
 function decodeDataUrl(dataUrl: string): Uint8Array | null {
@@ -52,12 +80,12 @@ export async function loadedSongFromProjectText(
   const embedded = project.sourceSamples.map((sample) =>
     sample?.dataUrl ? decodeDataUrl(sample.dataUrl) : null,
   );
-  const samples = embedded.some(Boolean) ? embedded : await bundledSamples();
+  const samples = embedded.some(Boolean)
+    ? embedded
+    : (await bundledSamples()).bytes;
   return {
     project: text,
-    stems: [null, null, null, null],
     samples,
-    chipMix: null,
   };
 }
 
@@ -83,13 +111,14 @@ export async function openPath(
     if (!bytes.ok) return { ok: false, error: bytes.error };
     try {
       const raw = parseFurFile(bytes.value);
+      const bundled = await bundledSamples();
       await session.load({
         raw,
         furBytes: bytes.value,
-        project: projectToJson(defaultProject()),
-        stems: [null, null, null, null],
-        samples: await bundledSamples(),
-        chipMix: null,
+        project: projectToJson(
+          withSampleNames(defaultProject(), bundled.names),
+        ),
+        samples: bundled.bytes,
       });
       return { ok: true, message: `Opened ${filePath}`, path: filePath };
     } catch (error) {
@@ -110,12 +139,11 @@ export async function newProject(session: Session): Promise<IoResult> {
     project.artist = "Unknown Artist";
     project.instruments = [defaultSamplerSettings()];
     project.instrumentNames = ["Instrument 01"];
-    const samples = await bundledSamples();
+    const bundled = await bundledSamples();
+    const namedProject = withSampleNames(project, bundled.names);
     await session.load({
-      project: projectToJson(project),
-      stems: [null, null, null, null],
-      samples,
-      chipMix: null,
+      project: projectToJson(namedProject),
+      samples: bundled.bytes,
     });
     return { ok: true, message: "New project" };
   } catch (error) {

@@ -33,6 +33,19 @@ interface Segment {
 
 const CHANNEL_COLORS = ["cyan", "magenta", "yellow", "blue"] as const;
 
+/**
+ * Darkened truecolor tint for an instrument's `colorRgb`, approximating the
+ * original app's translucent cell highlight. Ink/chalk accept `rgb(r,g,b)`
+ * backgrounds, so the exact instrument hue is preserved.
+ */
+function instrumentTint(rgb: [number, number, number], strong = false): string {
+  const factor = strong ? 0.55 : 0.3;
+  const [r, g, b] = rgb;
+  return `rgb(${Math.round(r * factor)}, ${Math.round(g * factor)}, ${Math.round(
+    b * factor,
+  )})`;
+}
+
 function segmentsFor(
   song: NonNullable<SessionState["song"]>,
   channel: number,
@@ -165,6 +178,19 @@ export function PatternView({
           const segments = segmentsFor(song, channel, cell);
           const selectedChannel = cursor.channel === channel && isCursorRow;
           const columns = flatColumnsForChannel(song, channel);
+          // Colour by the instrument only while a note is held; a note-off
+          // clears the tint even though the channel keeps the instrument.
+          const heldNote =
+            song.channels[channel]?.noteTimeline[viewOrder]?.[row] ?? null;
+          const instrument = heldNote
+            ? (song.channels[channel]?.insTimeline[viewOrder]?.[row] ?? null)
+            : null;
+          const info =
+            instrument !== null ? song.instruments[instrument] : undefined;
+          const tint =
+            state.colorInstruments && info
+              ? instrumentTint(info.colorRgb, isPlayheadRow)
+              : undefined;
           return (
             <Text key={channel}>
               {segments.map((segment, index) => {
@@ -202,11 +228,11 @@ export function PatternView({
                         ? "white"
                         : inSelection
                           ? "blue"
-                          : beatBackground
-                            ? "gray"
-                            : undefined
+                          : (tint ?? (beatBackground ? "gray" : undefined))
                     }
-                    inverse={isPlayheadRow && !isCursor && !inSelection}
+                    inverse={
+                      isPlayheadRow && !isCursor && !inSelection && !tint
+                    }
                   >
                     {segment.text}
                   </Text>

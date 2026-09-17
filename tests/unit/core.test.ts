@@ -278,7 +278,7 @@ describe("project json", () => {
     expect(project.instruments[0]!.spectral.mode).toBe("off");
 
     const encoded = projectToJson(project);
-    expect(encoded).toContain('"samplerModeEnabled"');
+    expect(encoded).toContain('"channelVolume"');
     expect(encoded).toContain('"sourceIndex2"');
     expect(encoded).not.toContain('"muted"');
     const reparsed = projectFromJson(encoded);

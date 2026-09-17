@@ -11,6 +11,16 @@ import { HelpOverlay } from "./components/HelpOverlay";
 import { MixerOverlay } from "./components/MixerOverlay";
 import { SamplesOverlay } from "./components/SamplesOverlay";
 import {
+  InstrumentsOverlay,
+  type InstrumentTab,
+} from "./components/InstrumentsOverlay";
+import { ExplainerPanel } from "./components/ExplainerPanel";
+import {
+  DEFAULT_EXPLAINER,
+  explainCursor,
+  type ExplainerText,
+} from "./explainer";
+import {
   ParamEditorOverlay,
   type EditorGroup,
 } from "./components/ParamEditorOverlay";
@@ -55,7 +65,14 @@ const NOTE_KEYS: Record<string, number> = {
 };
 
 type Overlay =
-  "none" | "mixer" | "samples" | "sampler" | "spectral" | "percussion" | "fx";
+  | "none"
+  | "mixer"
+  | "samples"
+  | "instruments"
+  | "sampler"
+  | "spectral"
+  | "percussion"
+  | "fx";
 
 interface Props {
   session: Session;
@@ -74,6 +91,10 @@ export function App({ session }: Props) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [editInstrument, setEditInstrument] = useState(0);
+  /** When true, closing the editor returns to the instrument list. */
+  const [returnToList, setReturnToList] = useState(false);
+  const [menuExplainer, setMenuExplainer] =
+    useState<ExplainerText>(DEFAULT_EXPLAINER);
   const inputRef = useRef(input);
   inputRef.current = input;
   const suggestionsRef = useRef(suggestions);
@@ -92,6 +113,7 @@ export function App({ session }: Props) {
             Math.min(Math.max(Math.round(arg), 0), Math.max(count - 1, 0)),
           );
         }
+        setReturnToList(false);
         setOverlay(name);
       },
     }),
@@ -457,6 +479,24 @@ export function App({ session }: Props) {
   );
   const playhead = state.playing ? session.playheadPosition() : null;
 
+  const trackerExplainer = useMemo(() => explainCursor(state), [state]);
+  const editorHint =
+    overlay === "fx"
+      ? "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · esc"
+      : "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · [ ] mode · , . ins · esc";
+  const explainer: ExplainerText = helpOpen
+    ? {
+        title: "Help — commands & keys",
+        body: "Browse every slash command and EDIT MODE shortcut. Ctrl+↑/↓ jumps between command categories.",
+      }
+    : overlay === "none"
+      ? trackerExplainer
+      : menuExplainer;
+  const showExplainer = columns >= 84;
+  const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
+  const contentHeight = viewportRows + 2;
+  const contentWidth = columns - (showExplainer ? panelWidth : 0);
+
   const instrumentCount = state.song?.instruments.length ?? 0;
   const instrumentLabel =
     state.song?.instruments[editInstrument]?.name ??
@@ -479,6 +519,21 @@ export function App({ session }: Props) {
         : overlay === "percussion"
           ? `Percussion — ${instrumentLabel}`
           : "Master FX";
+  const instrumentTabs: InstrumentTab[] = ["sampler", "spectral", "percussion"];
+  const editorTabs =
+    editorGroups && overlay !== "fx"
+      ? {
+          labels: ["Sampler", "Spectral", "Percussion"],
+          active: Math.max(instrumentTabs.indexOf(overlay as InstrumentTab), 0),
+          onSelect: (index: number) =>
+            setOverlay(instrumentTabs[index] ?? "sampler"),
+          highlight: [
+            false,
+            !!state.settings[editInstrument]?.spectral.enabled,
+            !!state.settings[editInstrument]?.spectral.percussion.enabled,
+          ],
+        }
+      : undefined;
   const stepInstrument = (direction: 1 | -1) => {
     if (instrumentCount === 0) return;
     setEditInstrument((index) =>
@@ -486,60 +541,113 @@ export function App({ session }: Props) {
     );
   };
 
+  const menuContext = helpOpen
+    ? {
+        title: "Help — commands & keys",
+        hint: "↑↓/jk scroll · ctrl+↑↓ category · space/PgDn page · esc close",
+      }
+    : editorGroups
+      ? { title: editorTitle, hint: editorHint }
+      : overlay === "mixer"
+        ? {
+            title: "Mixer / Master FX",
+            hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
+          }
+        : overlay === "samples"
+          ? {
+              title: "Source Samples",
+              hint: "↑↓ select · p preview · enter edit info · esc close",
+            }
+          : overlay === "instruments"
+            ? {
+                title: "Instruments",
+                hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+              }
+            : null;
+
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      <SongHeader state={state} playhead={playhead} />
-      {helpOpen ? (
-        <HelpOverlay
-          commands={registry.all()}
-          active={helpOpen}
-          height={viewportRows}
-          onClose={() => setHelpOpen(false)}
-        />
-      ) : editorGroups ? (
-        <ParamEditorOverlay
-          title={editorTitle}
-          groups={editorGroups}
-          active={overlay !== "none"}
-          height={viewportRows}
-          onClose={() => setOverlay("none")}
-          onPreview={
-            overlay === "fx"
-              ? undefined
-              : () => void session.previewAfterRender(editInstrument)
-          }
-          onPrev={overlay === "fx" ? undefined : () => stepInstrument(-1)}
-          onNext={overlay === "fx" ? undefined : () => stepInstrument(1)}
-          hint={
-            overlay === "fx"
-              ? "↑↓ select · ←→ adjust · esc close"
-              : "↑↓ select · ←→ adjust · enter/p preview · [ ] instrument · esc close"
-          }
-        />
-      ) : overlay === "mixer" ? (
-        <MixerOverlay
-          session={session}
-          active={overlay === "mixer"}
-          onClose={() => setOverlay("none")}
-        />
-      ) : overlay === "samples" ? (
-        <SamplesOverlay
-          session={session}
-          active={overlay === "samples"}
-          onClose={() => setOverlay("none")}
-        />
-      ) : (
-        <PatternView
-          state={state}
-          viewportRows={viewportRows}
-          playhead={playhead}
-          selection={session.selection()}
-        />
-      )}
+      <SongHeader state={state} playhead={playhead} context={menuContext} />
+      <Box flexDirection="row" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1}>
+          {helpOpen ? (
+            <HelpOverlay
+              commands={registry.all()}
+              active={helpOpen}
+              height={viewportRows}
+              onClose={() => setHelpOpen(false)}
+            />
+          ) : editorGroups ? (
+            <ParamEditorOverlay
+              title={editorTitle}
+              groups={editorGroups}
+              active={overlay !== "none"}
+              height={viewportRows}
+              onClose={() => setOverlay(returnToList ? "instruments" : "none")}
+              onExplain={setMenuExplainer}
+              onPreview={
+                overlay === "fx"
+                  ? undefined
+                  : () => void session.previewAfterRender(editInstrument)
+              }
+              onPrev={overlay === "fx" ? undefined : () => stepInstrument(-1)}
+              onNext={overlay === "fx" ? undefined : () => stepInstrument(1)}
+              tabs={editorTabs}
+              hint={editorHint}
+            />
+          ) : overlay === "instruments" ? (
+            <InstrumentsOverlay
+              session={session}
+              active={overlay === "instruments"}
+              onClose={() => setOverlay("none")}
+              onOpen={(index, tab) => {
+                setEditInstrument(index);
+                setReturnToList(true);
+                setOverlay(tab);
+              }}
+              onExplain={setMenuExplainer}
+              height={contentHeight}
+            />
+          ) : overlay === "mixer" ? (
+            <MixerOverlay
+              session={session}
+              active={overlay === "mixer"}
+              onClose={() => setOverlay("none")}
+              onExplain={setMenuExplainer}
+            />
+          ) : overlay === "samples" ? (
+            <SamplesOverlay
+              session={session}
+              active={overlay === "samples"}
+              onClose={() => setOverlay("none")}
+              onExplain={setMenuExplainer}
+              width={contentWidth}
+              height={contentHeight}
+            />
+          ) : (
+            <PatternView
+              state={state}
+              viewportRows={viewportRows}
+              playhead={playhead}
+              selection={session.selection()}
+            />
+          )}
+        </Box>
+        {showExplainer ? (
+          <ExplainerPanel
+            content={explainer}
+            width={panelWidth}
+            height={contentHeight}
+          />
+        ) : null}
+      </Box>
       <StatusBar
         status={state.status}
         error={state.error}
-        hint={"space play · q/a ±value · / commands · ctrl+p recall · ? help"}
+        hint={
+          menuContext?.hint ??
+          "space play · q/a ±value · / commands · ctrl+p recall · ? help"
+        }
       />
       <CommandBar
         input={input}

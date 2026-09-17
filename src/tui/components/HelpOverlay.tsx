@@ -19,7 +19,7 @@ interface Line {
 /** EDIT MODE keyboard shortcuts (parity with the original app's help menu). */
 const KEY_SHORTCUTS: Array<[string, string]> = [
   ["Arrows", "Move selection (wraps across patterns)"],
-  ["Ctrl+Up/Down", "Move 16 rows"],
+  ["Ctrl+Up/Down", "Move 16 rows (menus: skip category)"],
   ["Ctrl+Left/Right", "Jump channel (NOTE column)"],
   ["Shift+Arrows", "Extend selection"],
   ["[ / ]", "Cycle orders (previous / next)"],
@@ -87,10 +87,25 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
         return;
       }
       if (key.downArrow || char === "j") {
+        if (key.ctrl) {
+          const next = lines.findIndex(
+            (line, lineIndex) => line.kind === "header" && lineIndex > clamped,
+          );
+          if (next >= 0) setOffset(Math.min(maxOffset, next));
+          return;
+        }
         setOffset((value) => Math.min(maxOffset, value + 1));
         return;
       }
       if (key.upArrow || char === "k") {
+        if (key.ctrl) {
+          let previous = -1;
+          for (let lineIndex = 0; lineIndex < clamped; lineIndex++) {
+            if (lines[lineIndex]!.kind === "header") previous = lineIndex;
+          }
+          if (previous >= 0) setOffset(Math.max(0, previous));
+          return;
+        }
         setOffset((value) => Math.max(0, value - 1));
         return;
       }
@@ -117,8 +132,9 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
         Lantern commands ({commands.length})
       </Text>
       <Text dimColor>
-        ↑↓/jk scroll · space/PgDn page · esc close · {clamped + 1}–
-        {Math.min(clamped + pageSize, lines.length)} of {lines.length}
+        ↑↓/jk scroll · ctrl+↑↓ category · space/PgDn page · esc close ·{" "}
+        {clamped + 1}–{Math.min(clamped + pageSize, lines.length)} of{" "}
+        {lines.length}
       </Text>
       {visible.map((line, index) => {
         const key = `${clamped}-${index}`;

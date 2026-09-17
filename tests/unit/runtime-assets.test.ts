@@ -29,13 +29,8 @@ describe("runtime assets", () => {
     expect(result.project.length).toBeGreaterThan(0);
     expect(() => JSON.parse(result.project)).not.toThrow();
 
-    // 4 stems and a chip mix are optional bundled files; this repo ships none.
-    expect(result.stems).toHaveLength(4);
-    expect(result.stems.every((stem) => stem === null)).toBe(true);
-    expect(result.chipMix).toBeNull();
-    expect(result.raw).toBeUndefined();
-
     // All six source samples are bundled.
+    expect(result.raw).toBeUndefined();
     expect(result.samples).toHaveLength(6);
     expect(result.samples.every((sample) => sample instanceof Uint8Array)).toBe(
       true,

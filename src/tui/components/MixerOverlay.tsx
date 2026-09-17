@@ -1,17 +1,21 @@
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { defaultMasterFx } from "@/core/masterFx";
 import type { Session } from "../session";
 import { useSession } from "../hooks";
+import type { ExplainerText } from "../explainer";
 
 interface Props {
   session: Session;
   active: boolean;
   onClose: () => void;
+  onExplain?: (content: ExplainerText) => void;
 }
 
 interface Row {
   label: string;
+  group: string;
+  explain: string;
   get: () => number;
   set: (value: number) => void;
   toggle?: () => void;
@@ -24,7 +28,7 @@ function bar(value: number, width = 16): string {
   return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
 }
 
-export function MixerOverlay({ session, active, onClose }: Props) {
+export function MixerOverlay({ session, active, onClose, onExplain }: Props) {
   const state = useSession(session);
   const [index, setIndex] = useState(0);
 
@@ -34,6 +38,9 @@ export function MixerOverlay({ session, active, onClose }: Props) {
   for (let channel = 0; channel < 4; channel++) {
     rows.push({
       label: `CH${channel + 1}${state.channelMuted[channel] ? " (muted)" : ""}`,
+      group: "channels",
+      explain:
+        "Per-channel volume before the master bus. Independent of the instrument mute; both multiply.",
       get: () => volumes[channel] ?? 1,
       set: (value) => session.setChannelVolume(channel, value),
       toggle: () => session.toggleChannelMute(channel),
@@ -43,12 +50,18 @@ export function MixerOverlay({ session, active, onClose }: Props) {
   }
   rows.push({
     label: "MASTER",
+    group: "master",
+    explain:
+      "Final output stage. If it clips with channels under 100%, turn individual channels down rather than the master.",
     get: () => state.masterVolume,
     set: (value) => session.setMasterVolume(value),
     meterIndex: 4,
   });
   rows.push({
     label: `DELAY${masterFx.delay.enabled ? "" : " (off)"}`,
+    group: "delay",
+    explain:
+      "Master delay: time, feedback, tone and mix. ←→ sets mix; m toggles the effect.",
     get: () => masterFx.delay.mix,
     set: (value) =>
       session.setMasterFx({
@@ -64,6 +77,8 @@ export function MixerOverlay({ session, active, onClose }: Props) {
   });
   rows.push({
     label: `REVERB${masterFx.reverb.enabled ? "" : " (off)"}`,
+    group: "reverb",
+    explain: "Master reverb: decay and mix. ←→ sets mix; m toggles the effect.",
     get: () => masterFx.reverb.mix,
     set: (value) =>
       session.setMasterFx({
@@ -80,6 +95,25 @@ export function MixerOverlay({ session, active, onClose }: Props) {
 
   const selected = Math.min(index, rows.length - 1);
   const meters = session.meterLevels();
+  const groupStarts = (() => {
+    const starts: number[] = [];
+    let last: string | null = null;
+    rows.forEach((row, rowIndex) => {
+      if (row.group !== last) {
+        starts.push(rowIndex);
+        last = row.group;
+      }
+    });
+    return starts;
+  })();
+
+  useEffect(() => {
+    if (!onExplain) return;
+    const row = rows[Math.min(index, rows.length - 1)];
+    if (!row) return;
+    onExplain({ title: `Mixer · ${row.label}`, body: row.explain });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, onExplain]);
 
   useInput(
     (char, key) => {
@@ -88,10 +122,20 @@ export function MixerOverlay({ session, active, onClose }: Props) {
         return;
       }
       if (key.upArrow) {
+        if (key.ctrl) {
+          const previous = groupStarts.filter((start) => start < selected);
+          setIndex(previous[previous.length - 1] ?? 0);
+          return;
+        }
         setIndex((value) => Math.max(0, value - 1));
         return;
       }
       if (key.downArrow) {
+        if (key.ctrl) {
+          const next = groupStarts.find((start) => start > selected);
+          setIndex(next ?? rows.length - 1);
+          return;
+        }
         setIndex((value) =>
           rows.length === 0
             ? 0
@@ -132,7 +176,9 @@ export function MixerOverlay({ session, active, onClose }: Props) {
       <Text bold color="cyan">
         Mixer / Master FX
       </Text>
-      <Text dimColor>↑↓ select · ←→ adjust · m mute/toggle · esc close</Text>
+      <Text dimColor>
+        ↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close
+      </Text>
       {rows.map((row, rowIndex) => {
         const value = row.get();
         const cursor = rowIndex === selected;
