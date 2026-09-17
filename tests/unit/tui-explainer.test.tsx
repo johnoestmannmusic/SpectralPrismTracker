@@ -121,5 +121,31 @@ describe("TUI explainer", () => {
       expect(frame).not.toContain("cycle orders");
       unmount();
     });
+
+    it("enters stepthrough, navigates and exits", async () => {
+      const { stdin, lastFrame, unmount } = render(<App session={session} />);
+      const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+      stdin.write("/");
+      await tick();
+      for (const char of "stepthrough") {
+        stdin.write(char);
+        await tick();
+      }
+      stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("↑↓ step");
+      expect(frame).toContain("Step 1/");
+      stdin.write("\x1b[B");
+      await tick();
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Step 2/");
+      stdin.write("\x1b");
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      frame = lastFrame() ?? "";
+      expect(frame).not.toContain("↑↓ step");
+      expect(frame).toContain("space play");
+      unmount();
+    });
   });
 });

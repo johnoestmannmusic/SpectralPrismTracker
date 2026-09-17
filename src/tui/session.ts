@@ -23,6 +23,7 @@ import {
   type SamplerSettings,
 } from "@/core/sampler";
 import { rowTime, songPositionAt } from "@/core/timing";
+import { cloneTarget, type BuildTarget } from "@/core/stepthrough";
 import {
   adjustCell,
   applyLastValue as applyLastValueToCell,
@@ -172,6 +173,25 @@ export class Session {
 
   get song(): SongModel | null {
     return this.state.song;
+  }
+
+  /**
+   * Deep-clones the model fields into a BuildTarget for stepthrough preview.
+   * The live session is never mutated by the preview; callers apply steps to a
+   * clone of this snapshot.
+   */
+  snapshotTarget(): BuildTarget | null {
+    const state = this.state;
+    if (!state.song || !state.project) return null;
+    return {
+      project: structuredClone(state.project),
+      song: structuredClone(state.song),
+      settings: structuredClone(state.settings),
+      channelVolume: [...state.channelVolume],
+      channelMuted: [...state.channelMuted],
+      masterVolume: state.masterVolume,
+      masterFx: structuredClone(state.masterFx),
+    };
   }
 
   get backend(): WebAudioBackend | null {

@@ -15,7 +15,18 @@ import {
   type InstrumentTab,
 } from "./components/InstrumentsOverlay";
 import { PatternsOverlay } from "./components/PatternsOverlay";
+import { StepPanel } from "./components/StepPanel";
+import { SongInfoPanel } from "./components/SongInfoPanel";
 import { ExplainerPanel } from "./components/ExplainerPanel";
+import {
+  applyBuildStep,
+  buildSteps,
+  cloneTarget,
+  type BuildStep,
+  type BuildTarget,
+  type StepHighlight,
+  type StepScreen,
+} from "@/core/stepthrough";
 import {
   DEFAULT_EXPLAINER,
   explainCursor,
@@ -32,7 +43,7 @@ import {
   spectralGroups,
 } from "./editors";
 import { useSession } from "./hooks";
-import type { Session } from "./session";
+import type { Session, SessionState } from "./session";
 
 /**
  * Note entry keys. Uppercase letters enter the full chromatic scale; a few
@@ -65,8 +76,57 @@ const NOTE_KEYS: Record<string, number> = {
   ".": 14,
 };
 
+function stepChapterId(id: string): string {
+  return id.split(".")[0] ?? "";
+}
+
+/** Moves to the previous/next chapter boundary in a step list. */
+function jumpChapter(
+  steps: BuildStep[],
+  index: number,
+  direction: -1 | 1,
+): number {
+  const current = stepChapterId(steps[index]?.id ?? "");
+  let i = index;
+  if (direction > 0) {
+    i++;
+    while (i < steps.length && stepChapterId(steps[i]!.id) === current) i++;
+    return i >= steps.length ? steps.length - 1 : i;
+  }
+  i--;
+  while (i >= 0 && stepChapterId(steps[i]!.id) === current) i--;
+  return i < 0 ? 0 : i;
+}
+
+/** Maps a stepthrough screen to the overlay that renders it. */
+function stepScreenToOverlay(screen: StepScreen): Overlay {
+  switch (screen) {
+    case "song":
+      return "song";
+    case "samples":
+      return "samples";
+    case "instruments":
+      return "instruments";
+    case "sampler":
+      return "sampler";
+    case "spectral":
+      return "spectral";
+    case "percussion":
+      return "percussion";
+    case "mixer":
+      return "mixer";
+    case "master-fx":
+      return "fx";
+    case "patterns":
+      return "patterns";
+    case "tracker":
+      return "none";
+  }
+}
+
 type Overlay =
   | "none"
+  | "song"
   | "mixer"
   | "samples"
   | "instruments"
@@ -81,7 +141,7 @@ interface Props {
 }
 
 export function App({ session }: Props) {
-  const state = useSession(session);
+  const liveState = useSession(session);
   const { exit } = useApp();
   const { rows, columns } = useWindowSize();
   const registry = useMemo(() => createRegistry(), []);
@@ -97,10 +157,71 @@ export function App({ session }: Props) {
   const [returnToList, setReturnToList] = useState(false);
   const [menuExplainer, setMenuExplainer] =
     useState<ExplainerText>(DEFAULT_EXPLAINER);
+  /** Active STEPTHROUGH session: the recipe plus the model snapshot it grows. */
+  const [stepMode, setStepMode] = useState<{
+    steps: BuildStep[];
+    base: BuildTarget;
+    index: number;
+  } | null>(null);
   const inputRef = useRef(input);
   inputRef.current = input;
   const suggestionsRef = useRef(suggestions);
   suggestionsRef.current = suggestions;
+
+  const startStepthrough = useCallback(() => {
+    const base = session.snapshotTarget();
+    if (!base) return;
+    const steps = buildSteps(base);
+    setHelpOpen(false);
+    if (steps.length === 0) {
+      session.setStatus("Nothing to rebuild — project is already empty");
+      return;
+    }
+    setStepMode({ steps, base, index: 0 });
+    session.setStatus(`Stepthrough: ${steps.length} steps`);
+  }, [session]);
+
+  const stopStepthrough = useCallback(() => {
+    setStepMode(null);
+    session.setStatus("Stepthrough off");
+  }, [session]);
+
+  const currentStep = stepMode ? stepMode.steps[stepMode.index] : null;
+  const stepTarget = useMemo(() => {
+    if (!stepMode) return null;
+    const target = cloneTarget(stepMode.base);
+    for (let i = 0; i < stepMode.index; i++)
+      applyBuildStep(target, stepMode.steps[i]!);
+    return target;
+  }, [stepMode]);
+
+  /** In stepthrough the whole UI renders from the grown snapshot, not the live session. */
+  const state: SessionState = useMemo(() => {
+    if (!stepTarget || !currentStep) return liveState;
+    const cell = currentStep.highlights.find((h) => h.kind === "cell");
+    return {
+      ...liveState,
+      song: stepTarget.song,
+      settings: stepTarget.settings,
+      project: stepTarget.project,
+      channelVolume: stepTarget.channelVolume,
+      channelMuted: stepTarget.channelMuted,
+      masterVolume: stepTarget.masterVolume,
+      masterFx: stepTarget.masterFx,
+      sampleNames: stepTarget.project.sourceSamples.map(
+        (sample) => sample?.name ?? "",
+      ),
+      follow: false,
+      viewOrder: currentStep.order ?? liveState.viewOrder,
+      viewRow: null,
+      cursor: {
+        ...liveState.cursor,
+        order: currentStep.order ?? liveState.cursor.order,
+        row: cell?.row ?? liveState.cursor.row,
+        channel: cell?.channel ?? liveState.cursor.channel,
+      },
+    };
+  }, [liveState, stepTarget, currentStep]);
 
   const ctx = useMemo<CommandContext>(
     () => ({
@@ -109,6 +230,11 @@ export function App({ session }: Props) {
       listCommands: () => registry.all(),
       print: (text: string) => session.setStatus(text),
       openOverlay: (name, arg) => {
+        if (name === "stepthrough") {
+          if (arg === -1) stopStepthrough();
+          else startStepthrough();
+          return;
+        }
         if (arg !== undefined && Number.isFinite(arg)) {
           const count = session.getState().song?.instruments.length ?? 1;
           setEditInstrument(
@@ -119,7 +245,7 @@ export function App({ session }: Props) {
         setOverlay(name);
       },
     }),
-    [session, exit, registry],
+    [session, exit, registry, startStepthrough, stopStepthrough],
   );
 
   const runCommand = useCallback(
@@ -472,7 +598,57 @@ export function App({ session }: Props) {
         session.editCell({ note: { kind: "note", note } });
       }
     },
-    { isActive: overlay === "none" && !helpOpen },
+    { isActive: overlay === "none" && !helpOpen && !stepMode },
+  );
+
+  // STEPTHROUGH navigation takes over all input while the mode is active.
+  useInput(
+    (_char, key) => {
+      if (!stepMode) return;
+      if (key.escape) {
+        stopStepthrough();
+        return;
+      }
+      if (key.upArrow) {
+        setStepMode((mode) =>
+          mode ? { ...mode, index: Math.max(0, mode.index - 1) } : mode,
+        );
+        return;
+      }
+      if (key.downArrow) {
+        setStepMode((mode) =>
+          mode
+            ? {
+                ...mode,
+                index: Math.min(mode.steps.length - 1, mode.index + 1),
+              }
+            : mode,
+        );
+        return;
+      }
+      if (key.pageUp || key.pageDown) {
+        const direction = key.pageUp ? -1 : 1;
+        setStepMode((mode) =>
+          mode
+            ? {
+                ...mode,
+                index: jumpChapter(mode.steps, mode.index, direction),
+              }
+            : mode,
+        );
+        return;
+      }
+      if (key.home) {
+        setStepMode((mode) => (mode ? { ...mode, index: 0 } : mode));
+        return;
+      }
+      if (key.end) {
+        setStepMode((mode) =>
+          mode ? { ...mode, index: mode.steps.length - 1 } : mode,
+        );
+      }
+    },
+    { isActive: stepMode !== null },
   );
 
   const viewportRows = Math.max(
@@ -495,44 +671,81 @@ export function App({ session }: Props) {
       ? trackerExplainer
       : menuExplainer;
   const showExplainer = columns >= 84;
+  const showPanel = stepMode !== null || showExplainer;
   const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
   const contentHeight = viewportRows + 2;
-  const contentWidth = columns - (showExplainer ? panelWidth : 0);
+  const contentWidth = columns - (showPanel ? panelWidth : 0);
+
+  const activeOverlay: Overlay = currentStep
+    ? stepScreenToOverlay(currentStep.screen)
+    : overlay;
+  const activeInstrument = currentStep?.instrument ?? editInstrument;
+  const stepHighlights: StepHighlight[] = currentStep?.highlights ?? [];
+  const paramHighlights = stepHighlights
+    .filter((h) => h.kind === "param")
+    .map((h) => ({ group: h.group, label: h.label }));
+  const cellHighlights = stepHighlights
+    .filter((h) => h.kind === "cell")
+    .map((h) => ({
+      channel: h.channel ?? 0,
+      order: h.order ?? 0,
+      row: h.row ?? 0,
+    }));
+  const highlightedInstrument = stepHighlights.find(
+    (h) => h.kind === "instrument",
+  )?.instrument;
+  const highlightedSlot = stepHighlights.find((h) => h.kind === "sample")?.slot;
+  const highlightedOrder = stepHighlights.find(
+    (h) => h.kind === "order",
+  )?.order;
+  const highlightedChannel = stepHighlights.find(
+    (h) => h.kind === "channel",
+  )?.channel;
+  const highlightMixerRow =
+    highlightedChannel !== undefined
+      ? highlightedChannel
+      : stepHighlights.some((h) => h.kind === "row")
+        ? 4
+        : undefined;
 
   const instrumentCount = state.song?.instruments.length ?? 0;
   const instrumentLabel =
-    state.song?.instruments[editInstrument]?.name ??
-    `Instrument ${editInstrument}`;
+    state.song?.instruments[activeInstrument]?.name ??
+    `Instrument ${activeInstrument}`;
+  const settingsOverride = stepTarget?.settings[activeInstrument];
   const editorGroups: EditorGroup[] | null =
-    overlay === "sampler"
-      ? samplerGroups(session, editInstrument)
-      : overlay === "spectral"
-        ? spectralGroups(session, editInstrument)
-        : overlay === "percussion"
-          ? percussionGroups(session, editInstrument)
-          : overlay === "fx"
-            ? masterFxGroups(session)
+    activeOverlay === "sampler"
+      ? samplerGroups(session, activeInstrument, settingsOverride)
+      : activeOverlay === "spectral"
+        ? spectralGroups(session, activeInstrument, settingsOverride)
+        : activeOverlay === "percussion"
+          ? percussionGroups(session, activeInstrument, settingsOverride)
+          : activeOverlay === "fx"
+            ? masterFxGroups(session, stepTarget?.masterFx)
             : null;
   const editorTitle =
-    overlay === "sampler"
+    activeOverlay === "sampler"
       ? `Sampler — ${instrumentLabel}`
-      : overlay === "spectral"
+      : activeOverlay === "spectral"
         ? `Spectral — ${instrumentLabel}`
-        : overlay === "percussion"
+        : activeOverlay === "percussion"
           ? `Percussion — ${instrumentLabel}`
           : "Master FX";
   const instrumentTabs: InstrumentTab[] = ["sampler", "spectral", "percussion"];
   const editorTabs =
-    editorGroups && overlay !== "fx"
+    editorGroups && activeOverlay !== "fx"
       ? {
           labels: ["Sampler", "Spectral", "Percussion"],
-          active: Math.max(instrumentTabs.indexOf(overlay as InstrumentTab), 0),
+          active: Math.max(
+            instrumentTabs.indexOf(activeOverlay as InstrumentTab),
+            0,
+          ),
           onSelect: (index: number) =>
             setOverlay(instrumentTabs[index] ?? "sampler"),
           highlight: [
             false,
-            !!state.settings[editInstrument]?.spectral.enabled,
-            !!state.settings[editInstrument]?.spectral.percussion.enabled,
+            !!state.settings[activeInstrument]?.spectral.enabled,
+            !!state.settings[activeInstrument]?.spectral.percussion.enabled,
           ],
         }
       : undefined;
@@ -543,34 +756,40 @@ export function App({ session }: Props) {
     );
   };
 
-  const menuContext = helpOpen
-    ? {
-        title: "Help — commands & keys",
-        hint: "↑↓/jk scroll · ctrl+↑↓ category · space/PgDn page · esc close",
-      }
-    : editorGroups
-      ? { title: editorTitle, hint: editorHint }
-      : overlay === "mixer"
+  const menuContext =
+    stepMode && currentStep
+      ? {
+          title: `Step ${stepMode.index + 1}/${stepMode.steps.length} — ${currentStep.title}`,
+          hint: "↑↓ step · pgup/pgdn chapter · home/end · esc exit",
+        }
+      : helpOpen
         ? {
-            title: "Mixer / Master FX",
-            hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
+            title: "Help — commands & keys",
+            hint: "↑↓/jk scroll · ctrl+↑↓ category · space/PgDn page · esc close",
           }
-        : overlay === "samples"
-          ? {
-              title: "Source Samples",
-              hint: "↑↓ select · p preview · enter edit info · esc close",
-            }
-          : overlay === "instruments"
+        : editorGroups
+          ? { title: editorTitle, hint: editorHint }
+          : activeOverlay === "mixer"
             ? {
-                title: "Instruments",
-                hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+                title: "Mixer / Master FX",
+                hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
               }
-            : overlay === "patterns"
+            : activeOverlay === "samples"
               ? {
-                  title: "Pattern Manager",
-                  hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e number · enter jump · esc close",
+                  title: "Source Samples",
+                  hint: "↑↓ select · p preview · enter edit info · esc close",
                 }
-              : null;
+              : activeOverlay === "instruments"
+                ? {
+                    title: "Instruments",
+                    hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+                  }
+                : activeOverlay === "patterns"
+                  ? {
+                      title: "Pattern Manager",
+                      hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e number · enter jump · esc close",
+                    }
+                  : null;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -584,28 +803,35 @@ export function App({ session }: Props) {
               height={viewportRows}
               onClose={() => setHelpOpen(false)}
             />
+          ) : activeOverlay === "song" ? (
+            <SongInfoPanel state={state} highlight={paramHighlights} />
           ) : editorGroups ? (
             <ParamEditorOverlay
               title={editorTitle}
               groups={editorGroups}
-              active={overlay !== "none"}
+              active={!stepMode && activeOverlay !== "none"}
               height={viewportRows}
               onClose={() => setOverlay(returnToList ? "instruments" : "none")}
               onExplain={setMenuExplainer}
               onPreview={
-                overlay === "fx"
+                activeOverlay === "fx"
                   ? undefined
-                  : () => void session.previewAfterRender(editInstrument)
+                  : () => void session.previewAfterRender(activeInstrument)
               }
-              onPrev={overlay === "fx" ? undefined : () => stepInstrument(-1)}
-              onNext={overlay === "fx" ? undefined : () => stepInstrument(1)}
+              onPrev={
+                activeOverlay === "fx" ? undefined : () => stepInstrument(-1)
+              }
+              onNext={
+                activeOverlay === "fx" ? undefined : () => stepInstrument(1)
+              }
               tabs={editorTabs}
               hint={editorHint}
+              highlight={paramHighlights}
             />
-          ) : overlay === "instruments" ? (
+          ) : activeOverlay === "instruments" ? (
             <InstrumentsOverlay
               session={session}
-              active={overlay === "instruments"}
+              active={!stepMode && activeOverlay === "instruments"}
               onClose={() => setOverlay("none")}
               onOpen={(index, tab) => {
                 setEditInstrument(index);
@@ -614,41 +840,57 @@ export function App({ session }: Props) {
               }}
               onExplain={setMenuExplainer}
               height={contentHeight}
+              state={stepMode ? state : undefined}
+              highlightInstrument={highlightedInstrument}
             />
-          ) : overlay === "patterns" ? (
+          ) : activeOverlay === "patterns" ? (
             <PatternsOverlay
               session={session}
-              active={overlay === "patterns"}
+              active={!stepMode && activeOverlay === "patterns"}
               onClose={() => setOverlay("none")}
               onExplain={setMenuExplainer}
               height={contentHeight}
+              state={stepMode ? state : undefined}
+              highlightOrder={highlightedOrder}
             />
-          ) : overlay === "mixer" ? (
+          ) : activeOverlay === "mixer" ? (
             <MixerOverlay
               session={session}
-              active={overlay === "mixer"}
+              active={!stepMode && activeOverlay === "mixer"}
               onClose={() => setOverlay("none")}
               onExplain={setMenuExplainer}
+              state={stepMode ? state : undefined}
+              highlightRow={highlightMixerRow}
             />
-          ) : overlay === "samples" ? (
+          ) : activeOverlay === "samples" ? (
             <SamplesOverlay
               session={session}
-              active={overlay === "samples"}
+              active={!stepMode && activeOverlay === "samples"}
               onClose={() => setOverlay("none")}
               onExplain={setMenuExplainer}
               width={contentWidth}
               height={contentHeight}
+              state={stepMode ? state : undefined}
+              highlightSlot={highlightedSlot}
             />
           ) : (
             <PatternView
               state={state}
               viewportRows={viewportRows}
-              playhead={playhead}
-              selection={session.selection()}
+              playhead={stepMode ? null : playhead}
+              selection={stepMode ? null : session.selection()}
+              highlight={cellHighlights}
             />
           )}
         </Box>
-        {showExplainer ? (
+        {stepMode ? (
+          <StepPanel
+            steps={stepMode.steps}
+            index={stepMode.index}
+            width={panelWidth}
+            height={contentHeight}
+          />
+        ) : showExplainer ? (
           <ExplainerPanel
             content={explainer}
             width={panelWidth}

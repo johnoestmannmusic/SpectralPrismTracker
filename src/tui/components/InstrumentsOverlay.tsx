@@ -2,7 +2,7 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { useSession } from "../hooks";
 import { instrumentExplain, type ExplainerText } from "../explainer";
-import type { Session } from "../session";
+import type { Session, SessionState } from "../session";
 
 export type InstrumentTab = "sampler" | "spectral" | "percussion";
 
@@ -15,6 +15,10 @@ interface Props {
   onExplain?: (content: ExplainerText) => void;
   /** Height available to the overlay (for list scrolling). */
   height?: number;
+  /** Preview state supplied by stepthrough (defaults to the live session). */
+  state?: SessionState;
+  /** Stepthrough instrument to mark. */
+  highlightInstrument?: number;
 }
 
 /** Instrument list: pick an instrument, then edit its settings in tabs. */
@@ -25,8 +29,11 @@ export function InstrumentsOverlay({
   onOpen,
   onExplain,
   height,
+  state: stateOverride,
+  highlightInstrument,
 }: Props) {
-  const state = useSession(session);
+  const live = useSession(session);
+  const state = stateOverride ?? live;
   const [index, setIndex] = useState(0);
 
   const instruments = state.song?.instruments ?? [];
@@ -43,7 +50,7 @@ export function InstrumentsOverlay({
     const source = setting?.sourceIndex ?? null;
     const sourceName =
       source !== null
-        ? session.sampleName(source) || `src ${source}`
+        ? state.sampleNames[source] || `src ${source}`
         : "no source";
     if (setting?.spectral.percussion.enabled)
       return `percussion · ${sourceName}`;
@@ -130,12 +137,19 @@ export function InstrumentsOverlay({
           shown.map((instrument, offset) => {
             const instrumentIndex = start + offset;
             const cursor = instrumentIndex === selected;
+            const marked = instrumentIndex === highlightInstrument;
             const setting = state.settings[instrumentIndex];
             const muted = setting?.muted ? " (muted)" : "";
             return (
               <Box key={instrumentIndex}>
                 <Text
-                  color={cursor ? "black" : undefined}
+                  color={marked && !cursor ? "yellow" : undefined}
+                  bold={marked}
+                >
+                  {marked ? "◆" : " "}
+                </Text>
+                <Text
+                  color={cursor ? "black" : marked ? "yellow" : undefined}
                   backgroundColor={cursor ? "white" : undefined}
                 >
                   {String(instrumentIndex).padStart(2, "0")}

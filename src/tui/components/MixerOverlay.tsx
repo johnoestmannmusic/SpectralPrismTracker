@@ -4,12 +4,17 @@ import { defaultMasterFx } from "@/core/masterFx";
 import type { Session } from "../session";
 import { useSession } from "../hooks";
 import type { ExplainerText } from "../explainer";
+import type { SessionState } from "../session";
 
 interface Props {
   session: Session;
   active: boolean;
   onClose: () => void;
   onExplain?: (content: ExplainerText) => void;
+  /** Preview state supplied by stepthrough (defaults to the live session). */
+  state?: SessionState;
+  /** Stepthrough row to mark (index into the mixer rows). */
+  highlightRow?: number;
 }
 
 interface Row {
@@ -28,8 +33,16 @@ function bar(value: number, width = 16): string {
   return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
 }
 
-export function MixerOverlay({ session, active, onClose, onExplain }: Props) {
-  const state = useSession(session);
+export function MixerOverlay({
+  session,
+  active,
+  onClose,
+  onExplain,
+  state: stateOverride,
+  highlightRow,
+}: Props) {
+  const live = useSession(session);
+  const state = stateOverride ?? live;
   const [index, setIndex] = useState(0);
 
   const volumes = state.channelVolume;
@@ -182,11 +195,18 @@ export function MixerOverlay({ session, active, onClose, onExplain }: Props) {
       {rows.map((row, rowIndex) => {
         const value = row.get();
         const cursor = rowIndex === selected;
+        const marked = rowIndex === highlightRow;
         const enabled = row.getEnabled?.() ?? true;
         return (
           <Box key={row.label}>
             <Text
-              color={cursor ? "black" : undefined}
+              color={marked && !cursor ? "yellow" : undefined}
+              bold={marked}
+            >
+              {marked ? "◆" : " "}
+            </Text>
+            <Text
+              color={cursor ? "black" : marked ? "yellow" : undefined}
               backgroundColor={cursor ? "white" : undefined}
             >
               {row.label.padEnd(14)}

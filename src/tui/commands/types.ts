@@ -58,6 +58,7 @@ export type OverlayName =
   | "samples"
   | "instruments"
   | "patterns"
+  | "stepthrough"
   | "sampler"
   | "spectral"
   | "percussion"

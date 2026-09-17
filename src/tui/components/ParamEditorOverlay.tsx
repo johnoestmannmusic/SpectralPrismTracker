@@ -45,6 +45,8 @@ interface Props {
     /** Per-tab flag to bold/colour the tab when its mode is enabled. */
     highlight?: boolean[];
   };
+  /** Stepthrough target parameters to mark. */
+  highlight?: Array<{ group?: string; label?: string }>;
   /** Rows available to the overlay (excludes app header/status/command bar). */
   height: number;
 }
@@ -172,6 +174,7 @@ export function ParamEditorOverlay({
   onNext,
   onExplain,
   tabs,
+  highlight,
   height,
 }: Props) {
   const flat = groups.flatMap((group, groupIndex) =>
@@ -457,14 +460,24 @@ export function ParamEditorOverlay({
           return <Box key={key}>{row.node}</Box>;
         }
         const isSelected = row.flat === selected;
+        const groupTitle = groups[row.groupIndex]?.title ?? "";
+        const isHighlighted =
+          highlight?.some(
+            (h) =>
+              (h.group === undefined || h.group === groupTitle) &&
+              (h.label === undefined || h.label === row.param.label),
+          ) ?? false;
         const ratio = proportion(row.param);
         return (
           <Box key={key}>
             <Text
-              color={isSelected ? "black" : undefined}
+              color={
+                isSelected ? "black" : isHighlighted ? "yellow" : undefined
+              }
               backgroundColor={isSelected ? "white" : undefined}
+              bold={isHighlighted}
             >
-              {` ${row.param.label}`.padEnd(22)}
+              {((isHighlighted ? "◆ " : "  ") + row.param.label).padEnd(22)}
             </Text>
             <Text color={isSelected ? "yellow" : "green"}>
               {ratio !== null

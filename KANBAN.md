@@ -47,6 +47,254 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 
 ## Implemented
 
+### FEAT-53 — Stepthrough mode — progressive project rebuild tutorial
+- priority: critical
+- tags: plan-stepthrough-mode-progressive-project-rebuild-tutorial, epic
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: epic
+
+IMPLEMENTED. STEPTHROUGH mode: reads the loaded .lampjson + SongModel and synthesises a BuildStep recipe (core/src/stepthrough.ts), then presents it as a navigable, progressively-rebuilding tutorial. `/stepthrough` (aliases walkthrough, steps) enters; the right-hand StepPanel replaces the Explainer; ↑↓ steps, PgUp/PgDn chapters, Home/End, Esc (or `/stepthrough off`) exits. The left pane shows the target screen — SongInfo, Source Samples, Instruments, Sampler/Spectral/Percussion tab, Mixer, Master FX, Pattern Manager or the tracker — positioned at the step and with the step's parameters/cells highlighted (◆ in editors, yellow cells in the tracker). It progressively applies steps 0..N to a structuredClone of the model (Session.snapshotTarget) so the project visibly grows; the live session/audio is never mutated. Every step carries a structured action, and `/stepexport <path>` writes the recipe as JSON for future automation. Bundled project produces 621 per-row steps. Verified live in a pty (song/sample/param/tracker steps, highlighting, exit restore) and by 184 passing tests (core generator + round-trip + apply, StepPanel, App enter/navigate/exit, export).
+
+### FEAT-60 — Tests for stepthrough (generator, apply, navigation, highlights)
+- priority: high
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, tests
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+Unit-test buildSteps/applyBuildStep (ordering, non-default filtering, round-trip on covered fields, stable ids) and component-test StepPanel navigation + highlight rendering with ink-testing-library.
+
+**Architecture**
+tests/unit/stepthrough.test.ts + extend tui-components/tui-explainer.
+
+**Key decisions**
+- Generator tested without Ink.
+
+**Alternatives considered**
+- pty-only (rejected).
+
+**Depends on**
+- Core: BuildTarget, BuildStep model, buildSteps + applyBuildStep
+- App: /stepthrough mode shell, StepPanel, navigation
+
+**Acceptance criteria**
+- New tests pass alongside the existing 177.
+
+### FEAT-59 — Structured actions + /stepthrough export recipe (automation groundwork)
+- priority: medium
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, export
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+Every step already carries a structured action. Add `/stepthrough export [path]` to serialise BuildStep[] as JSON (or .lmpscript) so a future runner can execute the recipe against a fresh project.
+
+**Architecture**
+Export is pure serialisation; action vocab mirrors command names where possible.
+
+**Key decisions**
+- Declarative actions, not executed here.
+
+**Alternatives considered**
+- New DSL now (rejected).
+
+**Depends on**
+- Core: BuildTarget, BuildStep model, buildSteps + applyBuildStep
+
+**Acceptance criteria**
+- Export writes a valid recipe file.
+
+### FEAT-58 — Step → screen resolver (target view + positioning + highlights)
+- priority: critical
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, resolver
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+Map a BuildStep (screen + instrument/order + highlights) onto App overlay state: setOverlay, editInstrument, editor tab, viewOrder, cursor/selection; attach highlights. Add a compact SongInfo view for the song/timing chapter.
+
+**Architecture**
+Extends the Overlay union and tab logic. tracker → PatternView positioned at order/row; sampler|spectral|percussion → ParamEditorOverlay on that tab; instruments|mixer|samples|patterns → their overlays; song → SongInfo.
+
+**Key decisions**
+- Reuse manual overlay behavior; no bespoke step views.
+
+**Alternatives considered**
+- Separate step views (rejected).
+
+**Depends on**
+- Session/App: stepthrough preview state (progressive rebuild)
+- Highlight primitives across existing views
+- App: /stepthrough mode shell, StepPanel, navigation
+
+**Acceptance criteria**
+- Every StepScreen renders the right view and positions the tracker/editor correctly.
+
+### FEAT-57 — App: /stepthrough mode shell, StepPanel, navigation
+- priority: critical
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, app, commands
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+Add /stepthrough (alias /walkthrough) and an active mode. The right column renders StepPanel (number + few-word title, chapters, progress n/N) in place of ExplainerPanel. App owns input while active: Up/Down step, PgUp/PgDn chapter, Home/End, Esc exit; child overlays render display-only. `/stepthrough off` also exits.
+
+**Architecture**
+App state: stepthrough { steps, index } | null. Reuses the existing overlay plumbing for the left pane via the resolver. Header/status show 'Step n/N — title'.
+
+**Key decisions**
+- Global input capture; overlays read-only in this mode.
+
+**Alternatives considered**
+- Text-only dump (rejected).
+
+**Depends on**
+- Session/App: stepthrough preview state (progressive rebuild)
+- Step → screen resolver
+
+**Acceptance criteria**
+- Entering shows the list; Up/Down navigates and the left view follows; Esc restores the Explainer.
+
+### FEAT-56 — Highlight primitives across existing views
+- priority: high
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, highlight
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+Optional highlight props driven by the step resolver: ParamEditorOverlay highlights a group+label (accent marker + colour); PatternView highlights a cell/row/order; MixerOverlay highlights a row; SamplesOverlay a slot; InstrumentsOverlay an instrument; PatternsOverlay an order. Distinct from cursor/selection; purely visual.
+
+**Architecture**
+Shared helper to test whether a param/list row/cell is highlighted. Scroll-follow keeps the highlight visible.
+
+**Key decisions**
+- One consistent accent.
+- No state mutation.
+
+**Alternatives considered**
+- Animated highlights (rejected: noisy).
+
+**Depends on**
+- Core: BuildTarget, BuildStep model, buildSteps + applyBuildStep
+
+**Acceptance criteria**
+- Every view renders a supplied highlight, and highlighting changes no state.
+
+### FEAT-55 — Session/App: stepthrough preview state (progressive rebuild)
+- priority: critical
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, preview, state
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+Keep the live Session untouched. On /stepthrough, clone a BuildTarget from the live session (structuredClone of project/song/settings + mixer arrays). buildPreview(index) clones the base target, applies steps 0..index-1 via applyBuildStep, and returns it. App derives a previewState = { ...liveState, song, settings, project, channelVolume, channelMuted, masterVolume, masterFx } and passes it to the views via an optional state prop.
+
+**Architecture**
+Add optional `state` props to MixerOverlay/SamplesOverlay/InstrumentsOverlay/PatternsOverlay/ParamEditorOverlay (PatternView already takes state). Add optional settings/fx overrides to samplerGroups/spectralGroups/percussionGroups/masterFxGroups so editors render the grown settings. Waveforms fall back to the source when spectral is not yet enabled.
+
+**Key decisions**
+- No session mutation and no audio side effects.
+- structuredClone the model (Maps are supported) for cheap snapshots.
+
+**Alternatives considered**
+- Mutate the real Session with engine suppression (rejected: riskier, waveform/audio drift, harder to restore).
+
+**Open questions**
+- Should stepthrough disable transport playback?
+
+**Depends on**
+- Core: BuildTarget, BuildStep model, buildSteps + applyBuildStep
+
+**Acceptance criteria**
+- Advancing steps grows the rendered project; retreating shrinks it.
+- Leaving the mode restores the live session/Explainer exactly.
+
+### FEAT-54 — Core: BuildTarget, BuildStep model, buildSteps + applyBuildStep
+- priority: critical
+- tags: stepthrough, tutorial, automation, tui, core, plan-stepthrough-mode-progressive-project-rebuild-tutorial, generator
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: stepthrough-mode-progressive-project-rebuild-tutorial
+- kind: card
+- parent: FEAT-53
+
+**Plan:** Stepthrough mode — progressive project rebuild tutorial _(#plan-stepthrough-mode-progressive-project-rebuild-tutorial)_
+
+**Plan summary**
+STEPTHROUGH MODE: read the loaded .lampjson + SongModel, synthesise an ordered BuildStep recipe of how the project is assembled, and present it as a navigable, progressively-rebuilding tutorial. The step list replaces the right-hand Explainer panel; Up/Down moves through steps; the main area shows the target screen (tracker, instrument tab, mixer, samples, patterns, song) with the step's parameters/cells highlighted. Progressive rebuild: navigating applies steps 1..N to a scratch clone of the project model so it visibly grows. Steps carry machine-readable actions so the same recipe can drive future automation. Core model is framework-agnostic.
+
+**Approach**
+New src/core/stepthrough.ts. BuildTarget = { project, song, settings, channelVolume, channelMuted, masterVolume, masterFx }. BuildStep = { id, title, detail, screen, instrument?, order?, highlights, action }. buildSteps(target) walks a canonical order and emits a step only where a value differs from the relevant default, so empty projects yield few steps. applyBuildStep(target, step) mutates a BuildTarget in place; pattern actions use applyEdit so timelines update. Pure: no Ink, no audio.
+
+**Architecture**
+Chapters: song meta/timing; source-sample names/comments; per instrument (name, source/loop/trim, ADSR, tune/level, pan/vibrato, polyphony, Spectral enable/mode/sourceB/params/mix/one-shot, Percussion); mixer; master FX; patterns (one step per non-empty channel/order/row); arrangement. Action kinds: songMeta, timing, sampleName, instrumentName, instrumentSource, instrumentParam, spectralParam, percussionParam, channelVolume, channelMute, masterVolume, masterFx, patternCell, orderPattern.
+
+**Key decisions**
+- Derive from final state + defaults (no edit history in .lampjson).
+- Read-only model mutation only; never touches audio.
+- Keep in core so a future script runner reuses applyBuildStep.
+
+**Alternatives considered**
+- Build event log stored in the project (works only for future projects; noted as a complement).
+
+**Open questions**
+- Group pattern rows per pattern for very long songs?
+
+**Acceptance criteria**
+- buildSteps is stable and ordered for the bundled project; skips defaults.
+- applyBuildStep(step) reproduces each emitted value.
+- Round-trip test: apply all steps to a default target equals the source target for the covered fields.
+
 ### FEAT-52 — Pattern Manager overlay: add/remove/duplicate/re-arrange orders
 - priority: high
 - tags: tui, patterns, pattern-manager, orders, tracker, reorder

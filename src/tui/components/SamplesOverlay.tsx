@@ -4,6 +4,7 @@ import { renderWaveform } from "../format";
 import type { Session } from "../session";
 import { useSession } from "../hooks";
 import type { ExplainerText } from "../explainer";
+import type { SessionState } from "../session";
 
 interface Props {
   session: Session;
@@ -14,6 +15,10 @@ interface Props {
   width?: number;
   /** Height available to the overlay. */
   height?: number;
+  /** Preview state supplied by stepthrough (defaults to the live session). */
+  state?: SessionState;
+  /** Stepthrough sample slot to mark. */
+  highlightSlot?: number;
 }
 
 type InfoField = "name" | "comments";
@@ -33,8 +38,11 @@ export function SamplesOverlay({
   onExplain,
   width: availableWidth,
   height: availableHeight,
+  state: stateOverride,
+  highlightSlot,
 }: Props) {
-  const state = useSession(session);
+  const live = useSession(session);
+  const state = stateOverride ?? live;
   const { columns } = useWindowSize();
   const [index, setIndex] = useState(0);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -204,10 +212,17 @@ export function SamplesOverlay({
       <Box flexDirection="column">
         {names.map((name, sampleIndex) => {
           const cursor = sampleIndex === selected;
+          const marked = sampleIndex === highlightSlot;
           return (
             <Box key={sampleIndex}>
               <Text
-                color={cursor ? "black" : undefined}
+                color={marked && !cursor ? "yellow" : undefined}
+                bold={marked}
+              >
+                {marked ? "◆" : " "}
+              </Text>
+              <Text
+                color={cursor ? "black" : marked ? "yellow" : undefined}
                 backgroundColor={cursor ? "white" : undefined}
               >
                 {String(sampleIndex).padStart(2, "0")}

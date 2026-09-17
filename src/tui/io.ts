@@ -21,6 +21,7 @@ import {
   writeBytesSafe,
 } from "@/runtime/files";
 import type { LoadedSong } from "@/shared/types";
+import { buildSteps } from "@/core/stepthrough";
 import type { Session } from "./session";
 
 export interface IoResult {
@@ -129,6 +130,29 @@ export async function openPath(
     ok: false,
     error: `Unsupported file "${filePath}" (expected .lampjson or .fur)`,
   };
+}
+
+/** Writes the project's stepthrough recipe as JSON for automation. */
+export async function exportStepRecipe(
+  session: Session,
+  filePath: string,
+): Promise<IoResult> {
+  const target = session.snapshotTarget();
+  if (!target) return { ok: false, error: "No project loaded" };
+  const steps = buildSteps(target);
+  const payload = JSON.stringify(
+    { version: 1, generated: new Date().toISOString(), steps },
+    null,
+    2,
+  );
+  const result = await writeBytesSafe(filePath, Buffer.from(payload, "utf8"));
+  return result.ok
+    ? {
+        ok: true,
+        message: `Exported ${steps.length} steps to ${filePath}`,
+        path: filePath,
+      }
+    : { ok: false, error: result.error };
 }
 
 /** Starts a fresh song from the default project. */

@@ -6,6 +6,7 @@ import {
   exportFur,
   exportMidi,
   exportSamplesZip,
+  exportStepRecipe,
   exportWav,
   newProject,
   openPath,
@@ -704,6 +705,38 @@ export const builtinCommands: CommandDef[] = [
       return ctx.session.moveOrder(order, direction)
         ? ok(`Moved order ${order} ${arg(args, "direction")}`)
         : fail("Cannot move further");
+    },
+  },
+  {
+    id: "stepthrough",
+    name: "stepthrough",
+    aliases: ["walkthrough", "steps"],
+    description: "Guided step-by-step rebuild of the loaded project",
+    category: "view",
+    args: [{ name: "state", type: "enum", choices: ["on", "off"] }],
+    run: (args, ctx) => {
+      if (arg(args, "state") === "off") {
+        ctx.openOverlay?.("stepthrough", -1);
+        return ok("Stepthrough off");
+      }
+      ctx.openOverlay?.("stepthrough");
+      return ok("Stepthrough");
+    },
+  },
+  {
+    id: "stepexport",
+    name: "stepexport",
+    aliases: ["steprecipe"],
+    description: "Export the stepthrough rebuild recipe as JSON",
+    category: "view",
+    args: [pathArg],
+    run: async (args, ctx) => {
+      const target = arg(args, "path");
+      if (!target) return fail("stepexport needs a path");
+      const result = await exportStepRecipe(ctx.session, target);
+      return result.ok
+        ? ok(result.message, { path: result.path })
+        : fail(result.error ?? "Export failed");
     },
   },
   {

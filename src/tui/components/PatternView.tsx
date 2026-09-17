@@ -23,6 +23,8 @@ interface Props {
   viewportRows: number;
   playhead: { order: number; row: number } | null;
   selection: SelectionRect | null;
+  /** Stepthrough cells to mark (order/channel/row). */
+  highlight?: Array<{ channel: number; order: number; row: number }>;
 }
 
 interface Segment {
@@ -91,6 +93,7 @@ export function PatternView({
   viewportRows,
   playhead,
   selection,
+  highlight,
 }: Props) {
   const { song, cursor, viewOrder } = state;
   if (!song) {
@@ -191,6 +194,11 @@ export function PatternView({
             state.colorInstruments && info
               ? instrumentTint(info.colorRgb, isPlayheadRow)
               : undefined;
+          const isHighlighted =
+            highlight?.some(
+              (h) =>
+                h.channel === channel && h.order === viewOrder && h.row === row,
+            ) ?? false;
           return (
             <Text key={channel}>
               {segments.map((segment, index) => {
@@ -215,7 +223,7 @@ export function PatternView({
                   <Text
                     key={index}
                     color={
-                      isCursor
+                      isCursor || isHighlighted
                         ? "black"
                         : beatBackground
                           ? undefined
@@ -228,10 +236,16 @@ export function PatternView({
                         ? "white"
                         : inSelection
                           ? "blue"
-                          : (tint ?? (beatBackground ? "gray" : undefined))
+                          : isHighlighted
+                            ? "yellow"
+                            : (tint ?? (beatBackground ? "gray" : undefined))
                     }
                     inverse={
-                      isPlayheadRow && !isCursor && !inSelection && !tint
+                      isPlayheadRow &&
+                      !isCursor &&
+                      !inSelection &&
+                      !tint &&
+                      !isHighlighted
                     }
                   >
                     {segment.text}

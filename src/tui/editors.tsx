@@ -10,6 +10,7 @@ import {
   type PercussionNoiseColor,
   type PercussionPreset,
 } from "@/core/spectral";
+import type { MasterFxSettings } from "@/core/masterFx";
 import { defaultSamplerSettings, type SamplerSettings } from "@/core/sampler";
 import { renderEnvelope, renderWaveform } from "./format";
 import type { EditorGroup, EditorParam } from "./components/ParamEditorOverlay";
@@ -103,8 +104,15 @@ const parseSource = (value: string): number | null =>
   value === "none" ? null : Number(value);
 
 /** Sampler/instrument editor groups. */
-export function samplerGroups(session: Session, index: number): EditorGroup[] {
-  const s = session.samplerSettings(index) ?? defaultSamplerSettings();
+export function samplerGroups(
+  session: Session,
+  index: number,
+  settingsOverride?: SamplerSettings,
+): EditorGroup[] {
+  const s =
+    settingsOverride ??
+    session.samplerSettings(index) ??
+    defaultSamplerSettings();
   const set = (patch: Partial<SamplerSettings>) =>
     session.updateSamplerSetting(index, patch);
   const effective = session.effectiveWaveform(index);
@@ -250,15 +258,29 @@ export function samplerGroups(session: Session, index: number): EditorGroup[] {
 }
 
 /** Spectral fusion editor groups. */
-export function spectralGroups(session: Session, index: number): EditorGroup[] {
-  const s = session.samplerSettings(index) ?? defaultSamplerSettings();
+export function spectralGroups(
+  session: Session,
+  index: number,
+  settingsOverride?: SamplerSettings,
+): EditorGroup[] {
+  const s =
+    settingsOverride ??
+    session.samplerSettings(index) ??
+    defaultSamplerSettings();
   const sp = s.spectral;
   const set = (patch: Partial<typeof sp>) =>
     session.updateSamplerSetting(index, { spectral: { ...sp, ...patch } });
   const setSample = (sourceIndex: number | null) =>
     session.updateSamplerSetting(index, { sourceIndex });
-  const fused = session.fusionWaveform(index);
-  const waveform = fused.length > 0 ? fused : session.effectiveWaveform(index);
+  const fused = sp.enabled ? session.fusionWaveform(index) : [];
+  const waveform =
+    fused.length > 0
+      ? fused
+      : sp.enabled
+        ? session.effectiveWaveform(index)
+        : s.sourceIndex !== null
+          ? session.sampleWaveform(s.sourceIndex)
+          : [];
   const needsB = spectralModeNeedsB(sp.mode);
   const hasAmount = spectralModeHasAmount(sp.mode);
   const amountKey:
@@ -407,16 +429,27 @@ export function spectralGroups(session: Session, index: number): EditorGroup[] {
 export function percussionGroups(
   session: Session,
   index: number,
+  settingsOverride?: SamplerSettings,
 ): EditorGroup[] {
-  const s = session.samplerSettings(index) ?? defaultSamplerSettings();
+  const s =
+    settingsOverride ??
+    session.samplerSettings(index) ??
+    defaultSamplerSettings();
   const sp = s.spectral;
   const percussion = sp.percussion;
   const set = (patch: Partial<typeof percussion>) =>
     session.updateSamplerSetting(index, {
       spectral: { ...sp, percussion: { ...percussion, ...patch } },
     });
-  const fused = session.fusionWaveform(index);
-  const waveform = fused.length > 0 ? fused : session.effectiveWaveform(index);
+  const fused = percussion.enabled ? session.fusionWaveform(index) : [];
+  const waveform =
+    fused.length > 0
+      ? fused
+      : percussion.enabled
+        ? session.effectiveWaveform(index)
+        : s.sourceIndex !== null
+          ? session.sampleWaveform(s.sourceIndex)
+          : [];
 
   const groups: EditorGroup[] = [
     {
@@ -597,8 +630,11 @@ export function percussionGroups(
 }
 
 /** Master output FX editor groups. */
-export function masterFxGroups(session: Session): EditorGroup[] {
-  const fx = session.getState().masterFx;
+export function masterFxGroups(
+  session: Session,
+  fxOverride?: MasterFxSettings,
+): EditorGroup[] {
+  const fx = fxOverride ?? session.getState().masterFx;
   const delay = fx.delay;
   const reverb = fx.reverb;
   const setDelay = (patch: Partial<typeof delay>) =>

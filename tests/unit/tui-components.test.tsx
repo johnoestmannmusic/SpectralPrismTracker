@@ -4,6 +4,8 @@ import { MixerOverlay } from "@/tui/components/MixerOverlay";
 import { SamplesOverlay } from "@/tui/components/SamplesOverlay";
 import { InstrumentsOverlay } from "@/tui/components/InstrumentsOverlay";
 import { PatternsOverlay } from "@/tui/components/PatternsOverlay";
+import { StepPanel } from "@/tui/components/StepPanel";
+import { buildSteps } from "@/core/stepthrough";
 import { StatusBar } from "@/tui/components/StatusBar";
 import {
   ParamEditorOverlay,
@@ -249,6 +251,21 @@ describe("TUI overlays", () => {
       stdin.write("[");
       await tick();
       expect(onSelect).toHaveBeenLastCalledWith(2);
+      unmount();
+    });
+  });
+
+  describe("step panel", () => {
+    it("lists the recipe and marks the current step", () => {
+      const steps = buildSteps(session.snapshotTarget()!);
+      expect(steps.length).toBeGreaterThan(0);
+      const { lastFrame, unmount } = render(
+        <StepPanel steps={steps} index={1} width={40} height={20} />,
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("▶");
+      expect(frame).toContain("2/");
+      expect(frame).toContain(steps[1]!.title);
       unmount();
     });
   });

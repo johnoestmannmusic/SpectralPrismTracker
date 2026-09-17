@@ -2,7 +2,7 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { useSession } from "../hooks";
 import type { ExplainerText } from "../explainer";
-import type { Session } from "../session";
+import type { Session, SessionState } from "../session";
 
 interface Props {
   session: Session;
@@ -11,6 +11,10 @@ interface Props {
   onExplain?: (content: ExplainerText) => void;
   /** Height available to the overlay (for list scrolling). */
   height?: number;
+  /** Preview state supplied by stepthrough (defaults to the live session). */
+  state?: SessionState;
+  /** Stepthrough order to mark. */
+  highlightOrder?: number;
 }
 
 /**
@@ -23,8 +27,11 @@ export function PatternsOverlay({
   onClose,
   onExplain,
   height,
+  state: stateOverride,
+  highlightOrder,
 }: Props) {
-  const state = useSession(session);
+  const live = useSession(session);
+  const state = stateOverride ?? live;
   const [selected, setSelected] = useState(state.viewOrder);
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -183,10 +190,17 @@ export function PatternsOverlay({
           orders.map((pos) => {
             const cursor = pos === clamped;
             const isView = pos === state.viewOrder;
+            const marked = pos === highlightOrder;
             return (
               <Box key={pos}>
                 <Text
-                  color={cursor ? "black" : undefined}
+                  color={marked && !cursor ? "yellow" : undefined}
+                  bold={marked}
+                >
+                  {marked ? "◆" : " "}
+                </Text>
+                <Text
+                  color={cursor ? "black" : marked ? "yellow" : undefined}
                   backgroundColor={cursor ? "white" : undefined}
                 >
                   {String(pos).padStart(2, "0")}
