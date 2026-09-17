@@ -14,7 +14,10 @@ use js_sys::{Float32Array, Object, Reflect};
 use prism_dsp::fusion::{
     effective_mode, render_fused_loop, FusionMode, FusionRenderParams,
 };
-use prism_dsp::render::DEFAULT_ROOT_NOTE;
+use prism_dsp::modulate::{
+    render_fused_modulated_loop, ModulationParams, MOD_TARGET_COUNT,
+};
+use prism_dsp::render::{LoopBufferData, DEFAULT_ROOT_NOTE};
 use wasm_bindgen::prelude::*;
 
 fn parse_mode(mode: &str) -> FusionMode {
@@ -118,4 +121,81 @@ pub fn render_fused(
     set(&obj, "sampleRate", &JsValue::from_f64(output.sample_rate as f64))?;
     set(&obj, "data", &Float32Array::from(flat.as_slice()))?;
     Ok(obj)
+}
+
+fn output_object(output: LoopBufferData) -> Result<Object, JsValue> {
+    let out_channels = output.channels.len() as u32;
+    let flat: Vec<f32> = output.channels.into_iter().flatten().collect();
+    let obj = Object::new();
+    set(&obj, "channelCount", &JsValue::from_f64(out_channels as f64))?;
+    set(&obj, "sampleRate", &JsValue::from_f64(output.sample_rate as f64))?;
+    set(&obj, "data", &Float32Array::from(flat.as_slice()))?;
+    Ok(obj)
+}
+
+/// Modulated sibling of `render_fused`: same parameters, plus a flat array of
+/// per-control-point absolute values for every modulatable target
+/// (`MOD_TARGET_COUNT * num_points`, in the shared target order) and a bitmask
+/// selecting which targets actually vary. With `track_mask == 0` it produces
+/// output identical to `render_fused`.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn render_fused_modulated(
+    a_flat: Vec<f32>,
+    a_channels: u32,
+    b_flat: Vec<f32>,
+    b_channels: u32,
+    sample_rate: f32,
+    freeze_point_a_pct: f32,
+    volume_a_pct: f32,
+    tune_a_semitones: f32,
+    formant_shift_a_semitones: f32,
+    mode: &str,
+    freeze_point_b_pct: f32,
+    formant_shift_b_semitones: f32,
+    volume_b_pct: f32,
+    tune_b_semitones: f32,
+    mix_amount_pct: f32,
+    cross_synth_amount_pct: f32,
+    convolve_amount_pct: f32,
+    ring_mod_amount_pct: f32,
+    stereo_width_pct: f32,
+    loop_length_seconds: f32,
+    tracks_flat: Vec<f32>,
+    num_points: u32,
+    track_mask: u32,
+) -> Result<Object, JsValue> {
+    let a = split(a_flat, a_channels as usize)?;
+    if a.is_empty() {
+        return Err(JsValue::from_str("Sample A is empty"));
+    }
+    let b = split(b_flat, b_channels as usize)?;
+    let np = num_points as usize;
+    if np == 0 || tracks_flat.len() != MOD_TARGET_COUNT * np {
+        return Err(JsValue::from_str("modulation track length does not match MOD_TARGET_COUNT * num_points"));
+    }
+
+    let fusion = FusionRenderParams {
+        mode: parse_mode(mode),
+        freeze_point_b_pct,
+        formant_shift_b_semitones,
+        volume_b_pct,
+        tune_b_semitones,
+        mix_amount_pct,
+        cross_synth_amount_pct,
+        convolve_amount_pct,
+        ring_mod_amount_pct,
+    };
+    let params = ModulationParams {
+        freeze_point_a_pct,
+        volume_a_pct,
+        tune_a_semitones,
+        formant_shift_a_semitones,
+        fusion,
+        stereo_width_pct,
+        loop_length_seconds,
+        root_note: DEFAULT_ROOT_NOTE,
+    };
+    let output = render_fused_modulated_loop(&a, &b, sample_rate, &params, &tracks_flat, np, track_mask);
+    output_object(output)
 }

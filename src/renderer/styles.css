@@ -619,6 +619,27 @@ select {
   color: var(--text);
 }
 
+.modulation {
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-top: 10px;
+}
+
+.modulation h3 {
+  margin-top: 0;
+}
+
+.mod-route {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--edge);
+}
+
+.mod-route:last-of-type {
+  border-bottom: none;
+}
+
 .floating-body input[type="number"] {
   width: 72px;
   background: var(--input-bg);

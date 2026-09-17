@@ -1,6 +1,7 @@
 import { audioClip, type AudioClip } from "@/core/dsp";
 import {
   registerSpectralRenderer,
+  sampleSpectralModulation,
   setSpectralWasmAvailable,
   type SpectralRenderFn,
   type SpectralSettings,
@@ -35,6 +36,37 @@ export interface PrismWasmModule {
     stereoWidth: number,
     loopLengthSeconds: number,
   ): PrismWasmOutput;
+  /**
+   * Modulated sibling of `render_fused`. Optional so an older WASM build still
+   * works (the renderer falls back to `render_fused`). `tracksFlat` is
+   * `SPECTRAL_PARAMS.length * numPoints` absolute values in the fixed target
+   * order; `trackMask` selects which targets vary.
+   */
+  render_fused_modulated?(
+    aFlat: Float32Array,
+    aChannels: number,
+    bFlat: Float32Array,
+    bChannels: number,
+    sampleRate: number,
+    freezePointA: number,
+    volumeA: number,
+    tuneA: number,
+    formantA: number,
+    mode: string,
+    freezePointB: number,
+    formantB: number,
+    volumeB: number,
+    tuneB: number,
+    mixAmount: number,
+    crossSynthAmount: number,
+    convolveAmount: number,
+    ringModAmount: number,
+    stereoWidth: number,
+    loopLengthSeconds: number,
+    tracksFlat: Float32Array,
+    numPoints: number,
+    trackMask: number,
+  ): PrismWasmOutput;
 }
 
 function flatten(clip: AudioClip): Float32Array {
@@ -60,28 +92,58 @@ export function makeSpectralRenderer(wasm: PrismWasmModule): SyncSpectralRenderF
   return (a: AudioClip, b: AudioClip | null, settings: SpectralSettings): AudioClip => {
     const aFlat = flatten(a);
     const bFlat = b ? flatten(b) : new Float32Array(0);
-    const result = wasm.render_fused(
-      aFlat,
-      a.channels.length,
-      bFlat,
-      b ? b.channels.length : 0,
-      a.sampleRate,
-      settings.freezePoint,
-      settings.volume,
-      settings.tune,
-      settings.formantShift,
-      settings.mode,
-      settings.freezePointB,
-      settings.formantShiftB,
-      settings.volumeB,
-      settings.tuneB,
-      settings.mixAmount,
-      settings.crossSynthAmount,
-      settings.convolveAmount,
-      settings.ringModAmount,
-      settings.stereoWidth,
-      settings.loopLengthSeconds,
-    );
+    const { points, mask, numPoints } = sampleSpectralModulation(settings);
+    let result: PrismWasmOutput;
+    if (mask !== 0 && wasm.render_fused_modulated) {
+      result = wasm.render_fused_modulated(
+        aFlat,
+        a.channels.length,
+        bFlat,
+        b ? b.channels.length : 0,
+        a.sampleRate,
+        settings.freezePoint,
+        settings.volume,
+        settings.tune,
+        settings.formantShift,
+        settings.mode,
+        settings.freezePointB,
+        settings.formantShiftB,
+        settings.volumeB,
+        settings.tuneB,
+        settings.mixAmount,
+        settings.crossSynthAmount,
+        settings.convolveAmount,
+        settings.ringModAmount,
+        settings.stereoWidth,
+        settings.loopLengthSeconds,
+        points,
+        numPoints,
+        mask,
+      );
+    } else {
+      result = wasm.render_fused(
+        aFlat,
+        a.channels.length,
+        bFlat,
+        b ? b.channels.length : 0,
+        a.sampleRate,
+        settings.freezePoint,
+        settings.volume,
+        settings.tune,
+        settings.formantShift,
+        settings.mode,
+        settings.freezePointB,
+        settings.formantShiftB,
+        settings.volumeB,
+        settings.tuneB,
+        settings.mixAmount,
+        settings.crossSynthAmount,
+        settings.convolveAmount,
+        settings.ringModAmount,
+        settings.stereoWidth,
+        settings.loopLengthSeconds,
+      );
+    }
     const channelCount = Math.max(result.channelCount, 1);
     const frames = Math.floor(result.data.length / channelCount);
     const channels: Float32Array[] = [];

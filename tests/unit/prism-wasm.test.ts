@@ -1,8 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { initSync, render_fused } from "@/renderer/vendor/prism/prism_wasm.js";
+import {
+  initSync,
+  render_fused,
+  render_fused_modulated,
+} from "@/renderer/vendor/prism/prism_wasm.js";
 import { makeSpectralRenderer, type PrismWasmModule } from "@/wasm/prism";
-import { defaultSpectralSettings } from "@/core/spectral";
+import { defaultSpectralSettings, sampleSpectralModulation } from "@/core/spectral";
 import { projectPath } from "./fixtures";
 
 beforeAll(() => {
@@ -13,8 +17,9 @@ beforeAll(() => {
 describe("prism_dsp WASM (real engine)", () => {
   it("freezes a sine into a finite stereo loop", () => {
     const rate = 44_100;
-    const data = Float32Array.from({ length: rate }, (_, i) =>
-      Math.sin((2 * Math.PI * 220 * i) / rate) * 0.5,
+    const data = Float32Array.from(
+      { length: rate },
+      (_, i) => Math.sin((2 * Math.PI * 220 * i) / rate) * 0.5,
     );
     const settings = defaultSpectralSettings();
     settings.mode = "off";
@@ -27,14 +32,17 @@ describe("prism_dsp WASM (real engine)", () => {
     const duration = clip.channels[0]!.length / clip.sampleRate;
     expect(Math.abs(duration - 1)).toBeLessThan(0.05);
     expect(Array.from(clip.channels[0]!).every(Number.isFinite)).toBe(true);
-    expect(Array.from(clip.channels.flatMap((c) => Array.from(c))).some((v) => Math.abs(v) > 1e-6)).toBe(true);
+    expect(
+      Array.from(clip.channels.flatMap((c) => Array.from(c))).some((v) => Math.abs(v) > 1e-6),
+    ).toBe(true);
   });
 
   it("cross-synthesises two samples without non-finite output", () => {
     const rate = 44_100;
     const tone = (freq: number) =>
-      Float32Array.from({ length: rate / 2 }, (_, i) =>
-        Math.sin((2 * Math.PI * freq * i) / rate) * 0.5,
+      Float32Array.from(
+        { length: rate / 2 },
+        (_, i) => Math.sin((2 * Math.PI * freq * i) / rate) * 0.5,
       );
     const settings = defaultSpectralSettings();
     settings.mode = "cross-synth";
@@ -47,6 +55,51 @@ describe("prism_dsp WASM (real engine)", () => {
       { channels: [tone(330)], sampleRate: rate },
       settings,
     );
-    expect(Array.from(clip.channels.flatMap((c) => Array.from(c))).every(Number.isFinite)).toBe(true);
+    expect(Array.from(clip.channels.flatMap((c) => Array.from(c))).every(Number.isFinite)).toBe(
+      true,
+    );
+  });
+
+  it("bakes a parameter modulation route into the result", () => {
+    const rate = 44_100;
+    const data = Float32Array.from(
+      { length: rate },
+      (_, i) => Math.sin((2 * Math.PI * 220 * i) / rate) * 0.5,
+    );
+    const plain = defaultSpectralSettings();
+    plain.mode = "off";
+    plain.loopLengthSeconds = 1;
+
+    const modulated = defaultSpectralSettings();
+    modulated.mode = "off";
+    modulated.loopLengthSeconds = 1;
+    modulated.modulation = [
+      {
+        target: "tuneA",
+        shape: "lfo",
+        depth: 5,
+        rateHz: 1,
+        phase: 0,
+        bipolar: true,
+      },
+    ];
+
+    const wasm = {
+      render_fused,
+      render_fused_modulated,
+    } as unknown as PrismWasmModule;
+    const render = makeSpectralRenderer(wasm);
+    const plainClip = render({ channels: [data], sampleRate: rate }, null, plain);
+    const modClip = render({ channels: [data], sampleRate: rate }, null, modulated);
+
+    expect(Array.from(modClip.channels.flatMap((c) => Array.from(c))).every(Number.isFinite)).toBe(
+      true,
+    );
+    const diff: number = Array.from(modClip.channels[0]!).reduce(
+      (sum, v, i) => sum + (v - plainClip.channels[0]![i]!) ** 2,
+      0,
+    );
+    expect(diff).toBeGreaterThan(1e-6);
+    expect(sampleSpectralModulation(modulated).mask).not.toBe(0);
   });
 });

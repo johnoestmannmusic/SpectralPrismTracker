@@ -1,4 +1,4 @@
-import init, { render_fused } from "./prism_wasm.js";
+import init, { render_fused, render_fused_modulated } from "./prism_wasm.js";
 import { registerPrismWasm, registerPrismWasmWorker, type PrismWasmModule } from "@/wasm/prism";
 import { PrismWorkerClient } from "@/wasm/prismWorkerClient";
 
@@ -23,7 +23,7 @@ export async function initPrismWasm(): Promise<boolean> {
   }
   try {
     await init();
-    registerPrismWasm({ render_fused } as unknown as PrismWasmModule);
+    registerPrismWasm({ render_fused, render_fused_modulated } as unknown as PrismWasmModule);
     initialized = true;
     return true;
   } catch (error) {

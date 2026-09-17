@@ -1,10 +1,16 @@
 import { A_REF_NOTE } from "./pitch";
-import {
-  defaultSamplerSettings,
-  type SamplerSettings,
-} from "./sampler";
+import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
 import type { NoteValue, PatternCell } from "./fur/types";
-import { SPECTRAL_FUSION_MODES, defaultSpectralSettings, type SpectralSettings } from "./spectral";
+import {
+  SPECTRAL_FUSION_MODES,
+  SPECTRAL_MOD_SHAPES,
+  SPECTRAL_PARAMS,
+  defaultSpectralSettings,
+  type SpectralModRoute,
+  type SpectralModShape,
+  type SpectralParamId,
+  type SpectralSettings,
+} from "./spectral";
 import { retime, type PatternSnapshot, type SongModel } from "./songModel";
 import { defaultMasterFx, masterFxFromJson, type MasterFxSettings } from "./masterFx";
 
@@ -202,6 +208,30 @@ const LEGACY_MODE_ALIASES: Record<string, SpectralSettings["mode"]> = {
   "spectral-blend": "cross-synth",
 };
 
+function modRoutesFromJson(value: unknown): SpectralModRoute[] {
+  if (!Array.isArray(value)) return [];
+  const validTargets = new Set<string>(SPECTRAL_PARAMS.map((p) => p.id));
+  const validShapes = new Set<string>(SPECTRAL_MOD_SHAPES);
+  const routes: SpectralModRoute[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.target !== "string" || !validTargets.has(obj.target)) continue;
+    routes.push({
+      target: obj.target as SpectralParamId,
+      shape:
+        typeof obj.shape === "string" && validShapes.has(obj.shape)
+          ? (obj.shape as SpectralModShape)
+          : "lfo",
+      depth: typeof obj.depth === "number" ? obj.depth : 0,
+      rateHz: typeof obj.rateHz === "number" ? obj.rateHz : 1,
+      phase: typeof obj.phase === "number" ? obj.phase : 0,
+      bipolar: typeof obj.bipolar === "boolean" ? obj.bipolar : true,
+    });
+  }
+  return routes;
+}
+
 function spectralFromJson(value: unknown): SpectralSettings {
   const d = defaultSpectralSettings();
   if (!value || typeof value !== "object") return d;
@@ -236,6 +266,7 @@ function spectralFromJson(value: unknown): SpectralSettings {
     ringModAmount: num("ringModAmount", d.ringModAmount),
     stereoWidth: num("stereoWidth", d.stereoWidth),
     loopLengthSeconds: num("loopLengthSeconds", d.loopLengthSeconds),
+    modulation: modRoutesFromJson(obj.modulation),
     savedStartSec: num("savedStartSec", d.savedStartSec),
     savedEndSec: num("savedEndSec", d.savedEndSec),
     savedLooping: typeof obj.savedLooping === "boolean" ? obj.savedLooping : d.savedLooping,
@@ -273,7 +304,10 @@ export function samplerFromJson(value: unknown): SamplerSettings {
   };
 }
 
-export function samplerToJson(settings: SamplerSettings, includeMuted = false): Record<string, unknown> {
+export function samplerToJson(
+  settings: SamplerSettings,
+  includeMuted = false,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {
     sourceIndex: settings.sourceIndex,
     startSec: settings.startSec,

@@ -1,4 +1,4 @@
-import init, { render_fused } from "@/renderer/vendor/prism/prism_wasm.js";
+import init, { render_fused, render_fused_modulated } from "@/renderer/vendor/prism/prism_wasm.js";
 import { makeSpectralRenderer, type PrismWasmModule, type SyncSpectralRenderFn } from "./prism";
 import type { WorkerRequest, WorkerResponse } from "./prismWorkerProtocol";
 
@@ -13,7 +13,9 @@ let ready: Promise<SyncSpectralRenderFn> | null = null;
 
 function ensureReady(): Promise<SyncSpectralRenderFn> {
   if (!ready) {
-    ready = init().then(() => makeSpectralRenderer({ render_fused } as unknown as PrismWasmModule));
+    ready = init().then(() =>
+      makeSpectralRenderer({ render_fused, render_fused_modulated } as unknown as PrismWasmModule),
+    );
   }
   return ready;
 }

@@ -2,9 +2,17 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { SamplerSettings } from "@/core/sampler";
 import {
   SPECTRAL_FUSION_MODES,
+  SPECTRAL_MOD_SHAPES,
+  SPECTRAL_PARAMS,
   spectralModeHasAmount,
   spectralModeLabel,
   spectralModeNeedsB,
+  spectralBaseValue,
+  spectralParamMeta,
+  type SpectralModRoute,
+  type SpectralModShape,
+  type SpectralParamId,
+  type SpectralSettings,
   MAX_LOOP_SECONDS,
   MIN_LOOP_SECONDS,
 } from "@/core/spectral";
@@ -72,7 +80,10 @@ export function SamplerEditor(props: SamplerEditorProps) {
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
-    drag.current = { dx: event.clientX - position.x, dy: event.clientY - position.y };
+    drag.current = {
+      dx: event.clientX - position.x,
+      dy: event.clientY - position.y,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -139,36 +150,70 @@ export function SamplerEditor(props: SamplerEditorProps) {
           </label>
         </div>
         <div className="row tabs">
-          <button className={!props.spectralTab ? "active" : ""} onClick={() => props.onTabChange(false)}>
+          <button
+            className={!props.spectralTab ? "active" : ""}
+            onClick={() => props.onTabChange(false)}
+          >
             Sampler
           </button>
-          <button className={props.spectralTab ? "active" : ""} onClick={() => props.onTabChange(true)}>
+          <button
+            className={props.spectralTab ? "active" : ""}
+            onClick={() => props.onTabChange(true)}
+          >
             Spectral
           </button>
         </div>
 
         {props.spectralTab ? (
-          <SpectralTab {...props} duration={duration} peaks={peaks} markers={markers} rendering={rendering} />
+          <SpectralTab
+            {...props}
+            duration={duration}
+            peaks={peaks}
+            markers={markers}
+            rendering={rendering}
+          />
         ) : (
           <div className="editor-tab">
             <Waveform
               peaks={peaks}
               markers={markers}
               height={110}
-              trim={{ start: settings.startSec, end: settings.endSec, duration }}
+              trim={{
+                start: settings.startSec,
+                end: settings.endSec,
+                duration,
+              }}
               onTrimChange={(start, end) => props.onUpdate({ startSec: start, endSec: end })}
               emptyLabel="Assign a source sample"
             />
             <div className="row wrap">
-              <NumberField label="Start (s)" value={settings.startSec} min={0} max={duration} onChange={(v) => props.onUpdate({ startSec: v })} />
-              <NumberField label="End (s)" value={settings.endSec} min={settings.startSec} max={duration} onChange={(v) => props.onUpdate({ endSec: v })} />
-              <button onClick={() => props.onUpdate({ startSec: 0, endSec: duration })}>Reset Start/End</button>
+              <NumberField
+                label="Start (s)"
+                value={settings.startSec}
+                min={0}
+                max={duration}
+                onChange={(v) => props.onUpdate({ startSec: v })}
+              />
+              <NumberField
+                label="End (s)"
+                value={settings.endSec}
+                min={settings.startSec}
+                max={duration}
+                onChange={(v) => props.onUpdate({ endSec: v })}
+              />
+              <button onClick={() => props.onUpdate({ startSec: 0, endSec: duration })}>
+                Reset Start/End
+              </button>
             </div>
             <div className="row wrap">
               <label>Source</label>
               <select
                 value={settings.sourceIndex === null ? "" : String(settings.sourceIndex)}
-                onChange={(e) => props.onUpdate({ sourceIndex: e.target.value === "" ? null : Number(e.target.value) })}
+                onChange={(e) =>
+                  props.onUpdate({
+                    sourceIndex: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
               >
                 <option value="">Unassigned</option>
                 {props.sampleNames.map((n, slot) =>
@@ -179,13 +224,29 @@ export function SamplerEditor(props: SamplerEditorProps) {
                   ) : null,
                 )}
               </select>
-              <NumberField label="Transpose (st)" value={settings.transpose} min={-48} max={48} step={0.01} onChange={(v) => props.onUpdate({ transpose: v })} />
+              <NumberField
+                label="Transpose (st)"
+                value={settings.transpose}
+                min={-48}
+                max={48}
+                step={0.01}
+                onChange={(v) => props.onUpdate({ transpose: v })}
+              />
               <label>
-                <input type="checkbox" checked={settings.looping} onChange={(e) => props.onUpdate({ looping: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={settings.looping}
+                  onChange={(e) => props.onUpdate({ looping: e.target.checked })}
+                />
                 Loop
               </label>
               <label>
-                <input type="checkbox" checked={settings.pingPong} disabled={!settings.looping} onChange={(e) => props.onUpdate({ pingPong: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={settings.pingPong}
+                  disabled={!settings.looping}
+                  onChange={(e) => props.onUpdate({ pingPong: e.target.checked })}
+                />
                 Ping-pong
               </label>
             </div>
@@ -193,12 +254,44 @@ export function SamplerEditor(props: SamplerEditorProps) {
             <EnvelopeControls settings={settings} onUpdate={props.onUpdate} />
 
             <div className="row wrap">
-              <Slider label="Pan" value={settings.pan * 100} min={-100} max={100} step={1} onChange={(v) => props.onUpdate({ pan: v / 100 })} />
-              <Slider label="Random Pan (%)" value={settings.panRandomRange * 100} min={0} max={100} step={1} onChange={(v) => props.onUpdate({ panRandomRange: v / 100 })} />
-              <Slider label="Vibrato Speed (Hz)" value={settings.vibratoSpeed} min={0} max={20} step={0.1} onChange={(v) => props.onUpdate({ vibratoSpeed: v })} />
-              <Slider label="Vibrato Depth (st)" value={settings.vibratoDepth} min={0} max={2} step={0.01} onChange={(v) => props.onUpdate({ vibratoDepth: v })} />
+              <Slider
+                label="Pan"
+                value={settings.pan * 100}
+                min={-100}
+                max={100}
+                step={1}
+                onChange={(v) => props.onUpdate({ pan: v / 100 })}
+              />
+              <Slider
+                label="Random Pan (%)"
+                value={settings.panRandomRange * 100}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(v) => props.onUpdate({ panRandomRange: v / 100 })}
+              />
+              <Slider
+                label="Vibrato Speed (Hz)"
+                value={settings.vibratoSpeed}
+                min={0}
+                max={20}
+                step={0.1}
+                onChange={(v) => props.onUpdate({ vibratoSpeed: v })}
+              />
+              <Slider
+                label="Vibrato Depth (st)"
+                value={settings.vibratoDepth}
+                min={0}
+                max={2}
+                step={0.01}
+                onChange={(v) => props.onUpdate({ vibratoDepth: v })}
+              />
               <label>
-                <input type="checkbox" checked={settings.polyphonic} onChange={(e) => props.onUpdate({ polyphonic: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={settings.polyphonic}
+                  onChange={(e) => props.onUpdate({ polyphonic: e.target.checked })}
+                />
                 Polyphonic
               </label>
               <label>
@@ -269,7 +362,10 @@ function SpectralTab(
       </p>
       <div className="row wrap">
         <label>Mode</label>
-        <select value={spectral.mode} onChange={(e) => patchSpectral({ mode: e.target.value as typeof spectral.mode })}>
+        <select
+          value={spectral.mode}
+          onChange={(e) => patchSpectral({ mode: e.target.value as typeof spectral.mode })}
+        >
           {SPECTRAL_FUSION_MODES.map((mode) => (
             <option key={mode} value={mode}>
               {spectralModeLabel(mode)}
@@ -284,7 +380,9 @@ function SpectralTab(
         <select
           value={settings.sourceIndex === null ? "" : String(settings.sourceIndex)}
           onChange={(e) =>
-            props.onUpdate({ sourceIndex: e.target.value === "" ? null : Number(e.target.value) })
+            props.onUpdate({
+              sourceIndex: e.target.value === "" ? null : Number(e.target.value),
+            })
           }
         >
           <option value="">Unassigned</option>
@@ -305,10 +403,38 @@ function SpectralTab(
         emptyLabel="Assign a source sample"
       />
       <div className="row wrap">
-        <Slider label="Freeze Point (%)" value={spectral.freezePoint} min={0} max={100} step={1} onChange={(v) => patchSpectral({ freezePoint: v })} />
-        <Slider label="Tune (st)" value={spectral.tune} min={-24} max={24} step={0.5} onChange={(v) => patchSpectral({ tune: v })} />
-        <Slider label="Volume (%)" value={spectral.volume} min={0} max={100} step={1} onChange={(v) => patchSpectral({ volume: v })} />
-        <Slider label="Formant (st)" value={spectral.formantShift} min={-12} max={12} step={0.5} onChange={(v) => patchSpectral({ formantShift: v })} />
+        <Slider
+          label="Freeze Point (%)"
+          value={spectral.freezePoint}
+          min={0}
+          max={100}
+          step={1}
+          onChange={(v) => patchSpectral({ freezePoint: v })}
+        />
+        <Slider
+          label="Tune (st)"
+          value={spectral.tune}
+          min={-24}
+          max={24}
+          step={0.5}
+          onChange={(v) => patchSpectral({ tune: v })}
+        />
+        <Slider
+          label="Volume (%)"
+          value={spectral.volume}
+          min={0}
+          max={100}
+          step={1}
+          onChange={(v) => patchSpectral({ volume: v })}
+        />
+        <Slider
+          label="Formant (st)"
+          value={spectral.formantShift}
+          min={-12}
+          max={12}
+          step={0.5}
+          onChange={(v) => patchSpectral({ formantShift: v })}
+        />
       </div>
 
       {needsB && (
@@ -318,7 +444,11 @@ function SpectralTab(
             <label>Source</label>
             <select
               value={spectral.sourceIndex2 === null ? "" : String(spectral.sourceIndex2)}
-              onChange={(e) => patchSpectral({ sourceIndex2: e.target.value === "" ? null : Number(e.target.value) })}
+              onChange={(e) =>
+                patchSpectral({
+                  sourceIndex2: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
             >
               <option value="">Unassigned</option>
               {props.sampleNames.map((n, slot) =>
@@ -338,10 +468,38 @@ function SpectralTab(
             emptyLabel="Assign Sample B"
           />
           <div className="row wrap">
-            <Slider label="Freeze Point B (%)" value={spectral.freezePointB} min={0} max={100} step={1} onChange={(v) => patchSpectral({ freezePointB: v })} />
-            <Slider label="Tune B (st)" value={spectral.tuneB} min={-24} max={24} step={0.5} onChange={(v) => patchSpectral({ tuneB: v })} />
-            <Slider label="Volume B (%)" value={spectral.volumeB} min={0} max={100} step={1} onChange={(v) => patchSpectral({ volumeB: v })} />
-            <Slider label="Formant B (st)" value={spectral.formantShiftB} min={-12} max={12} step={0.5} onChange={(v) => patchSpectral({ formantShiftB: v })} />
+            <Slider
+              label="Freeze Point B (%)"
+              value={spectral.freezePointB}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(v) => patchSpectral({ freezePointB: v })}
+            />
+            <Slider
+              label="Tune B (st)"
+              value={spectral.tuneB}
+              min={-24}
+              max={24}
+              step={0.5}
+              onChange={(v) => patchSpectral({ tuneB: v })}
+            />
+            <Slider
+              label="Volume B (%)"
+              value={spectral.volumeB}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(v) => patchSpectral({ volumeB: v })}
+            />
+            <Slider
+              label="Formant B (st)"
+              value={spectral.formantShiftB}
+              min={-12}
+              max={12}
+              step={0.5}
+              onChange={(v) => patchSpectral({ formantShiftB: v })}
+            />
           </div>
         </>
       )}
@@ -357,19 +515,157 @@ function SpectralTab(
         />
       )}
       <div className="row wrap">
-        <Slider label="Stereo Width (%)" value={spectral.stereoWidth} min={0} max={100} step={1} onChange={(v) => patchSpectral({ stereoWidth: v })} />
-        <Slider label="Loop Length (s)" value={spectral.loopLengthSeconds} min={MIN_LOOP_SECONDS} max={MAX_LOOP_SECONDS} step={0.1} onChange={(v) => patchSpectral({ loopLengthSeconds: v })} />
+        <Slider
+          label="Stereo Width (%)"
+          value={spectral.stereoWidth}
+          min={0}
+          max={100}
+          step={1}
+          onChange={(v) => patchSpectral({ stereoWidth: v })}
+        />
+        <Slider
+          label="Loop Length (s)"
+          value={spectral.loopLengthSeconds}
+          min={MIN_LOOP_SECONDS}
+          max={MAX_LOOP_SECONDS}
+          step={0.1}
+          onChange={(v) => patchSpectral({ loopLengthSeconds: v })}
+        />
       </div>
 
       <h3>Result</h3>
+      <ModulationControls
+        spectral={spectral}
+        onUpdate={(patch) => props.onUpdate({ spectral: { ...spectral, ...patch } })}
+      />
       <Waveform
         peaks={resultWave}
         markers={resultMarkers}
         height={72}
-        emptyLabel={needsB && spectral.sourceIndex2 === null ? "Choose Sample B to render" : "Not rendered yet"}
+        emptyLabel={
+          needsB && spectral.sourceIndex2 === null
+            ? "Choose Sample B to render"
+            : "Not rendered yet"
+        }
       />
 
       <EnvelopeControls settings={settings} onUpdate={props.onUpdate} />
+    </div>
+  );
+}
+
+function formatModNumber(value: number): string {
+  return String(Math.round(value * 100) / 100);
+}
+
+function ModulationControls(props: {
+  spectral: SpectralSettings;
+  onUpdate: (patch: Partial<SpectralSettings>) => void;
+}) {
+  const routes = props.spectral.modulation ?? [];
+  const available = SPECTRAL_PARAMS.filter(
+    (param) => !param.modes || param.modes.includes(props.spectral.mode),
+  );
+  const patchRoutes = (next: SpectralModRoute[]) => props.onUpdate({ modulation: next });
+  const update = (index: number, patch: Partial<SpectralModRoute>) =>
+    patchRoutes(routes.map((route, i) => (i === index ? { ...route, ...patch } : route)));
+  const remove = (index: number) => patchRoutes(routes.filter((_, i) => i !== index));
+  const add = () => {
+    const target = available[0]?.id ?? "volumeA";
+    patchRoutes([
+      ...routes,
+      { target, shape: "lfo", depth: 10, rateHz: 1, phase: 0, bipolar: true },
+    ]);
+  };
+
+  return (
+    <div className="modulation">
+      <h3>MODULATION · bake parameter movement into the loop</h3>
+      {routes.length === 0 && (
+        <p className="hint">
+          No modulation. Add a route to sweep any SpectralPrism parameter over the loop (LFO / ramp
+          / random), baked into the rendered result.
+        </p>
+      )}
+      {routes.map((route, index) => {
+        const meta = spectralParamMeta(route.target);
+        const base = spectralBaseValue(props.spectral, route.target);
+        const low = Math.max(base - Math.abs(route.depth), meta.min);
+        const high = Math.min(base + Math.abs(route.depth), meta.max);
+        return (
+          <div className="row wrap mod-route" key={index}>
+            <select
+              value={route.target}
+              onChange={(e) => update(index, { target: e.target.value as SpectralParamId })}
+            >
+              {available.map((param) => (
+                <option key={param.id} value={param.id}>
+                  {param.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={route.shape}
+              onChange={(e) => update(index, { shape: e.target.value as SpectralModShape })}
+            >
+              {SPECTRAL_MOD_SHAPES.map((shape) => (
+                <option key={shape} value={shape}>
+                  {shape}
+                </option>
+              ))}
+            </select>
+            <label className="slider">
+              Depth ({meta.unit})
+              <NumberInput
+                value={route.depth}
+                min={-meta.max}
+                max={meta.max}
+                step={0.5}
+                onChange={(value) => update(index, { depth: value })}
+              />
+            </label>
+            <label className="slider">
+              Rate (Hz)
+              <NumberInput
+                value={route.rateHz}
+                min={0}
+                max={20}
+                step={0.1}
+                onChange={(value) => update(index, { rateHz: value })}
+              />
+            </label>
+            <label className="slider">
+              Phase
+              <NumberInput
+                value={route.phase}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(value) => update(index, { phase: value })}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={route.bipolar}
+                onChange={(e) => update(index, { bipolar: e.target.checked })}
+              />
+              ±
+            </label>
+            <span className="mono muted">
+              base {formatModNumber(base)}
+              {meta.unit} · range {formatModNumber(low)}–{formatModNumber(high)}
+              {meta.unit}
+            </span>
+            <button onClick={() => remove(index)}>✕</button>
+          </div>
+        );
+      })}
+      <div className="row">
+        <button onClick={add} disabled={available.length === 0}>
+          + Add modulation route
+        </button>
+      </div>
     </div>
   );
 }
@@ -384,11 +680,46 @@ function EnvelopeControls(props: {
       <h3>ENVELOPE · drag the points or adjust the values</h3>
       <AdsrGraph settings={settings} onChange={props.onUpdate} />
       <div className="row wrap">
-        <Slider label="Attack (s)" value={settings.attack} min={0} max={5} step={0.001} onChange={(v) => props.onUpdate({ attack: v })} />
-        <Slider label="Decay (s)" value={settings.decay} min={0} max={5} step={0.001} onChange={(v) => props.onUpdate({ decay: v })} />
-        <Slider label="Sustain" value={settings.sustain} min={0} max={1} step={0.01} onChange={(v) => props.onUpdate({ sustain: v })} />
-        <Slider label="Release (s)" value={settings.release} min={0} max={5} step={0.001} onChange={(v) => props.onUpdate({ release: v })} />
-        <Slider label="Volume" value={settings.volume} min={0} max={1.5} step={0.01} onChange={(v) => props.onUpdate({ volume: v })} />
+        <Slider
+          label="Attack (s)"
+          value={settings.attack}
+          min={0}
+          max={5}
+          step={0.001}
+          onChange={(v) => props.onUpdate({ attack: v })}
+        />
+        <Slider
+          label="Decay (s)"
+          value={settings.decay}
+          min={0}
+          max={5}
+          step={0.001}
+          onChange={(v) => props.onUpdate({ decay: v })}
+        />
+        <Slider
+          label="Sustain"
+          value={settings.sustain}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(v) => props.onUpdate({ sustain: v })}
+        />
+        <Slider
+          label="Release (s)"
+          value={settings.release}
+          min={0}
+          max={5}
+          step={0.001}
+          onChange={(v) => props.onUpdate({ release: v })}
+        />
+        <Slider
+          label="Volume"
+          value={settings.volume}
+          min={0}
+          max={1.5}
+          step={0.01}
+          onChange={(v) => props.onUpdate({ volume: v })}
+        />
         <span className="mono muted">{formatDb(settings.volume)} dB</span>
       </div>
     </>

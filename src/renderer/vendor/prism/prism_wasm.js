@@ -36,6 +36,53 @@ export function render_fused(a_flat, a_channels, b_flat, b_channels, sample_rate
     }
     return takeFromExternrefTable0(ret[0]);
 }
+
+/**
+ * Modulated sibling of `render_fused`: same parameters, plus a flat array of
+ * per-control-point absolute values for every modulatable target
+ * (`MOD_TARGET_COUNT * num_points`, in the shared target order) and a bitmask
+ * selecting which targets actually vary. With `track_mask == 0` it produces
+ * output identical to `render_fused`.
+ * @param {Float32Array} a_flat
+ * @param {number} a_channels
+ * @param {Float32Array} b_flat
+ * @param {number} b_channels
+ * @param {number} sample_rate
+ * @param {number} freeze_point_a_pct
+ * @param {number} volume_a_pct
+ * @param {number} tune_a_semitones
+ * @param {number} formant_shift_a_semitones
+ * @param {string} mode
+ * @param {number} freeze_point_b_pct
+ * @param {number} formant_shift_b_semitones
+ * @param {number} volume_b_pct
+ * @param {number} tune_b_semitones
+ * @param {number} mix_amount_pct
+ * @param {number} cross_synth_amount_pct
+ * @param {number} convolve_amount_pct
+ * @param {number} ring_mod_amount_pct
+ * @param {number} stereo_width_pct
+ * @param {number} loop_length_seconds
+ * @param {Float32Array} tracks_flat
+ * @param {number} num_points
+ * @param {number} track_mask
+ * @returns {object}
+ */
+export function render_fused_modulated(a_flat, a_channels, b_flat, b_channels, sample_rate, freeze_point_a_pct, volume_a_pct, tune_a_semitones, formant_shift_a_semitones, mode, freeze_point_b_pct, formant_shift_b_semitones, volume_b_pct, tune_b_semitones, mix_amount_pct, cross_synth_amount_pct, convolve_amount_pct, ring_mod_amount_pct, stereo_width_pct, loop_length_seconds, tracks_flat, num_points, track_mask) {
+    const ptr0 = passArrayF32ToWasm0(a_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(b_flat, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArrayF32ToWasm0(tracks_flat, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.render_fused_modulated(ptr0, len0, a_channels, ptr1, len1, b_channels, sample_rate, freeze_point_a_pct, volume_a_pct, tune_a_semitones, formant_shift_a_semitones, ptr2, len2, freeze_point_b_pct, formant_shift_b_semitones, volume_b_pct, tune_b_semitones, mix_amount_pct, cross_synth_amount_pct, convolve_amount_pct, ring_mod_amount_pct, stereo_width_pct, loop_length_seconds, ptr3, len3, num_points, track_mask);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
