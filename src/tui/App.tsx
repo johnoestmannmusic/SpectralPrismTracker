@@ -50,6 +50,7 @@ import {
   masterFxGroups,
   percussionGroups,
   samplerGroups,
+  songInfoGroups,
   spectralGroups,
 } from "./editors";
 import { useSession } from "./hooks";
@@ -1065,6 +1066,8 @@ export function App({ session }: Props) {
         : activeOverlay === "percussion"
           ? `Percussion — ${instrumentLabel}`
           : "Master FX";
+  const songGroups =
+    activeOverlay === "song" && !stepMode ? songInfoGroups(session) : null;
   const instrumentTabs: InstrumentTab[] = ["sampler", "spectral", "percussion"];
   const editorTabs =
     editorGroups && activeOverlay !== "fx"
@@ -1103,27 +1106,32 @@ export function App({ session }: Props) {
           }
         : editorGroups
           ? { title: editorTitle, hint: editorHint }
-          : activeOverlay === "mixer"
+          : songGroups
             ? {
-                title: "Mixer / Master FX",
-                hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
+                title: "Song Info",
+                hint: "↑↓ select · ←→ adjust · enter type · esc close",
               }
-            : activeOverlay === "samples"
+            : activeOverlay === "mixer"
               ? {
-                  title: "Source Samples",
-                  hint: "↑↓ select · p preview · enter edit info · esc close",
+                  title: "Mixer / Master FX",
+                  hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
                 }
-              : activeOverlay === "instruments"
+              : activeOverlay === "samples"
                 ? {
-                    title: "Instruments",
-                    hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+                    title: "Source Samples",
+                    hint: "↑↓ select · p preview · enter edit info · esc close",
                   }
-                : activeOverlay === "patterns"
+                : activeOverlay === "instruments"
                   ? {
-                      title: "Pattern Manager",
-                      hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e number · enter jump · esc close",
+                      title: "Instruments",
+                      hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
                     }
-                  : null;
+                  : activeOverlay === "patterns"
+                    ? {
+                        title: "Pattern Manager",
+                        hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e number · enter jump · esc close",
+                      }
+                    : null;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -1200,8 +1208,18 @@ export function App({ session }: Props) {
               height={viewportRows}
               onClose={() => setHelpOpen(false)}
             />
-          ) : activeOverlay === "song" ? (
+          ) : activeOverlay === "song" && stepMode ? (
             <SongInfoPanel state={state} highlight={paramHighlights} />
+          ) : activeOverlay === "song" && songGroups ? (
+            <ParamEditorOverlay
+              title="Song Info"
+              groups={songGroups}
+              active={!stepMode}
+              height={viewportRows}
+              onClose={() => setOverlay("none")}
+              onExplain={setMenuExplainer}
+              highlight={paramHighlights}
+            />
           ) : editorGroups ? (
             <ParamEditorOverlay
               title={editorTitle}

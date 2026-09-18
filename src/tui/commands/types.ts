@@ -54,6 +54,7 @@ export interface CommandContext {
 }
 
 export type OverlayName =
+  | "song"
   | "mixer"
   | "samples"
   | "instruments"

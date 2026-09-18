@@ -28,15 +28,16 @@ export const FX_CATALOG: Array<{
 }> = [
   { code: 0x01, label: "01xx", description: "Pitch slide up" },
   { code: 0x02, label: "02xx", description: "Pitch slide down" },
-  { code: 0x09, label: "09xx", description: "Set Speed 1" },
-  { code: 0x0f, label: "0Fxx", description: "Set Speed 2" },
-  { code: 0xf0, label: "F0xx", description: "Set tick rate (Hz = xx × 2/5)" },
-  { code: 0xc0, label: "C0xx", description: "Set tick rate in Hz (bits 00)" },
-  { code: 0xc1, label: "C1xx", description: "Set tick rate in Hz (bits 01)" },
-  { code: 0xc2, label: "C2xx", description: "Set tick rate in Hz (bits 10)" },
-  { code: 0xc3, label: "C3xx", description: "Set tick rate in Hz (bits 11)" },
-  { code: 0xfd, label: "FDxx", description: "Set virtual tempo numerator" },
-  { code: 0xfe, label: "FExx", description: "Set virtual tempo denominator" },
+  {
+    code: 0x09,
+    label: "09xx",
+    description: "Tempo up — raise the running BPM by xx",
+  },
+  {
+    code: 0x0a,
+    label: "0Axx",
+    description: "Tempo down — lower the running BPM by xx",
+  },
 ];
 
 export const CLIPBOARD_TAG = "LANTERN-PATTERN-CLIP:";

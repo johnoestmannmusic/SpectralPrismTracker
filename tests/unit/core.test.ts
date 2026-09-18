@@ -117,10 +117,10 @@ describe("song model", () => {
     expect(song.channels[0]!.insTimeline[0]![5]).toBe(0);
   });
 
-  it("retime recomputes row times from a changed tick rate", () => {
+  it("retime recomputes row times from a changed BPM", () => {
     const song = fixture();
     const originalSecondRow = song.rowTimes[1]!;
-    song.meta.tickRate *= 2;
+    song.meta.bpm *= 2;
     retime(song);
     expect(Math.abs(song.rowTimes[1]! - originalSecondRow / 2)).toBeLessThan(
       1e-9,
@@ -144,19 +144,19 @@ describe("song model", () => {
     }
   });
 
-  it("applies a tempo-lane (F0) effect to row timing", () => {
+  it("applies BPM up/down effects to row timing", () => {
     const project = defaultProject();
     project.instruments = [defaultSamplerSettings()];
-    project.tickRateOverride = 60;
-    project.speedOverride = 6;
+    project.bpmOverride = 120;
+    project.highlightAOverride = 4;
     const emptyEffects = () =>
       Array.from({ length: 8 }, () => ({ effect: null, value: null }));
-    const tempoCell = {
+    const effectCell = (effect: number, value: number) => ({
       note: null,
       instrument: null,
       volume: null,
-      effects: [{ effect: 0xf0, value: 200 }, ...emptyEffects().slice(1)],
-    };
+      effects: [{ effect, value }, ...emptyEffects().slice(1)],
+    });
     project.patternSnapshot = {
       orderLength: 1,
       channels: [
@@ -167,13 +167,15 @@ describe("song model", () => {
               0,
               Array.from({ length: 64 }, (_, row) =>
                 row === 1
-                  ? tempoCell
-                  : {
-                      note: null,
-                      instrument: null,
-                      volume: null,
-                      effects: emptyEffects(),
-                    },
+                  ? effectCell(0x09, 10) // tempo up 120 -> 130
+                  : row === 2
+                    ? effectCell(0x0a, 10) // tempo down 130 -> 120
+                    : {
+                        note: null,
+                        instrument: null,
+                        volume: null,
+                        effects: emptyEffects(),
+                      },
               ),
             ],
           ],
@@ -181,8 +183,19 @@ describe("song model", () => {
       ],
     };
     const song = buildSongModelFromProject(project);
-    // Baseline 60 Hz / speed 6 => 0.1s; F0 200 sets ~80 Hz => 0.075s.
-    expect(song.rowTimes[2]! - song.rowTimes[1]!).toBeCloseTo(6 / 80, 6);
+    expect(song.meta.bpm).toBe(120);
+    expect(song.rowTimes[1]! - song.rowTimes[0]!).toBeCloseTo(
+      60 / (120 * 4),
+      6,
+    );
+    expect(song.rowTimes[2]! - song.rowTimes[1]!).toBeCloseTo(
+      60 / (130 * 4),
+      6,
+    );
+    expect(song.rowTimes[3]! - song.rowTimes[2]!).toBeCloseTo(
+      60 / (120 * 4),
+      6,
+    );
     for (let i = 1; i < song.rowTimes.length; i++) {
       expect(song.rowTimes[i]!).toBeGreaterThan(song.rowTimes[i - 1]!);
     }
@@ -397,10 +410,18 @@ describe("project json", () => {
     expect(project.instruments[1]!.spectral.mode).toBe("off");
   });
 
+  it("migrates legacy tick rate + speed into a single BPM", () => {
+    const project = projectFromJson(
+      fixtureText("assets/lmp-default-proj.lampjson"),
+    );
+    // 60 * 47.2 * 150 / (6 * 150 * 4) = 118 BPM, preserving row duration.
+    expect(project.bpmOverride).toBeCloseTo(118, 4);
+  });
+
   it("applyTimingOverrides only touches fields that are set", () => {
     const song = fixture();
     const originalSecondRow = song.rowTimes[1]!;
-    const originalTickRate = song.meta.tickRate;
+    const originalBpm = song.meta.bpm;
 
     applyTimingOverrides(
       projectFromJson(
@@ -408,22 +429,18 @@ describe("project json", () => {
       ),
       song,
     );
-    expect(song.meta.tickRate).toBe(originalTickRate);
+    expect(song.meta.bpm).toBe(originalBpm);
 
     const project = projectFromJson(
       fixtureText("tests/fixtures/lmp-default-proj.legacy.lampjson"),
     );
-    project.tickRateOverride = originalTickRate * 2;
-    project.speedOverride = 3;
+    project.bpmOverride = originalBpm * 2;
     project.highlightAOverride = 8;
     project.highlightBOverride = 16;
-    project.virtualTempoOverride = [2, 1];
     applyTimingOverrides(project, song);
-    expect(song.meta.tickRate).toBe(originalTickRate * 2);
-    expect(song.meta.speedPattern[0]).toBe(3);
+    expect(song.meta.bpm).toBe(originalBpm * 2);
     expect(song.meta.highlightA).toBe(8);
     expect(song.meta.highlightB).toBe(16);
-    expect(song.meta.virtualTempo).toEqual([2, 1]);
     expect(song.rowTimes[1]).not.toBe(originalSecondRow);
   });
 });

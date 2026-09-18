@@ -31,31 +31,6 @@ export interface Pattern {
   rows: PatternCell[];
 }
 
-export interface GameBoyParams {
-  envelopeVolume: number;
-  envelopeDirection: boolean;
-  envelopeLength: number;
-  soundLength: number;
-  softwareEnvelope: boolean;
-  alwaysInit: boolean;
-  doubleWaveWidth: boolean;
-}
-
-export interface Wavetable {
-  name: string;
-  width: number;
-  height: number;
-  data: number[];
-}
-
-export interface ChipDef {
-  chipId: number;
-  channelCount: number;
-  volume: number;
-  panning: number;
-  frontRear: number;
-}
-
 export function emptyEffectSlot(): EffectSlot {
   return { effect: null, value: null };
 }

@@ -98,6 +98,23 @@ describe("stepthrough generator", () => {
     expect(step?.title).toContain("01 - Pitch slide up");
   });
 
+  it("round-trips BPM/highlights and reproduces row timing", () => {
+    const target = session.snapshotTarget()!;
+    const blank = blankTargetFrom(target);
+    const timing = buildSteps(target).find(
+      (step) => step.action.kind === "timing",
+    );
+    expect(timing).toBeTruthy();
+    if (timing?.action.kind === "timing") {
+      expect(timing.action.bpm).toBe(target.project.bpmOverride);
+    }
+    for (const step of buildSteps(target)) applyBuildStep(blank, step);
+    expect(blank.project.bpmOverride).toBe(target.project.bpmOverride);
+    expect(blank.song.meta.highlightA).toBe(target.song.meta.highlightA);
+    expect(blank.song.meta.highlightB).toBe(target.song.meta.highlightB);
+    expect(blank.song.rowTimes).toEqual(target.song.rowTimes);
+  });
+
   it("applies a pattern-cell step to the target song", () => {
     const target = session.snapshotTarget()!;
     const step = buildSteps(target).find(

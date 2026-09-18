@@ -1,6 +1,7 @@
 import type { PatternCell } from "@/core/songTypes";
 import { noteToFreq, noteToName } from "@/core/pitch";
 import { cellAt, type SongModel } from "@/core/songModel";
+import { rowDurationSec } from "@/core/timing";
 import {
   FX_CATALOG,
   columnLabel,
@@ -26,13 +27,13 @@ export const DEFAULT_EXPLAINER: ExplainerText = {
 };
 
 const CHANNEL_ROLES = [
-  "Pulse 1 — a square wave with a selectable duty cycle and a Game Boy hardware envelope.",
-  "Pulse 2 — the same hardware as Pulse 1, used as a second voice (no frequency sweep).",
-  "Wave — plays a custom 32-sample, 4-bit waveform instead of a fixed shape.",
-  "Noise — a pseudo-random LFSR generator, typically used for percussion.",
+  "Channel 1 — a sampler voice. Notes trigger the assigned instrument (sampler, spectral or percussion) on this channel.",
+  "Channel 2 — an independent sampler voice.",
+  "Channel 3 — an independent sampler voice.",
+  "Channel 4 — an independent sampler voice, typically used for percussion.",
 ];
 
-const CHANNEL_NAMES = ["Pulse 1", "Pulse 2", "Wave", "Noise"];
+const CHANNEL_NAMES = ["Channel 1", "Channel 2", "Channel 3", "Channel 4"];
 
 function hex2(value: number): string {
   return value.toString(16).toUpperCase().padStart(2, "0");
@@ -41,11 +42,7 @@ function hex2(value: number): string {
 function instrumentDescription(song: SongModel, index: number): string {
   const ins = song.instruments[index];
   if (!ins) return `instrument ${index}`;
-  const gb = ins.gameBoy;
-  if (!gb) return ins.name || `#${index}`;
-  return `${ins.name || `#${index}`} (envelope ${gb.envelopeVolume} ${
-    gb.envelopeDirection ? "up" : "down"
-  }/${gb.envelopeLength}${gb.softwareEnvelope ? ", software envelope" : ""})`;
+  return ins.name || `#${index}`;
 }
 
 export function patternsExplain(song: SongModel): ExplainerText {
@@ -60,14 +57,15 @@ export function rowExplain(
   order: number,
   row: number,
 ): ExplainerText {
-  const speed = song.meta.speedPattern[0] ?? 6;
-  const rowDur = speed / Math.max(song.meta.tickRate, 1);
+  const rowDur = rowDurationSec(song.meta);
   const absRow = order * song.meta.patternLength + row;
   return {
     title: `Row ${hex2(row)} · order ${order}`,
-    body: `At speed ${speed} ticks/row (${song.meta.tickRate.toFixed(
+    body: `At ${song.meta.bpm} BPM (${song.meta.highlightA} rows/beat, ${
+      song.meta.highlightB
+    } rows/bar), lands ~${(absRow * rowDur).toFixed(
       2,
-    )} Hz), lands ~${(absRow * rowDur).toFixed(2)}s into the song. Move here to audition the row.`,
+    )}s into the song. Move here to audition the row.`,
   };
 }
 
@@ -90,16 +88,9 @@ export function instrumentExplain(
   index: number,
 ): ExplainerText {
   const ins = song.instruments[index];
-  const gb = ins?.gameBoy;
   return {
     title: `Instrument ${index.toString().padStart(2, "0")} · ${ins?.name ?? ""}`,
-    body: gb
-      ? `Game Boy envelope: starts at volume ${gb.envelopeVolume}, ${
-          gb.envelopeDirection ? "increasing" : "decreasing"
-        } every ${gb.envelopeLength} step(s). Sound length ${gb.soundLength} (64 = held). Software envelope: ${
-          gb.softwareEnvelope ? "yes" : "no"
-        }.`
-      : "A sampler / Spectral / Percussion instrument. Rename it from the Sampler menu's Name parameter; a adds a new instrument and d deletes the selected one (with confirmation).",
+    body: "A sampler / Spectral / Percussion instrument. Rename it from the Sampler menu's Name parameter; a adds a new instrument and d deletes the selected one (with confirmation).",
   };
 }
 
@@ -137,13 +128,13 @@ export function cellExplain(
     if (note.kind === "macroRelease") {
       return {
         title: `${label} · MACRO RELEASE`,
-        body: "A chip macro release — a hardware command, not a sampler note-off.",
+        body: "A legacy macro-release marker; treated as a note release.",
       };
     }
     if (note.kind === "rawFreq") {
       return {
         title: `${label} · FRQ ${note.value}`,
-        body: `Direct frequency override of ${note.value} Hz (format version 248+).`,
+        body: `Direct frequency override of ${note.value} Hz.`,
       };
     }
     const freq = noteToFreq(note, song.meta.tuningA4) ?? 0;

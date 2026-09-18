@@ -14,7 +14,7 @@ import type { MasterFxSettings } from "@/core/masterFx";
 import { defaultSamplerSettings, type SamplerSettings } from "@/core/sampler";
 import { renderEnvelope, renderWaveform } from "./format";
 import type { EditorGroup, EditorParam } from "./components/ParamEditorOverlay";
-import type { Session } from "./session";
+import type { Session, SongMetaField } from "./session";
 
 type Setter = (value: number | boolean | string) => void;
 
@@ -688,6 +688,76 @@ export function percussionGroups(
   }
 
   return groups;
+}
+
+/** Editable Song Info groups (title, credits, links, timing) for `/info`. */
+export function songInfoGroups(session: Session): EditorGroup[] {
+  const { project, song } = session.getState();
+  if (!project || !song) return [];
+  const text = (
+    label: string,
+    field: SongMetaField,
+    explain: string,
+  ): EditorParam => ({
+    label,
+    kind: "text",
+    value: project[field] ?? "",
+    set: (value) => session.setSongMeta(field, String(value)),
+    explain,
+  });
+  return [
+    {
+      title: "Song",
+      params: [
+        text("Title", "songTitle", "The song's display title."),
+        text("Artist", "artist", "Who made the song."),
+        text("Album", "album", "Album or collection the song belongs to."),
+        text("Comments", "comments", "Free-form notes stored with the song."),
+      ],
+    },
+    {
+      title: "Credits",
+      params: [
+        text("Music license", "musicLicense", "License for the music itself."),
+        text(
+          "Code license",
+          "codeLicense",
+          "License for any code shipped with the song.",
+        ),
+        text(
+          "Source link",
+          "viewSourceLink",
+          "Where the song's source can be viewed.",
+        ),
+        text("Website link", "websiteLink", "Artist or project website."),
+      ],
+    },
+    {
+      title: "Timing",
+      params: [
+        num("BPM", song.meta.bpm, (value) => session.setBpm(value as number), {
+          min: 20,
+          max: 999,
+          step: 1,
+          integer: true,
+        }),
+        num(
+          "Beat highlight rows",
+          song.meta.highlightA,
+          (value) =>
+            session.setHighlight(value as number, song.meta.highlightB),
+          { min: 1, max: 64, step: 1, integer: true },
+        ),
+        num(
+          "Bar highlight rows",
+          song.meta.highlightB,
+          (value) =>
+            session.setHighlight(song.meta.highlightA, value as number),
+          { min: 1, max: 256, step: 1, integer: true },
+        ),
+      ],
+    },
+  ];
 }
 
 /** Master output FX editor groups. */

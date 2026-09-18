@@ -97,16 +97,18 @@ export const builtinCommands: CommandDef[] = [
     id: "info",
     name: "info",
     aliases: ["song"],
-    description: "Show song title, author, system, tempo and length",
+    description: "Open the editable Song Info menu (title, credits, tempo)",
     category: "song",
     run: (_args, ctx) => {
       const { song } = ctx.session.getState();
       if (!song) return fail("No song loaded");
+      ctx.openOverlay?.("song");
       return ok(`${song.meta.name} — ${song.meta.author}`, {
         name: song.meta.name,
         author: song.meta.author,
-        system: song.meta.system,
-        tickRate: song.meta.tickRate,
+        bpm: song.meta.bpm,
+        highlightA: song.meta.highlightA,
+        highlightB: song.meta.highlightB,
         patternLength: song.meta.patternLength,
         orderLength: song.meta.orderLength,
         tuningA4: song.meta.tuningA4,

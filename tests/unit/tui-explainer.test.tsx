@@ -18,11 +18,11 @@ describe("TUI explainer", () => {
       note: null,
       instrument: null,
       volume: null,
-      effects: [{ effect: 0x0f, value: 0x03 }],
+      effects: [{ effect: 0x0a, value: 0x03 }],
     };
     const text = cellExplain(song, 0, 0, 0, { kind: "fx", index: 0 }, cell);
-    expect(text.title).toContain("0F03");
-    expect(text.body).toContain("Set Speed 2");
+    expect(text.title).toContain("0A03");
+    expect(text.body).toContain("Tempo down");
   });
 
   it("falls back to the default explainer with no song", () => {

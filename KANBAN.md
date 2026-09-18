@@ -8,7 +8,8 @@
 
 **What it does**
 
-- 4-channel Game Boy-style pattern tracker (NOTE / INS / VOL / FX per channel, multiple FX columns) with playback, follow mode, block selection, clipboard, transpose, interpolation and order/pattern management.
+- 4-channel pattern tracker (NOTE / INS / VOL / FX per channel, multiple FX columns) with playback, follow mode, block selection, clipboard, transpose, interpolation and order/pattern management.
+- Song timing is a single **BPM** plus beat/bar row highlighting; row duration is `60 / (bpm * beatRows)`. `09xx`/`0Axx` raise/lower the running BPM. `/info` opens an editable Song Info menu (title, credits, links and the BPM/beat/bar controls).
 - Sampler + Spectral + Percussion synthesis per instrument, plus a mixer and master FX (delay/reverb), all edited from tabbed menus.
 - Song info, Source Samples (with waveform previews), cover art, WAV/MIDI/ZIP/PNG export.
 - A Stepthrough tutorial (`/stepthrough`) that rebuilds the bundled project as a navigable recipe, and a live control socket for scripts/agents.
@@ -42,7 +43,50 @@
 
 ## Features
 
+## Bugs
+
+## In Progress
+
+## Blocked
+
+## Implemented
+
+### BUG-17 — Structural order edits left the audio sequence stale (wrong pattern played)
+- priority: high
+- tags: audio, scheduler, orders, patterns, session
+- created: 2026-09-18
+- updated: 2026-09-18
+
+After deleting a pattern and switching loop from order back to whole-song, playback still scheduled the pre-edit orders even though the visual tracker had looped to the right pattern.
+
+Root cause: `insertPatternAt`, `removePatternAt`, `moveOrder`, `setOrderPatternNumber` and `clearAllPatterns` all mutate the song via `applySnapshot` but never called `engine.updateSequence(sequenceFromSong(song))`. The `WebAudioBackend`/`Scheduler` kept its cached `Sequence`, so the visuals (read live from `song`) and the audio diverged.
+
+Fix: new `Session.syncAfterSnapshot()` re-publishes the sequence, refreshes `duration` from `engine.songDuration()` and re-applies the loop range; called from all five structural ops. Regression test extends `tui-tracker-ops` to assert `backend.songDuration()` tracks the edited song after insert/remove.
+
+### FEAT-66 — Furnace/.fur removal, autosave + /restore, startup auto-open
+- updated: 2026-09-18
+
+- priority: high
+- tags: plan-furnace-fur-removal-autosave-restore-startup-auto-open, epic
+- created: 2026-09-17
+- updated: 2026-09-17
+- plan: furnace-fur-removal-autosave-restore-startup-auto-open
+- kind: epic
+
+**Plan summary**
+Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
+
+**Cards**
+
+- FEAT-67 — Furnace removal 1/3 — relocate shared song types to a neutral core module
+- FEAT-68 — Furnace removal 2/3 — delete the parser, RawFurModule, fixtures and parser tests
+- FEAT-69 — Furnace removal 3/3 — strip .fur from IO, commands, session state and UI text
+- FEAT-70 — Runtime config file under ~/.config/lantern/config.json
+- FEAT-71 — Autosave backup.lmpjson every 15 actions + /restore
+- FEAT-72 — Startup auto-open of last project + /default-open-override
+
 ### FEAT-17 — Terminal Lantern — TUI migration
+- updated: 2026-09-18
 
 - priority: critical
 - tags: plan-terminal-lantern-tui-migration, epic
@@ -79,63 +123,237 @@ Scriptability constraint (design-only, build deferred to FEAT-32): the command r
 **Status (2026-09-17) — TUI migration plan complete**
 `npm run dev:tui` builds and runs the terminal app. All cards on this plan are Implemented: FEAT-18 Node runtime/IO, FEAT-19 node-web-audio-api shim, FEAT-20 prism worker thread, FEAT-21 Ink shell (persistent tracker + song info), FEAT-22 slash-command engine (fuzzy + Tab), FEAT-23 tracker editing (selection/clipboard/transpose/order ops), FEAT-24 transport, FEAT-25 mixer overlay, FEAT-26 open/new/export, FEAT-27 sample browser + waveform, FEAT-28 packaging, FEAT-29 tests, FEAT-30 Electron/React-DOM removal, FEAT-31 sampler/spectral/percussion/master-FX editors + headless cover art, FEAT-32 live control socket + `.lmpscript` runner. Verified by 23 test files / 144 tests, a real control-socket E2E (`examples/control-smoke.lmpscript`) and an interactive pty smoke. Remaining possible future work: FEAT-15 (mecha/power-suit cover _designer_, archived) and deeper modulation-route authoring in the TUI.
 
-### FEAT-66 — Furnace/.fur removal, autosave + /restore, startup auto-open
-
-- priority: high
-- tags: plan-furnace-fur-removal-autosave-restore-startup-auto-open, epic
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: furnace-fur-removal-autosave-restore-startup-auto-open
-- kind: epic
-
-**Plan summary**
-Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bundled default already loads from assets/lmp-default-proj.lampjson (there is no .fur in assets/), so the parser is only used for explicit .fur opens and test fixtures. We relocate the shared song types out of src/core/fur/types.ts, delete the parser + fixtures + parser tests, and strip .fur from IO/commands/state/docs. (2) Autosave a backup.lmpjson every 15 mutating actions and add /restore. (3) Persist a small config under ~/.config/lantern/config.json to auto-open the last opened project and add /default-open-override <file|off|last>. Work is sequenced so the type relocation lands first, then parser deletion, then IO/UI cleanup; autosave and startup share the new config module.
-
-**Cards**
-
-- FEAT-67 — Furnace removal 1/3 — relocate shared song types to a neutral core module
-- FEAT-68 — Furnace removal 2/3 — delete the parser, RawFurModule, fixtures and parser tests
-- FEAT-69 — Furnace removal 3/3 — strip .fur from IO, commands, session state and UI text
-- FEAT-70 — Runtime config file under ~/.config/lantern/config.json
-- FEAT-71 — Autosave backup.lmpjson every 15 actions + /restore
-- FEAT-72 — Startup auto-open of last project + /default-open-override
-
-### FEAT-78 — Game Boy removal, BPM + highlight timing, editable /info
+### FEAT-78 — BPM + highlight timing, editable /info
+- updated: 2026-09-18
 
 - priority: critical
-- tags: plan-game-boy-removal-bpm-highlight-timing-editable-info, epic
+- tags: plan-bpm-highlight-timing-editable-info, epic
 - created: 2026-09-17
 - updated: 2026-09-17
 - plan: game-boy-removal-bpm-highlight-timing-editable-info
 - kind: epic
 
 **Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
 
 **Cards**
 
 - FEAT-79 — Core timing model: BPM + beat/bar highlights
 - FEAT-85 — Redefine timing FX as two BPM up/down effects
-- FEAT-81 — Remove the Game Boy model surface
+- FEAT-81 — Remove the legacy model surface
 - FEAT-82 — Editable Song Info menu + /info opens it
 - FEAT-83 — Stepthrough timing chapter uses BPM/highlights
-- FEAT-84 — Final Game Boy scrub + docs/overview update
+- FEAT-84 — Final legacy scrub + docs/overview update
 - FEAT-80 — Remove timing FX from the tracker catalog (archived — superseded by FEAT-85)
 
-### FEAT-79 — Core timing model: BPM + beat/bar highlights
+### FEAT-84 — Final legacy scrub + docs/overview update
+- updated: 2026-09-18
 
-- priority: critical
-- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, core
+- priority: low
+- tags: timing, bpm, legacy-model-removal, song-info, project, migration, plan-bpm-highlight-timing-editable-info, docs, cleanup, kanban
 - created: 2026-09-17
-- updated: 2026-09-17
+- updated: 2026-09-18
 - plan: game-boy-removal-bpm-highlight-timing-editable-info
 - kind: card
 - parent: FEAT-78
 
-**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+**Plan:** BPM + highlight timing, editable /info _(#plan-bpm-highlight-timing-editable-info)_
 
 **Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Sweep any stragglers after the code changes and update documentation so future agents see a legacy-free project.
+
+**Architecture**
+KANBAN.md: rewrite the three legacy chip mentions (project overview line 10, the FEAT-73 description, and the FEAT-67 architecture note) to '4-channel tracker' / neutral wording; confirm the timing section of the overview now says BPM + beat/bar highlighting. Check assets/ and comments for stragglers. Record the new timing model and the /info menu in the Project overview.
+
+**Key decisions**
+
+- Scrub all live KANBAN.md mentions (including historical cards' wording) since the user asked to remove all references.
+
+**Alternatives considered**
+
+- Leave historical Implemented card text untouched (rejected: user asked for all references removed).
+
+**Depends on**
+
+- Remove the legacy model surface
+- Editable Song Info menu + /info opens it
+
+**Acceptance criteria**
+
+- rg -i 'game ?boy|legacy' over the repo (excl. node_modules/dist/.git) returns nothing.
+- Project overview documents BPM + highlights and the /info menu.
+
+### FEAT-83 — Stepthrough timing chapter uses BPM/highlights
+- updated: 2026-09-18
+
+- priority: medium
+- tags: timing, bpm, legacy-model-removal, song-info, project, migration, plan-bpm-highlight-timing-editable-info, stepthrough, tutorial
+- created: 2026-09-17
+- updated: 2026-09-18
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** BPM + highlight timing, editable /info _(#plan-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Retarget the generated timing step from tickRate/speed to bpm/highlightA/highlightB so the tutorial rebuilds the same project under the new model.
+
+**Architecture**
+src/core/stepthrough.ts: StepAction 'timing' kind swaps tickRate/speed for bpm; generator reads project.bpmOverride/highlightAOverride/highlightBOverride; applyBuildStep writes target.project.bpmOverride and target.song.meta.bpm and re-times (retime). SongInfoPanel highlight labels become 'Timing'/'BPM'/'Beat'/'Bar' as appropriate. blankTarget clears the new overrides.
+
+**Key decisions**
+
+- One timing step covering bpm + both highlights (as today).
+
+**Alternatives considered**
+
+- Emit separate BPM and highlight steps (rejected: more noise).
+
+**Depends on**
+
+- Core timing model: BPM + beat/bar highlights
+- Editable Song Info menu + /info opens it
+
+**Acceptance criteria**
+
+- Generated recipe includes a BPM/timing step; applying it reproduces the project's row timing.
+- stepthrough tests updated and green.
+
+### FEAT-82 — Editable Song Info menu + /info opens it
+- updated: 2026-09-18
+
+- priority: high
+- tags: timing, bpm, legacy-model-removal, song-info, project, migration, plan-bpm-highlight-timing-editable-info, tui, menu, commands
+- created: 2026-09-17
+- updated: 2026-09-18
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** BPM + highlight timing, editable /info _(#plan-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Make /info open the existing 'song' overlay as an editable menu. Reuse ParamEditorOverlay (already supports text/number/enum with enter-to-type, scrolling and the explainer) by adding songInfoGroups(session). The stepthrough Song chapter keeps the read-only SongInfoPanel.
+
+**Architecture**
+src/tui/editors.tsx: export songInfoGroups(session): EditorGroup[] with groups Song (Title, Artist, Album, Comments), Credits (Music license, Code license, Source link, Website link), Timing (BPM, Beat highlight rows, Bar highlight rows). src/tui/session.ts: setSongMeta(field, value), setBpm(bpm), setHighlight(a, b) - patch song.meta + project, retime(song), engine.updateSequence(sequenceFromSong(song)), refresh duration, markAction. src/tui/App.tsx: activeOverlay === 'song' renders ParamEditorOverlay when !stepMode (title 'Song Info', onPreview undefined, height viewportRows), otherwise the existing SongInfoPanel for stepthrough. src/tui/commands/builtins.ts: /info calls ctx.openOverlay?.('song') and still returns the structured data (name/bpm/patternLength/...). Update menuContext hints and HelpOverlay.
+
+**Key decisions**
+
+- Reuse ParamEditorOverlay rather than write a bespoke overlay (less code, consistent keyboard model).
+- BPM/beat/bar live in the Timing group of the same menu, per the request.
+- Editing BPM/highlights re-times the song immediately (rowTimes + engine sequence) and marks the project dirty/autosaveable.
+
+**Alternatives considered**
+
+- Make SongInfoPanel itself interactive (rejected: duplicates ParamEditorOverlay).
+- Separate /timing command/menu (rejected: user wants timing inside /info).
+
+**Open questions**
+
+- Should Bar highlight auto-clamp to a multiple of Beat highlight, or allow any value?
+
+**Depends on**
+
+- Core timing model: BPM + beat/bar highlights
+- Remove the legacy model surface
+
+**Acceptance criteria**
+
+- /info opens a menu listing Title/Artist/Album/Comments/licences/links and BPM/Beat/Bar; edits persist through Ctrl+S/autosave.
+- Changing BPM updates the SongHeader tempo, row timing, playhead and MIDI/export timing.
+- Stepthrough still renders the read-only SongInfoPanel with highlights.
+- typecheck + tests green (add a session test for the new setters and a component test for the menu).
+
+### FEAT-81 — Remove the legacy model surface
+- updated: 2026-09-18
+
+- priority: high
+- tags: timing, bpm, legacy-model-removal, song-info, project, migration, plan-bpm-highlight-timing-editable-info, core, cleanup
+- created: 2026-09-17
+- updated: 2026-09-18
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** BPM + highlight timing, editable /info _(#plan-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
+
+**Approach**
+Delete every remaining legacy chip type/field/string now that the model is a standalone sampler tracker.
+
+**Architecture**
+src/core/songTypes.ts: remove NoteValue, EffectSlot, PatternCell, Pattern (and any now-unused exports). src/core/songModel.ts: InstrumentInfo drops insType/legacy params; SongModel drops wavetables/chips. src/tui/session.ts addInstrument and snapshot(): drop insType/legacy params/system/tickRate. src/tui/explainer.ts: replace the legacy chip channel roles (Pulse/Wave/Noise) with generic per-channel descriptions, and delete the legacy branch in instrumentDescription/instrumentExplain. src/tui/components/SongHeader.tsx already stops printing system via the timing card. src/tui/commands/builtins.ts /info drops system. Remove ChipDef/chips from any export/cover path (none currently use them).
+
+**Key decisions**
+
+- InstrumentInfo keeps only name + colorRgb (plus whatever playback needs).
+- Keep NoteValue's macroRelease/rawFreq for now (they are note-event kinds, not legacy chip UI), but scrub their explainer text.
+
+**Alternatives considered**
+
+- Also remove the macroRelease/rawFreq note kinds (rejected for this pass: broad player/format churn; can be a follow-up).
+
+**Depends on**
+
+- Core timing model: BPM + beat/bar highlights
+
+**Acceptance criteria**
+
+- rg -i 'game ?boy|legacy|chipId|insType|wavetable|GAME_BOY' over src tests returns nothing.
+- typecheck + full test suite green.
+
+### FEAT-85 — Redefine timing FX as two BPM up/down effects
+- updated: 2026-09-18
+
+- priority: high
+- tags: tracker, effects, timing, bpm, plan-bpm-highlight-timing-editable-info
+- created: 2026-09-17
+- updated: 2026-09-18
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+Keep the timing FX (do NOT remove them), but disconnect them from the old legacy chip timing system and reduce the whole timing-effect family to exactly two BPM-based effects:
+
+- 09 xx — Tempo up: increase the current BPM by xx.
+- 0A xx — Tempo down: decrease the current BPM by xx.
+
+(Exact codes to confirm; suggested 09 up / 0A down. This replaces 09 Set Speed 1, 0F Set Speed 2, F0/C0-C3 tick-rate and FD/FE virtual-tempo.)
+
+Semantics: the effect value is a BPM delta, applied on its own row, relative to the running BPM (base meta.bpm plus any prior adjustments). Clamp the running BPM to a sane minimum (e.g. 20) and maximum. Row duration for that row and onward uses the adjusted BPM: rowDur = 60 / (bpm * highlightA).
+
+Files: src/core/tracker.ts FX_CATALOG (list only 01/02 pitch slides + these two timing entries, with labels like "09xx Tempo up" / "0Axx Tempo down"); src/core/timing.ts buildRowTiming (interpret only the two codes; drop F0/C0-C3/09/0F/FD/FE handling); src/tui/explainer.ts cellExplain wording; stepthrough/tracker tests. FEAT-79 (core timing) must keep buildRowTiming applying these two effects.
+
+This card replaces the now-archived FEAT-80 ("Remove timing FX"). Part of epic FEAT-78 / plan game-boy-removal-bpm-highlight-timing-editable-info.
+
+### FEAT-79 — Core timing model: BPM + beat/bar highlights
+- updated: 2026-09-18
+
+- priority: critical
+- tags: timing, bpm, legacy-model-removal, song-info, project, migration, plan-bpm-highlight-timing-editable-info, core
+- created: 2026-09-17
+- updated: 2026-09-18
+- plan: game-boy-removal-bpm-highlight-timing-editable-info
+- kind: card
+- parent: FEAT-78
+
+**Plan:** BPM + highlight timing, editable /info _(#plan-bpm-highlight-timing-editable-info)_
+
+**Plan summary**
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
 
 **Approach**
 Collapse the timing model to one tempo (bpm) plus row highlighting. Row duration = 60 / (bpm * beatRows), where beatRows = meta.highlightA (rows per beat) and barRows = meta.highlightB (rows per bar). Delete tickRate, speedPattern and virtualTempo from the timing path. Keep only the two BPM up/down timing FX (FEAT-85) and a constant TICKS_PER_ROW so the 01/02 pitch-slide maths is unchanged.
@@ -168,202 +386,6 @@ src/core/songModel.ts: SongMeta drops system/formatVersion/tickRate/speedPattern
 - MIDI export tests still pass (tempo comes from rowTimes).
 - typecheck + full test suite green.
 
-### FEAT-81 — Remove the Game Boy model surface
-
-- priority: high
-- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, core, cleanup
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: game-boy-removal-bpm-highlight-timing-editable-info
-- kind: card
-- parent: FEAT-78
-
-**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
-
-**Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
-
-**Approach**
-Delete every remaining Game Boy type/field/string now that the model is a standalone sampler tracker.
-
-**Architecture**
-src/core/songTypes.ts: remove GameBoyParams, Instrument, Wavetable, ChipDef (and any now-unused exports). src/core/songModel.ts: InstrumentInfo drops insType/gameBoy; SongModel drops wavetables/chips. src/tui/session.ts addInstrument and snapshot(): drop insType/gameBoy/system/tickRate. src/tui/explainer.ts: replace the Game Boy channel roles (Pulse/Wave/Noise) with generic per-channel descriptions, and delete the gameBoy branch in instrumentDescription/instrumentExplain. src/tui/components/SongHeader.tsx already stops printing system via the timing card. src/tui/commands/builtins.ts /info drops system. Remove ChipDef/chips from any export/cover path (none currently use them).
-
-**Key decisions**
-
-- InstrumentInfo keeps only name + colorRgb (plus whatever playback needs).
-- Keep NoteValue's macroRelease/rawFreq for now (they are note-event kinds, not Game Boy UI), but scrub their explainer text.
-
-**Alternatives considered**
-
-- Also remove the macroRelease/rawFreq note kinds (rejected for this pass: broad player/format churn; can be a follow-up).
-
-**Depends on**
-
-- Core timing model: BPM + beat/bar highlights
-
-**Acceptance criteria**
-
-- rg -i 'game ?boy|gameboy|chipId|insType|wavetable|GAME_BOY' over src tests returns nothing.
-- typecheck + full test suite green.
-
-### FEAT-82 — Editable Song Info menu + /info opens it
-
-- priority: high
-- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, tui, menu, commands
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: game-boy-removal-bpm-highlight-timing-editable-info
-- kind: card
-- parent: FEAT-78
-
-**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
-
-**Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
-
-**Approach**
-Make /info open the existing 'song' overlay as an editable menu. Reuse ParamEditorOverlay (already supports text/number/enum with enter-to-type, scrolling and the explainer) by adding songInfoGroups(session). The stepthrough Song chapter keeps the read-only SongInfoPanel.
-
-**Architecture**
-src/tui/editors.tsx: export songInfoGroups(session): EditorGroup[] with groups Song (Title, Artist, Album, Comments), Credits (Music license, Code license, Source link, Website link), Timing (BPM, Beat highlight rows, Bar highlight rows). src/tui/session.ts: setSongMeta(field, value), setBpm(bpm), setHighlight(a, b) - patch song.meta + project, retime(song), engine.updateSequence(sequenceFromSong(song)), refresh duration, markAction. src/tui/App.tsx: activeOverlay === 'song' renders ParamEditorOverlay when !stepMode (title 'Song Info', onPreview undefined, height viewportRows), otherwise the existing SongInfoPanel for stepthrough. src/tui/commands/builtins.ts: /info calls ctx.openOverlay?.('song') and still returns the structured data (name/bpm/patternLength/...). Update menuContext hints and HelpOverlay.
-
-**Key decisions**
-
-- Reuse ParamEditorOverlay rather than write a bespoke overlay (less code, consistent keyboard model).
-- BPM/beat/bar live in the Timing group of the same menu, per the request.
-- Editing BPM/highlights re-times the song immediately (rowTimes + engine sequence) and marks the project dirty/autosaveable.
-
-**Alternatives considered**
-
-- Make SongInfoPanel itself interactive (rejected: duplicates ParamEditorOverlay).
-- Separate /timing command/menu (rejected: user wants timing inside /info).
-
-**Open questions**
-
-- Should Bar highlight auto-clamp to a multiple of Beat highlight, or allow any value?
-
-**Depends on**
-
-- Core timing model: BPM + beat/bar highlights
-- Remove the Game Boy model surface
-
-**Acceptance criteria**
-
-- /info opens a menu listing Title/Artist/Album/Comments/licences/links and BPM/Beat/Bar; edits persist through Ctrl+S/autosave.
-- Changing BPM updates the SongHeader tempo, row timing, playhead and MIDI/export timing.
-- Stepthrough still renders the read-only SongInfoPanel with highlights.
-- typecheck + tests green (add a session test for the new setters and a component test for the menu).
-
-### FEAT-83 — Stepthrough timing chapter uses BPM/highlights
-
-- priority: medium
-- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, stepthrough, tutorial
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: game-boy-removal-bpm-highlight-timing-editable-info
-- kind: card
-- parent: FEAT-78
-
-**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
-
-**Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
-
-**Approach**
-Retarget the generated timing step from tickRate/speed to bpm/highlightA/highlightB so the tutorial rebuilds the same project under the new model.
-
-**Architecture**
-src/core/stepthrough.ts: StepAction 'timing' kind swaps tickRate/speed for bpm; generator reads project.bpmOverride/highlightAOverride/highlightBOverride; applyBuildStep writes target.project.bpmOverride and target.song.meta.bpm and re-times (retime). SongInfoPanel highlight labels become 'Timing'/'BPM'/'Beat'/'Bar' as appropriate. blankTarget clears the new overrides.
-
-**Key decisions**
-
-- One timing step covering bpm + both highlights (as today).
-
-**Alternatives considered**
-
-- Emit separate BPM and highlight steps (rejected: more noise).
-
-**Depends on**
-
-- Core timing model: BPM + beat/bar highlights
-- Editable Song Info menu + /info opens it
-
-**Acceptance criteria**
-
-- Generated recipe includes a BPM/timing step; applying it reproduces the project's row timing.
-- stepthrough tests updated and green.
-
-### FEAT-84 — Final Game Boy scrub + docs/overview update
-
-- priority: low
-- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, docs, cleanup, kanban
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: game-boy-removal-bpm-highlight-timing-editable-info
-- kind: card
-- parent: FEAT-78
-
-**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
-
-**Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
-
-**Approach**
-Sweep any stragglers after the code changes and update documentation so future agents see a Game Boy-free project.
-
-**Architecture**
-KANBAN.md: rewrite the three Game Boy mentions (project overview line 10, the FEAT-73 description, and the FEAT-67 architecture note) to '4-channel tracker' / neutral wording; confirm the timing section of the overview now says BPM + beat/bar highlighting. Check assets/ and comments for stragglers. Record the new timing model and the /info menu in the Project overview.
-
-**Key decisions**
-
-- Scrub all live KANBAN.md mentions (including historical cards' wording) since the user asked to remove all references.
-
-**Alternatives considered**
-
-- Leave historical Implemented card text untouched (rejected: user asked for all references removed).
-
-**Depends on**
-
-- Remove the Game Boy model surface
-- Editable Song Info menu + /info opens it
-
-**Acceptance criteria**
-
-- rg -i 'game ?boy|gameboy' over the repo (excl. node_modules/dist/.git) returns nothing.
-- Project overview documents BPM + highlights and the /info menu.
-
-### FEAT-85 — Redefine timing FX as two BPM up/down effects
-
-- priority: high
-- tags: tracker, effects, timing, bpm, plan-game-boy-removal-bpm-highlight-timing-editable-info
-- created: 2026-09-17
-- updated: 2026-09-17
-- plan: game-boy-removal-bpm-highlight-timing-editable-info
-- kind: card
-- parent: FEAT-78
-
-Keep the timing FX (do NOT remove them), but disconnect them from the old Game Boy timing system and reduce the whole timing-effect family to exactly two BPM-based effects:
-
-- 09 xx — Tempo up: increase the current BPM by xx.
-- 0A xx — Tempo down: decrease the current BPM by xx.
-
-(Exact codes to confirm; suggested 09 up / 0A down. This replaces 09 Set Speed 1, 0F Set Speed 2, F0/C0-C3 tick-rate and FD/FE virtual-tempo.)
-
-Semantics: the effect value is a BPM delta, applied on its own row, relative to the running BPM (base meta.bpm plus any prior adjustments). Clamp the running BPM to a sane minimum (e.g. 20) and maximum. Row duration for that row and onward uses the adjusted BPM: rowDur = 60 / (bpm * highlightA).
-
-Files: src/core/tracker.ts FX_CATALOG (list only 01/02 pitch slides + these two timing entries, with labels like "09xx Tempo up" / "0Axx Tempo down"); src/core/timing.ts buildRowTiming (interpret only the two codes; drop F0/C0-C3/09/0F/FD/FE handling); src/tui/explainer.ts cellExplain wording; stepthrough/tracker tests. FEAT-79 (core timing) must keep buildRowTiming applying these two effects.
-
-This card replaces the now-archived FEAT-80 ("Remove timing FX"). Part of epic FEAT-78 / plan game-boy-removal-bpm-highlight-timing-editable-info.
-
-## Bugs
-
-## In Progress
-
-## Blocked
-
-## Implemented
-
 ### FEAT-100 — Constraint compliance: static web TUI (HC003) + constraint hardening
 - priority: critical
 - tags: plan-constraint-compliance-static-web-tui-hc003-constraint-hardening, epic
@@ -373,7 +395,7 @@ This card replaces the now-archived FEAT-80 ("Remove timing FX"). Part of epic F
 - kind: epic
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Cards**
 - FEAT-101 — Host abstraction layer: inject runtime IO (Node + browser)
@@ -402,7 +424,7 @@ The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript)
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 After the web cards lock the dependency set (xterm.js/@xterm/headless, vite, @playwright/test, possibly a deflate helper), run security_package_validate on each and add it to scripts/audit-dependencies.mjs ALLOWED with the expected upstream repository pattern. Remove stale allowlist entries for packages no longer used (electron, react-dom, @types/react-dom, jsdom, @vitejs/plugin-react if unused). Keep the minimum-age and weekly-download thresholds, and verify every transitive lock entry still has a registry.npmjs.org URL and sha512 integrity.
@@ -439,7 +461,7 @@ scripts/audit-dependencies.mjs ALLOWED map + ALIASES; package.json. Wire the ref
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Audit OS-specific behaviour of the Node desktop app: config dir should use %APPDATA% (or LOCALAPPDATA) on win32 instead of ~/.config; confirm the Windows named-pipe control path and Unix socket cleanup; confirm node-web-audio-api prebuilt binaries install on all three OSes; check Ink rendering in Windows Terminal, macOS Terminal and a typical Linux terminal. Fix the config-path issue. The CI matrix card already adds the automation hook.
@@ -474,7 +496,7 @@ src/runtime/config.ts (win32 branch), src/control/paths.ts, package.json engines
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Define the metric precisely: from the main tracker screen, every menu/overlay opens in <=2 key presses, and every parameter inside a menu is reachable in <=2 presses from that menu's entry point. Enumerate the 73 registered commands, the context-action menus, and every ParamEditorOverlay group into docs/REACHABILITY.md with the exact key path. Add a vitest test that walks the registry/overlay metadata and fails on any entry with no documented <=2-press path. Fix the gaps found (for example parameters buried behind multiple tab cycles, or menus with no direct hotkey).
@@ -495,7 +517,7 @@ docs/REACHABILITY.md + tests/unit/reachability.test.ts driving src/tui/commands/
 - Any gap found is fixed or explicitly recorded with a follow-up.
 
 **Comments**
-- Independent of the web work; can run in parallel. Watch for overlap with the pending Game Boy/BPM cards (FEAT-82).
+- Independent of the web work; can run in parallel. Watch for overlap with the pending BPM cards (FEAT-82).
 
 ### FEAT-109 — Make CONSTRAINTS.md machine-checkable + generate tests
 - priority: high
@@ -509,7 +531,7 @@ docs/REACHABILITY.md + tests/unit/reachability.test.ts driving src/tui/commands/
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Add machine directives so constraints_validate actually enforces the rules. HC003: 'Must exist: src/web/main.tsx' and 'Run: npm run build:web'. HC004: 'Run: npm run audit:deps -- --offline'. SC001: 'Must not exist: src/**/*.js' and 'Must exist: tsconfig.json'. HC001 and HC002 stay manual, but add hand-written assertions in constraints-tests/checks/ (HC001: src/tui exists and App is rendered by Ink; HC002: a reachability test over the registry/overlays). Then run constraints_generate_tests and constraints_run_tests.
@@ -544,7 +566,7 @@ CONSTRAINTS.md machine blocks; generated constraints-tests/generated/**; hand-wr
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Add playwright.web.config.ts (channel chrome, baseURL http://127.0.0.1:8123, webServer python3 -m http.server --directory dist/web) and tests/web specs: smoke (frame + terminal render), command (/info + type in the pattern), io (save/open round-trip via download/upload), audio-gesture (AudioContext resumes after click), and a no-console-errors assertion. Add a GitHub Actions workflow matrix (ubuntu/macos/windows) running typecheck, vitest, lint and the headless web smoke test.
@@ -582,7 +604,7 @@ playwright.web.config.ts, tests/web/*.spec.ts, .github/workflows/ci.yml. Reuse t
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Add vite.config.web.mts (root src/web, base './', alias '@'->src, target chrome120, outDir dist/web) mirroring the 0008 sibling, plus scripts build:web and serve:web. Copy assets/ into dist/web/assets (skipping the large mix WAV as 0008 did). Add a build guard that fails if any node: builtin is reachable from the browser graph. Add build:web to test:all and document build/serve/test:web in the KANBAN project overview and README.
@@ -618,7 +640,7 @@ vite.config.web.mts, package.json scripts, scripts/build-web.mjs. Reuse the exis
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Build the page around the terminal: src/web/index.html + main.tsx + styles.css. A terminal frame (retro/CRT styling, monospace) hosts the xterm.js canvas, with extra NON-TUI HTML buttons: play/stop, save, open, restore backup, help, fullscreen, and mute/volume, plus status readouts (BPM, play position, dirty flag) read from SessionState. Buttons dispatch through the same command registry/session action surface as typed commands.
@@ -653,7 +675,7 @@ src/web/{index.html,main.tsx,styles.css,shell.tsx?}. Subscribe to session state 
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 SPIKE first: prove Ink 7 render() accepts a shimmed stdout (write, columns, rows, on('resize'), isTTY) and stdin (EventEmitter with on('data') and setRawMode) by rendering a tiny component to an in-memory buffer in a Node test. Then implement src/web/terminalHost.ts: create an xterm.js Terminal, expose a Writable-shaped stdout whose write forwards to term.write, a Readable-shaped stdin fed by term.onData, and a ResizeObserver/term.onResize handler that updates columns/rows and emits 'resize'. Render the existing App with { stdout, stdin, exitOnCtrlC:false }.
@@ -692,7 +714,7 @@ src/web/terminalHost.ts plus a small ink-stream-shim. Keep ONE App/tree; the bro
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Split the audio bootstrap by host: host/node installs node-web-audio-api globals (today's src/runtime/audio.ts); host/browser is a no-op because the browser already provides the Web Audio globals. Guarantee node-web-audio-api is excluded from the browser module graph. For the Prism DSP, fetch prism_wasm_bg.wasm and initSync/registerPrismWasm, preferring the existing Web Worker path (src/wasm/prism.worker.ts + PrismWorkerClient.realWorker). Resume AudioContext on the first user gesture. Do not start ControlServer in the browser.
@@ -727,7 +749,7 @@ src/host/browser/audio.ts and src/host/browser/prism.ts. Reuse src/wasm/prism.ts
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Implement the browser ConfigStore + AutosaveStore over IndexedDB (config: lastProject, defaultOpen, recentProjects; autosave: backup.lmpjson). Implement browser project open/save with the File System Access API when showOpenFilePicker/showSaveFilePicker exist, falling back to <input type=file> plus an anchor download. Distinguish 'save' (write back to a granted handle) from 'save as'. Exports (wav, mid, zip, png) become Blob downloads. Path completion is replaced by the recent-projects list plus upload.
@@ -764,7 +786,7 @@ src/host/browser/{config.ts,autosave.ts,files.ts}. Reuse existing Node config sa
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Implement the browser AssetHost on top of the HostServices seam. Resolve assets relative to import.meta.env.BASE_URL (Vite), fetch assets/lmp-default-proj.lampjson and SourceSamples/{0..5}.ogg, and return the same shapes as src/runtime/assets.ts (readAsset, readAssetText, listSourceSamples, loadDefaultSong) so Session/io code is unchanged.
@@ -798,7 +820,7 @@ src/host/browser/assets.ts. Keep the existing SourceSampleAsset shape { index, p
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Introduce one HostServices seam so the TUI never imports node: directly. Define interfaces in src/host/types.ts for file read/write, asset loading, config store, autosave store, PNG deflate and audio bootstrap. Provide src/host/node/* wrapping today's src/runtime/files.ts, src/runtime/assets.ts, src/runtime/config.ts, src/tui/autosave.ts and src/runtime/audio.ts. Provide src/host/browser/* (filled by later cards). Session takes a host (default = Node host) so the CLI and all existing tests are unchanged.
@@ -835,7 +857,7 @@ New src/host/{types.ts,node/*,browser/*}. Refactor src/tui/session.ts, src/tui/m
 **Plan:** Constraint compliance: static web TUI (HC003) + constraint hardening _(#plan-constraint-compliance-static-web-tui-hc003-constraint-hardening)_
 
 **Plan summary**
-The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded Game Boy/BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
+The project is healthy (typecheck clean, 222 tests passing, Ink TUI, TypeScript) but two blocking constraints are only partly satisfied. HC003 (desktop + web-deployed app) has NO web target: scripts/build-tui.mjs emits a Node bundle only, dist/renderer is stale Electron leftover, and the 0008 sibling's build:web/Playwright web config were dropped during the Terminal migration. HC004 is implemented by scripts/audit-dependencies.mjs but CONSTRAINTS.md declares zero machine directives, so constraints_validate can't enforce anything. HC002 (2-press reachability) is unverified. Plan: (1) add a static browser target for the same Ink TUI — a HostServices seam so core/TUI stop importing node:, browser asset/persistence/audio/WASM hosts, an xterm.js terminal bridge around Ink, a web frame with non-TUI buttons, a Vite web build and Playwright web tests; (2) harden CONSTRAINTS.md with machine checks + generated tests, audit 2-press reachability, verify cross-platform desktop behavior, and refresh the dependency allowlist. The already-carded BPM plan (FEAT-78..85) is NOT re-planned here and remains pending. User chose the client-side static web approach over a server-streamed Ink/xterm option.
 
 **Approach**
 Delete stale dist/main, dist/preload and dist/renderer artifacts (leftover from the pre-Terminal Electron build; dist is gitignored but confusing), add an npm clean script, and drop the now-meaningless 'react-dom' entry from scripts/build-tui.mjs externals. Confirm assets shipping and the prism worker bundle are unaffected.
@@ -1537,7 +1559,7 @@ Moving forward, the project is its own standalone sampler tracker with no Furnac
 Actions:
 
 1. Delete manage/KANBAN-old.md (historical pre-TUI backlog) — no longer a source of truth.
-2. Add a "Project overview" section near the top of KANBAN.md for future agents: what Lantern is (Node/TypeScript/Ink terminal sampler tracker; 4-channel Game Boy-style patterns, sampler + spectral/percussion synthesis, mixer/master FX, project IO, stepthrough tutorial, control socket), the architecture map (src/core framework-agnostic model/parser-free, src/audio node-web-audio-api, src/tui Ink UI, src/runtime config/IO, src/control socket, src/wasm prism DSP), how to build/test/run (npm run dev:tui, npm test, npm run typecheck), key conventions (Session is the single action surface; commands registry drives TUI + scripts; project files are .lampjson) and the persistence model (config at ~/.config/lantern/config.json, autosave backup.lmpjson, /restore).
+2. Add a "Project overview" section near the top of KANBAN.md for future agents: what Lantern is (Node/TypeScript/Ink terminal sampler tracker; 4-channel tracker-style patterns, sampler + spectral/percussion synthesis, mixer/master FX, project IO, stepthrough tutorial, control socket), the architecture map (src/core framework-agnostic model/parser-free, src/audio node-web-audio-api, src/tui Ink UI, src/runtime config/IO, src/control socket, src/wasm prism DSP), how to build/test/run (npm run dev:tui, npm test, npm run typecheck), key conventions (Session is the single action surface; commands registry drives TUI + scripts; project files are .lampjson) and the persistence model (config at ~/.config/lantern/config.json, autosave backup.lmpjson, /restore).
 
 Acceptance: manage/KANBAN-old.md is gone; KANBAN.md has an accurate, concise overview that lets a new agent orient without reading src; no Furnace/.fur mentions remain in live docs.
 
@@ -1781,7 +1803,7 @@ Three requested workstreams. (1) Full removal of Furnace Tracker / .fur: the bun
 Move every model/type definition out of src/core/fur/types.ts into a new src/core/songTypes.ts. The parser files temporarily import from ../songTypes so nothing else changes in this step. This decouples the shared NoteValue/PatternCell/SongModel vocabulary from the Furnace directory before the parser is deleted.
 
 **Architecture**
-New src/core/songTypes.ts holds: NoteValue, EffectSlot, PatternCell, Pattern, GameBoyParams, Instrument, Wavetable, ChipDef, SongInfo, Subsong, AssetDir, GAME_BOY_CHIP_ID, emptyEffectSlot(), emptyPatternCell(). RawFurModule moves across temporarily (removed in card 2). Update every importer: src/core/{pitch,midi,tracker,stepthrough,sampler,songModel,project}.ts, src/shared/types.ts, src/tui/{session,format,explainer}.ts, src/tui/components/PatternView.tsx, and the parser files src/core/fur/{parse,reader,blocks}.ts. Point imports directly at the new module; no re-export shim.
+New src/core/songTypes.ts holds: NoteValue, EffectSlot, PatternCell, Pattern, NoteValue, EffectSlot, PatternCell, Pattern, SongInfo, Subsong, AssetDir, emptyEffectSlot(), emptyPatternCell(). RawFurModule moves across temporarily (removed in card 2). Update every importer: src/core/{pitch,midi,tracker,stepthrough,sampler,songModel,project}.ts, src/shared/types.ts, src/tui/{session,format,explainer}.ts, src/tui/components/PatternView.tsx, and the parser files src/core/fur/{parse,reader,blocks}.ts. Point imports directly at the new module; no re-export shim.
 
 **Key decisions**
 
@@ -3867,17 +3889,17 @@ Direct UX change requested after FEAT-88.
 ### FEAT-80 — Remove timing FX from the tracker catalog
 
 - priority: high
-- tags: timing, bpm, gameboy-removal, song-info, project, migration, plan-game-boy-removal-bpm-highlight-timing-editable-info, tracker, effects, cleanup
+- tags: timing, bpm, legacy-model-removal, song-info, project, migration, plan-bpm-highlight-timing-editable-info, tracker, effects, cleanup
 - created: 2026-09-17
 - updated: 2026-09-17
 - plan: game-boy-removal-bpm-highlight-timing-editable-info
 - kind: card
 - parent: FEAT-78
 
-**Plan:** Game Boy removal, BPM + highlight timing, editable /info _(#plan-game-boy-removal-bpm-highlight-timing-editable-info)_
+**Plan:** BPM + highlight timing, editable /info _(#plan-bpm-highlight-timing-editable-info)_
 
 **Plan summary**
-Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining Game Boy surface from the model and UI (system, chips, wavetables, insType/gameBoy, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the Game Boy model scrub, then the overlay, then stepthrough/docs.
+Three linked changes. (1) Timing collapses to two user concepts: a single BPM plus beat/bar row highlighting. Row duration becomes 60 / (bpm * beatRows), the tickRate/speed/virtualTempo model is removed and the timing FX are reduced to two BPM up/down effects, old projects migrate automatically. (2) Remove the remaining legacy chip surface from the model and UI (system, chips, wavetables, insType/legacy params, explainer prose). (3) `/info` opens an editable Song Info menu (reusing ParamEditorOverlay) showing every project field plus the BPM/beat/bar timing controls. Sequencing keeps the build green: core timing first, then the BPM-FX redefinition, then the legacy chip model scrub, then the overlay, then stepthrough/docs.
 
 **Approach**
 Drop the timing effects now that BPM is the only tempo control: 09 (Set Speed 1), 0F (Set Speed 2), F0 / C0-C3 (tick rate), FD/FE (virtual tempo). Keep 01/02 pitch slides and the rest.

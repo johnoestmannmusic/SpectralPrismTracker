@@ -69,9 +69,9 @@ export function SongInfoPanel({ state, highlight }: Props) {
           <Box marginTop={1}>
             <Text color={marked("Timing") ? "yellow" : undefined} bold>
               {marked("Timing") ? "◆ " : "  "}
-              {`Timing · ${song.meta.tickRate.toFixed(1)}Hz · speed ${
-                song.meta.speedPattern[0] ?? "—"
-              } · beat ${song.meta.highlightA}/bar ${song.meta.highlightB}`}
+              {`Timing · ${song.meta.bpm} BPM · beat ${
+                song.meta.highlightA
+              }/bar ${song.meta.highlightB}`}
             </Text>
           </Box>
         </Box>

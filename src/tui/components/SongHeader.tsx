@@ -41,9 +41,9 @@ export function SongHeader({ state, playhead, context }: Props) {
       </Box>
       <Box>
         <Text dimColor>
-          {song.meta.system} · {song.meta.tickRate.toFixed(1)}Hz ·{" "}
-          {song.meta.patternLength} rows · order {viewOrder}/
-          {Math.max(song.meta.orderLength - 1, 0)} · row {row} ·{" "}
+          {song.meta.bpm} BPM · beat {song.meta.highlightA}/bar{" "}
+          {song.meta.highlightB} · {song.meta.patternLength} rows · order{" "}
+          {viewOrder}/{Math.max(song.meta.orderLength - 1, 0)} · row {row} ·{" "}
           {song.instruments.length} ins
           {state.loopMode === "order" ? ` · LOOP order ${viewOrder}` : ""}
         </Text>

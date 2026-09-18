@@ -18,6 +18,7 @@ import {
   type SpectralSettings,
 } from "./spectral";
 import { retime, type PatternSnapshot, type SongModel } from "./songModel";
+import { clampBpm } from "./timing";
 import {
   defaultMasterFx,
   masterFxFromJson,
@@ -54,11 +55,10 @@ export interface ProjectFile {
   /** Master output effects (delay + reverb). */
   masterFx: MasterFxSettings;
   patternSnapshot?: PatternSnapshot | null;
-  tickRateOverride?: number | null;
-  speedOverride?: number | null;
+  /** Tempo in beats per minute. Absent in legacy projects (migrated on load). */
+  bpmOverride?: number | null;
   highlightAOverride?: number | null;
   highlightBOverride?: number | null;
-  virtualTempoOverride?: [number, number] | null;
 }
 
 export function defaultProject(): ProjectFile {
@@ -83,11 +83,9 @@ export function defaultProject(): ProjectFile {
     theme: "system",
     masterFx: defaultMasterFx(),
     patternSnapshot: null,
-    tickRateOverride: null,
-    speedOverride: null,
+    bpmOverride: null,
     highlightAOverride: null,
     highlightBOverride: null,
-    virtualTempoOverride: null,
   };
 }
 
@@ -459,6 +457,29 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     virtualTempo = [a as number, b as number];
   }
 
+  const numOrNull = (key: string): number | null =>
+    typeof value[key] === "number" ? (value[key] as number) : null;
+  const highlightAOverride = numOrNull("highlightAOverride");
+  const highlightBOverride = numOrNull("highlightBOverride");
+  // Legacy projects stored a tick rate + speed + virtual tempo; collapse those
+  // into one BPM so row duration is preserved (bpm = 60 / (rowDur * beat)).
+  let bpmOverride = numOrNull("bpmOverride");
+  if (bpmOverride === null) {
+    const legacyTickRate = numOrNull("tickRateOverride");
+    const legacySpeed = numOrNull("speedOverride");
+    if (legacyTickRate !== null || legacySpeed !== null) {
+      const tickRate = legacyTickRate ?? 60;
+      const speed = legacySpeed ?? 6;
+      const beat = highlightAOverride ?? 4;
+      const virtualNum = Math.max(virtualTempo?.[0] ?? 1, 1);
+      const virtualDen = Math.max(virtualTempo?.[1] ?? 1, 1);
+      bpmOverride = clampBpm(
+        (60 * tickRate * virtualNum) /
+          (Math.max(speed, 1) * virtualDen * Math.max(beat, 1)),
+      );
+    }
+  }
+
   return {
     ...base,
     version: num("version", 1),
@@ -491,21 +512,9 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     theme: str("theme", "system"),
     masterFx: masterFxFromJson(value.masterFx),
     patternSnapshot: snapshotFromSerde(value.patternSnapshot),
-    tickRateOverride:
-      typeof value.tickRateOverride === "number"
-        ? value.tickRateOverride
-        : null,
-    speedOverride:
-      typeof value.speedOverride === "number" ? value.speedOverride : null,
-    highlightAOverride:
-      typeof value.highlightAOverride === "number"
-        ? value.highlightAOverride
-        : null,
-    highlightBOverride:
-      typeof value.highlightBOverride === "number"
-        ? value.highlightBOverride
-        : null,
-    virtualTempoOverride: virtualTempo,
+    bpmOverride,
+    highlightAOverride,
+    highlightBOverride,
   };
 }
 
@@ -542,16 +551,11 @@ export function projectToValue(project: ProjectFile): Record<string, unknown> {
   if (project.websiteLink) value.websiteLink = project.websiteLink;
   if (project.patternSnapshot)
     value.patternSnapshot = snapshotToSerde(project.patternSnapshot);
-  if (project.tickRateOverride != null)
-    value.tickRateOverride = project.tickRateOverride;
-  if (project.speedOverride != null)
-    value.speedOverride = project.speedOverride;
+  if (project.bpmOverride != null) value.bpmOverride = project.bpmOverride;
   if (project.highlightAOverride != null)
     value.highlightAOverride = project.highlightAOverride;
   if (project.highlightBOverride != null)
     value.highlightBOverride = project.highlightBOverride;
-  if (project.virtualTempoOverride != null)
-    value.virtualTempoOverride = project.virtualTempoOverride;
   return value;
 }
 
@@ -586,14 +590,8 @@ export function applyTimingOverrides(
   song: SongModel,
 ): void {
   let changed = false;
-  if (project.tickRateOverride != null) {
-    song.meta.tickRate = project.tickRateOverride;
-    changed = true;
-  }
-  if (project.speedOverride != null) {
-    if (song.meta.speedPattern.length > 0)
-      song.meta.speedPattern[0] = project.speedOverride;
-    else song.meta.speedPattern.push(project.speedOverride);
+  if (project.bpmOverride != null) {
+    song.meta.bpm = clampBpm(project.bpmOverride);
     changed = true;
   }
   if (project.highlightAOverride != null) {
@@ -602,10 +600,6 @@ export function applyTimingOverrides(
   }
   if (project.highlightBOverride != null) {
     song.meta.highlightB = project.highlightBOverride;
-    changed = true;
-  }
-  if (project.virtualTempoOverride != null) {
-    song.meta.virtualTempo = project.virtualTempoOverride;
     changed = true;
   }
   if (changed) {

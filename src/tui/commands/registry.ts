@@ -130,11 +130,29 @@ export class CommandRegistry {
    * Whether pressing Enter should autocomplete the unfinished command (like
    * Tab) or execute it: complete while the command name is not yet a real
    * command and there is a suggestion to accept.
+   *
+   * Aliases complicate this: typing `/pat` resolves to the `setpattern` alias,
+   * but the user is almost certainly still spelling `/patterns`. When the
+   * typed token is a strict prefix of the best suggestion and does not already
+   * begin the resolved command's own name, prefer completing.
    */
   enterAction(input: string, hasSuggestions: boolean): "complete" | "run" {
     const raw = input.trim().replace(/^\//, "");
-    const first = tokenize(raw)[0] ?? "";
-    if (this.get(first)) return "run";
+    const tokens = tokenize(raw);
+    const first = tokens[0] ?? "";
+    const def = this.get(first);
+    if (tokens.length <= 1 && hasSuggestions) {
+      const top = this.suggest(first, 1)[0];
+      if (
+        top &&
+        top.name.length > first.length &&
+        top.name.startsWith(first) &&
+        (!def || !def.name.startsWith(first))
+      ) {
+        return "complete";
+      }
+    }
+    if (def) return "run";
     return hasSuggestions ? "complete" : "run";
   }
 

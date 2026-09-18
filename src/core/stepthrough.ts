@@ -2,7 +2,7 @@ import type { PatternCell } from "./songTypes";
 import { defaultMasterFx, type MasterFxSettings } from "./masterFx";
 import type { ProjectFile } from "./project";
 import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
-import { applyEdit, type SongModel } from "./songModel";
+import { applyEdit, retime, type SongModel } from "./songModel";
 import {
   defaultSpectralSettings,
   spectralModeHasAmount,
@@ -54,8 +54,7 @@ export type StepAction =
     }
   | {
       kind: "timing";
-      tickRate?: number;
-      speed?: number;
+      bpm?: number;
       highlightA?: number;
       highlightB?: number;
     }
@@ -168,11 +167,9 @@ export function blankTargetFrom(target: BuildTarget): BuildTarget {
   blank.project.artist = "";
   blank.project.album = "";
   blank.project.comments = "";
-  blank.project.tickRateOverride = null;
-  blank.project.speedOverride = null;
+  blank.project.bpmOverride = null;
   blank.project.highlightAOverride = null;
   blank.project.highlightBOverride = null;
-  blank.project.virtualTempoOverride = null;
   blank.project.instrumentNames = blank.song.instruments.map(
     (_, index) => `Instrument ${String(index).padStart(2, "0")}`,
   );
@@ -506,12 +503,8 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
     kind: "timing",
   };
   let hasTiming = false;
-  if (project.tickRateOverride != null) {
-    timing.tickRate = project.tickRateOverride;
-    hasTiming = true;
-  }
-  if (project.speedOverride != null) {
-    timing.speed = project.speedOverride;
+  if (project.bpmOverride != null) {
+    timing.bpm = project.bpmOverride;
     hasTiming = true;
   }
   if (project.highlightAOverride != null) {
@@ -526,11 +519,9 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
     push({
       id: "song.timing",
       title: "Song — timing",
-      detail: `Set tick rate${timing.tickRate != null ? ` ${timing.tickRate}Hz` : ""}${
-        timing.speed != null ? `, speed ${timing.speed}` : ""
-      }${timing.highlightA != null ? `, beat ${timing.highlightA}` : ""}${
-        timing.highlightB != null ? `, bar ${timing.highlightB}` : ""
-      }.`,
+      detail: `Set BPM${timing.bpm != null ? ` ${timing.bpm}` : ""}${
+        timing.highlightA != null ? `, beat ${timing.highlightA}` : ""
+      }${timing.highlightB != null ? `, bar ${timing.highlightB}` : ""}.`,
       screen: "song",
       highlights: [{ kind: "param", group: "Timing", label: "Timing" }],
       action: timing,
@@ -888,13 +879,9 @@ export function applyBuildStep(target: BuildTarget, step: BuildStep): void {
       target.project[action.field] = action.value;
       break;
     case "timing": {
-      if (action.tickRate != null) {
-        target.project.tickRateOverride = action.tickRate;
-        target.song.meta.tickRate = action.tickRate;
-      }
-      if (action.speed != null) {
-        target.project.speedOverride = action.speed;
-        target.song.meta.speedPattern = [action.speed];
+      if (action.bpm != null) {
+        target.project.bpmOverride = action.bpm;
+        target.song.meta.bpm = action.bpm;
       }
       if (action.highlightA != null) {
         target.project.highlightAOverride = action.highlightA;
@@ -904,6 +891,7 @@ export function applyBuildStep(target: BuildTarget, step: BuildStep): void {
         target.project.highlightBOverride = action.highlightB;
         target.song.meta.highlightB = action.highlightB;
       }
+      retime(target.song);
       break;
     }
     case "sampleName": {

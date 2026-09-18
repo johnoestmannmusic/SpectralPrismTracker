@@ -9,6 +9,7 @@ import {
   cellAt,
   instrumentColor,
   patternSnapshot,
+  retime,
   type SongModel,
 } from "@/core/songModel";
 import {
@@ -21,7 +22,7 @@ import {
   sequenceFromSong,
   type SamplerSettings,
 } from "@/core/sampler";
-import { rowDuration, rowTime, songPositionAt } from "@/core/timing";
+import { clampBpm, rowDuration, rowTime, songPositionAt } from "@/core/timing";
 import { samplerPlaybackRate } from "@/core/pitch";
 import { type BuildStep, type BuildTarget } from "@/core/stepthrough";
 import {
@@ -56,6 +57,17 @@ import type { LoadedSong } from "@/shared/types";
 
 /** Mutating actions between autosave backups. */
 export const AUTOSAVE_EVERY = 15;
+
+/** Editable string fields of the Song Info menu. */
+export type SongMetaField =
+  | "songTitle"
+  | "artist"
+  | "album"
+  | "comments"
+  | "musicLicense"
+  | "codeLicense"
+  | "viewSourceLink"
+  | "websiteLink";
 
 export interface Cursor {
   order: number;
@@ -507,6 +519,21 @@ export class Session {
       startRow: order * patternLength,
       endRow: (order + 1) * patternLength,
     });
+  }
+
+  /**
+   * Re-publishes the current song to the audio engine after a structural
+   * pattern/order edit (applySnapshot changes the sequence, so the scheduler's
+   * cached copy would otherwise keep playing the pre-edit orders), and
+   * refreshes the duration and loop range to match.
+   */
+  private syncAfterSnapshot(): void {
+    const song = this.state.song;
+    const engine = this.engine;
+    if (!song || !engine) return;
+    engine.updateSequence(sequenceFromSong(song));
+    this.patch({ duration: engine.songDuration() });
+    this.syncLoopRange();
   }
 
   // ---- cursor / selection --------------------------------------------------
@@ -1228,6 +1255,7 @@ export class Session {
       dirty: true,
       viewOrder: Math.min(pos + 1, song.meta.orderLength - 1),
     });
+    this.syncAfterSnapshot();
     this.recordMemento(duplicate ? "duplicate order" : "insert order", before);
     this.markAction();
     return true;
@@ -1249,6 +1277,7 @@ export class Session {
       dirty: true,
       viewOrder: Math.min(pos, song.meta.orderLength - 1),
     });
+    this.syncAfterSnapshot();
     this.recordMemento("remove order", before);
     this.markAction();
     return true;
@@ -1264,6 +1293,7 @@ export class Session {
     if (!moveOrderSnapshot(snapshot, pos, direction)) return false;
     applySnapshot(song, snapshot);
     this.patch({ dirty: true, viewOrder: pos + direction });
+    this.syncAfterSnapshot();
     this.recordMemento("move order", before);
     this.markAction();
     return true;
@@ -1281,6 +1311,7 @@ export class Session {
       return false;
     applySnapshot(song, snapshot);
     this.patch({ dirty: true });
+    this.syncAfterSnapshot();
     this.recordMemento("set pattern number", before);
     this.markAction();
     return true;
@@ -1295,6 +1326,7 @@ export class Session {
     clearPatternsSnapshot(snapshot, song.meta.patternLength);
     applySnapshot(song, snapshot);
     this.patch({ dirty: true, viewOrder: 0 });
+    this.syncAfterSnapshot();
     this.recordMemento("clear all patterns", before);
     this.markAction();
     return true;
@@ -1416,6 +1448,90 @@ export class Session {
     this.setMasterFx({ ...this.state.masterFx, ...patch });
   }
 
+  /**
+   * Edits a text field of the song info (title, credits, links). Mirrors the
+   * handful of fields the song model tracks so the header/explainer stay in
+   * sync, and records one undo step per committed value.
+   */
+  setSongMeta(field: SongMetaField, value: string): void {
+    const project = this.state.project;
+    const song = this.state.song;
+    if (!project || !song) return;
+    const next = value.trim();
+    if ((project[field] ?? "") === next) return;
+    const before = this.captureMemento();
+    const nextProject: ProjectFile = { ...project, [field]: next };
+    if (field === "songTitle") song.meta.name = next || "Untitled";
+    else if (field === "artist") song.meta.author = next;
+    else if (field === "comments") song.meta.comment = next;
+    this.patch({ project: nextProject, dirty: true });
+    this.recordMemento("edit song info", before);
+    this.markAction();
+  }
+
+  /** Sets the song tempo, retiming rows, the audio sequence and the duration. */
+  setBpm(bpm: number): void {
+    const project = this.state.project;
+    const song = this.state.song;
+    if (!project || !song) return;
+    const next = clampBpm(bpm);
+    if (song.meta.bpm === next) return;
+    const before = this.captureMemento();
+    song.meta.bpm = next;
+    retime(song);
+    const engine = this.engine;
+    if (engine) {
+      engine.updateSequence(sequenceFromSong(song));
+      this.patch({
+        project: { ...project, bpmOverride: next },
+        dirty: true,
+        duration: engine.songDuration(),
+      });
+    } else {
+      this.patch({ project: { ...project, bpmOverride: next }, dirty: true });
+    }
+    this.recordMemento("change BPM", before);
+    this.markAction();
+  }
+
+  /** Sets the beat/bar highlight rows and re-times the song. */
+  setHighlight(beatRows: number, barRows: number): void {
+    const project = this.state.project;
+    const song = this.state.song;
+    if (!project || !song) return;
+    const beat = Math.max(Math.round(beatRows), 1);
+    const bar = Math.max(Math.round(barRows), beat);
+    if (song.meta.highlightA === beat && song.meta.highlightB === bar) return;
+    const before = this.captureMemento();
+    song.meta.highlightA = beat;
+    song.meta.highlightB = bar;
+    retime(song);
+    const engine = this.engine;
+    if (engine) {
+      engine.updateSequence(sequenceFromSong(song));
+      this.patch({
+        project: {
+          ...project,
+          highlightAOverride: beat,
+          highlightBOverride: bar,
+        },
+        dirty: true,
+        duration: engine.songDuration(),
+      });
+    } else {
+      this.patch({
+        project: {
+          ...project,
+          highlightAOverride: beat,
+          highlightBOverride: bar,
+        },
+        dirty: true,
+      });
+    }
+    this.recordMemento("change highlights", before);
+    this.markAction();
+  }
+
   samplerSettings(index: number): SamplerSettings | undefined {
     return this.state.settings[index];
   }
@@ -1473,8 +1589,6 @@ export class Session {
     settings.push(defaultSamplerSettings());
     song.instruments.push({
       name: `Instrument ${String(index + 1).padStart(2, "0")}`,
-      insType: 2,
-      gameBoy: null,
       colorRgb: instrumentColor(index),
     });
     const project = this.state.project;
@@ -1862,8 +1976,9 @@ export class Session {
         ? {
             name: song.meta.name,
             author: song.meta.author,
-            system: song.meta.system,
-            tickRate: song.meta.tickRate,
+            bpm: song.meta.bpm,
+            highlightA: song.meta.highlightA,
+            highlightB: song.meta.highlightB,
             patternLength: song.meta.patternLength,
             orderLength: song.meta.orderLength,
             instruments: song.instruments.length,

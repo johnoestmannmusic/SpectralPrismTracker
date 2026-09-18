@@ -71,6 +71,18 @@ describe("command registry", () => {
     expect(registry.enterAction("/info song", true)).toBe("run");
     expect(registry.enterAction("/nonsense", false)).toBe("run");
   });
+
+  it("prefers completing an alias-prefix over running the alias", () => {
+    // `pat` is an alias for `setpattern`, but `/pat` is still spelling
+    // `/patterns`, so Enter must complete rather than run setpattern.
+    expect(registry.enterAction("/pat", true)).toBe("complete");
+    expect(registry.enterAction("/pattern", true)).toBe("complete");
+    // An alias whose own name starts with the typed token still runs.
+    expect(registry.enterAction("/p", true)).toBe("run");
+    expect(registry.enterAction("/smp", true)).toBe("run");
+    // A fully typed canonical command runs.
+    expect(registry.enterAction("/patterns", true)).toBe("run");
+  });
 });
 
 describe("session commands over the bundled song", () => {

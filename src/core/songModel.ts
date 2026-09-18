@@ -1,34 +1,24 @@
-import type {
-  ChipDef,
-  GameBoyParams,
-  NoteValue,
-  Pattern,
-  PatternCell,
-  Wavetable,
-} from "./songTypes";
+import type { NoteValue, Pattern, PatternCell } from "./songTypes";
 import { emptyPatternCell } from "./songTypes";
-import { buildRowTiming } from "./timing";
+import { buildRowTiming, DEFAULT_BPM } from "./timing";
 
 export interface SongMeta {
   name: string;
   author: string;
-  system: string;
   tuningA4: number;
-  formatVersion: number;
-  tickRate: number;
-  speedPattern: number[];
+  /** Beats per minute — drives row duration (60 / (bpm * highlightA)). */
+  bpm: number;
   patternLength: number;
   orderLength: number;
+  /** Rows per beat (used for highlighting and row duration). */
   highlightA: number;
+  /** Rows per bar (highlighting only). */
   highlightB: number;
   comment: string;
-  virtualTempo: [number, number];
 }
 
 export interface InstrumentInfo {
   name: string;
-  insType: number;
-  gameBoy: GameBoyParams | null;
   colorRgb: [number, number, number];
 }
 
@@ -48,8 +38,6 @@ export interface SongModel {
   meta: SongMeta;
   channels: Channel[];
   instruments: InstrumentInfo[];
-  wavetables: Wavetable[];
-  chips: ChipDef[];
   rowTimes: number[];
   rowTicks: number[];
 }
@@ -156,11 +144,9 @@ export interface ProjectSongSource {
   songTitle?: string;
   artist?: string;
   comments?: string;
-  tickRateOverride?: number | null;
-  speedOverride?: number | null;
+  bpmOverride?: number | null;
   highlightAOverride?: number | null;
   highlightBOverride?: number | null;
-  virtualTempoOverride?: [number, number] | null;
   instruments: unknown[];
   patternSnapshot?: PatternSnapshot | null;
 }
@@ -226,8 +212,6 @@ export function buildSongModelFromProject(
     { length: instrumentCount },
     (_, i) => ({
       name: `Instrument ${(i + 1).toString().padStart(2, "0")}`,
-      insType: 2,
-      gameBoy: null,
       colorRgb: instrumentColor(i),
     }),
   );
@@ -236,24 +220,16 @@ export function buildSongModelFromProject(
     meta: {
       name: project.songTitle || "Untitled",
       author: project.artist || "",
-      system: "Game Boy",
       tuningA4: 440,
-      formatVersion: 0,
-      tickRate: project.tickRateOverride ?? 60,
-      speedPattern: [project.speedOverride ?? 6],
+      bpm: project.bpmOverride ?? DEFAULT_BPM,
       patternLength,
       orderLength,
       highlightA: project.highlightAOverride ?? 4,
       highlightB: project.highlightBOverride ?? 16,
       comment: project.comments || "",
-      virtualTempo: project.virtualTempoOverride ?? [1, 1],
     },
     channels,
     instruments,
-    wavetables: [],
-    chips: [
-      { chipId: 4, channelCount: 4, volume: 1, panning: 0, frontRear: 0 },
-    ],
     rowTimes: [],
     rowTicks: [],
   };

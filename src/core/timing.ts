@@ -1,9 +1,24 @@
 import type { SongMeta, SongModel } from "./songModel";
 
-/** Seconds per pattern row (only speedPattern[0] is used, as in the original). */
+/** Ticks per pattern row. Kept constant so 01/02 pitch-slide maths is stable. */
+export const TICKS_PER_ROW = 6;
+
+/** Default tempo when a project carries no BPM. */
+export const DEFAULT_BPM = 150;
+
+/** Clamp range for the running BPM (user-set and effect-adjusted). */
+export const MIN_BPM = 20;
+export const MAX_BPM = 999;
+
+export function clampBpm(bpm: number): number {
+  return Math.min(Math.max(bpm, MIN_BPM), MAX_BPM);
+}
+
+/** Seconds per pattern row: 60 / (bpm * rows-per-beat). */
 export function rowDurationSec(meta: SongMeta): number {
-  const speed = meta.speedPattern[0] ?? 6;
-  return speed / Math.max(meta.tickRate, 1);
+  const beatRows = Math.max(meta.highlightA, 1);
+  const bpm = Math.max(meta.bpm, 1);
+  return 60 / (bpm * beatRows);
 }
 
 export interface RowTiming {
@@ -11,17 +26,18 @@ export interface RowTiming {
   ticks: number[];
 }
 
-/** Build one loop's row clock. Timing effects take effect on their own row. */
+/**
+ * Build one loop's row clock from a single BPM plus the two timing effects:
+ * `09 xx` raises the running BPM by xx, `0A xx` lowers it. An effect applies
+ * to its own row and every row after it until the next change.
+ */
 export function buildRowTiming(song: SongModel): RowTiming {
   const rowCount = song.meta.orderLength * song.meta.patternLength;
   const starts: number[] = [];
   const ticks: number[] = [];
+  const beatRows = Math.max(song.meta.highlightA, 1);
   let time = 0;
-  let tickRate = Math.max(song.meta.tickRate, 1);
-  const speeds = song.meta.speedPattern.slice();
-  if (speeds.length === 0) speeds.push(6);
-  let virtualNum = Math.max(song.meta.virtualTempo[0], 1);
-  let virtualDen = Math.max(song.meta.virtualTempo[1], 1);
+  let bpm = clampBpm(song.meta.bpm);
 
   for (let absoluteRow = 0; absoluteRow < rowCount; absoluteRow++) {
     starts.push(time);
@@ -40,25 +56,14 @@ export function buildRowTiming(song: SongModel): RowTiming {
         const value = effect.value;
         if (command === null || value === null) continue;
         if (command === 0x09 && value > 0) {
-          speeds[0] = value;
-        } else if (command === 0x0f && value > 0) {
-          if (speeds.length < 2) speeds.push(value);
-          else speeds[1] = value;
-        } else if (command === 0xf0 && value > 0) {
-          tickRate = Math.max((value * 2) / 5, 1);
-        } else if (command >= 0xc0 && command <= 0xc3) {
-          const hz = (((command & 3) << 8) | value) & 0xffff;
-          if (hz > 0) tickRate = hz;
-        } else if (command === 0xfd && value > 0) {
-          virtualNum = value;
-        } else if (command === 0xfe && value > 0) {
-          virtualDen = value;
+          bpm = clampBpm(bpm + value);
+        } else if (command === 0x0a && value > 0) {
+          bpm = clampBpm(bpm - value);
         }
       }
     }
-    const speed = Math.max(speeds[absoluteRow % speeds.length] ?? 1, 1);
-    ticks.push(speed);
-    time += (speed / tickRate) * (virtualDen / virtualNum);
+    ticks.push(TICKS_PER_ROW);
+    time += 60 / (bpm * beatRows);
   }
   starts.push(time);
   return { starts, ticks };

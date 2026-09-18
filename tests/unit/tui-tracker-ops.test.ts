@@ -79,10 +79,19 @@ describe("tracker block operations", () => {
 
   it("inserts and removes orders", async () => {
     const before = session.song!.meta.orderLength;
+    const beforeDuration = session.backend!.songDuration();
     expect((await run("insert")).ok).toBe(true);
     expect(session.song!.meta.orderLength).toBe(before + 1);
+    // The audio engine must be re-published after a structural change, or it
+    // keeps scheduling the pre-edit orders (stale sequence).
+    expect(session.backend!.songDuration()).toBeCloseTo(
+      session.song!.rowTimes.at(-1)!,
+      6,
+    );
+    expect(session.backend!.songDuration()).toBeGreaterThan(beforeDuration);
     expect((await run("remove")).ok).toBe(true);
     expect(session.song!.meta.orderLength).toBe(before);
+    expect(session.backend!.songDuration()).toBeCloseTo(beforeDuration, 6);
   });
 
   it("re-arranges orders with /move", async () => {
