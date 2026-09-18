@@ -25,7 +25,9 @@
     "src/wasm",
     "src/shared",
     "src/runtime",
+    "src/host",
     "src/tui",
+    "src/web",
     "tests/unit"
   ]
 }

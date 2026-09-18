@@ -28,7 +28,6 @@ await build({
     "ink",
     "react",
     "react/jsx-runtime",
-    "react-dom",
   ],
   banner: { js: "#!/usr/bin/env node" },
   outfile: path.join(dist, "main.mjs"),

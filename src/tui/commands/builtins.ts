@@ -1,13 +1,13 @@
-import { readdir } from "node:fs/promises";
-import path from "node:path";
-import { extensionOf, fileExists } from "@/runtime/files";
-import { readConfig, writeConfig } from "@/runtime/config";
+import { getHost } from "@/host";
+import { extensionOf } from "@/runtime/paths";
+import { contextActions, type ContextTarget } from "../contextActions";
 import {
   exportCoverPng,
   exportMidi,
   exportSamplesZip,
   exportStepRecipe,
   exportWav,
+  importSample,
   newProject,
   openPath,
   saveProject,
@@ -27,23 +27,9 @@ const pathArg: CommandArg = {
   complete: async (prefix) => completePath(prefix),
 };
 
-/** Directory/file completion for path args. */
+/** Directory/file completion for path args (delegated to the active host). */
 export async function completePath(prefix: string): Promise<string[]> {
-  const dir = prefix.endsWith("/") ? prefix : path.dirname(prefix) + "/";
-  const base = prefix.endsWith("/") ? "" : path.basename(prefix);
-  try {
-    const entries = await readdir(dir.length ? dir : ".", {
-      withFileTypes: true,
-    });
-    return entries
-      .filter((entry) =>
-        entry.name.toLowerCase().startsWith(base.toLowerCase()),
-      )
-      .map((entry) => `${dir}${entry.name}${entry.isDirectory() ? "/" : ""}`)
-      .slice(0, 50);
-  } catch {
-    return [];
-  }
+  return getHost().fs.completePath(prefix);
 }
 
 function parseTime(input: string): number | null {
@@ -171,11 +157,29 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "loop",
+    name: "loop",
+    aliases: ["looppattern", "orderloop"],
+    description: "Loop the whole song or the viewed order",
+    category: "transport",
+    args: [
+      { name: "mode", type: "enum", choices: ["song", "order", "toggle"] },
+    ],
+    run: (args, ctx) => {
+      const mode = arg(args, "mode");
+      if (mode === "order") ctx.session.setLoopMode("order");
+      else if (mode === "song") ctx.session.setLoopMode("song");
+      else ctx.session.toggleOrderLoop();
+      return ok(`Loop ${ctx.session.getState().loopMode}`);
+    },
+  },
+  {
     id: "seek",
     name: "seek",
     description: "Seek to a time (seconds or mm:ss)",
     category: "transport",
     args: [{ name: "time", type: "string", required: true }],
+    examples: ["/seek 1:30", "/seek 42"],
     run: (args, ctx) => {
       const time = parseTime(arg(args, "time")!);
       if (time === null) return fail("Seek needs seconds or mm:ss");
@@ -224,6 +228,7 @@ export const builtinCommands: CommandDef[] = [
       { name: "order", type: "number", required: true },
       { name: "row", type: "number" },
     ],
+    examples: ["/goto 3", "/goto 3 16"],
     run: (args, ctx) => {
       const order = Number(arg(args, "order"));
       const row = arg(args, "row") !== undefined ? Number(arg(args, "row")) : 0;
@@ -331,6 +336,127 @@ export const builtinCommands: CommandDef[] = [
     run: (_args, ctx) => {
       ctx.session.clearCell();
       return ok("Cleared");
+    },
+  },
+  {
+    id: "noteoff",
+    name: "noteoff",
+    aliases: ["off"],
+    description: "Enter a note-off at the cursor",
+    category: "edit",
+    run: (_args, ctx) => {
+      ctx.session.noteOff();
+      return ok("Note off");
+    },
+  },
+  {
+    id: "playcursor",
+    name: "playcursor",
+    aliases: ["playfromcursor", "playcell"],
+    description: "Play from the selected cell",
+    category: "transport",
+    run: (_args, ctx) => {
+      ctx.session.playFromCursor();
+      return ok("Playing from cursor");
+    },
+  },
+  {
+    id: "duplicateinstrument",
+    name: "duplicateinstrument",
+    aliases: ["dupins", "cloneinstrument"],
+    description: "Duplicate an instrument (default: the cursor's instrument)",
+    category: "edit",
+    args: [{ name: "index", type: "number" }],
+    run: (args, ctx) => {
+      const raw = arg(args, "index");
+      const index =
+        raw !== undefined
+          ? Number(raw)
+          : (ctx.session.instrumentAtCursor() ?? 0);
+      if (!Number.isFinite(index))
+        return fail("instrument index must be a number");
+      const created = ctx.session.duplicateInstrument(index);
+      return created >= 0
+        ? ok(`Duplicated instrument ${index} to ${created}`, {
+            instrument: created,
+          })
+        : fail("Cannot duplicate that instrument");
+    },
+  },
+  {
+    id: "muteinstrument",
+    name: "muteinstrument",
+    aliases: ["insmute", "toggleinstrumentmute"],
+    description: "Toggle mute on an instrument",
+    category: "mixer",
+    args: [{ name: "index", type: "number" }],
+    run: (args, ctx) => {
+      const raw = arg(args, "index");
+      const index =
+        raw !== undefined
+          ? Number(raw)
+          : (ctx.session.instrumentAtCursor() ?? 0);
+      const setting = ctx.session.samplerSettings(index);
+      if (!setting) return fail("No such instrument");
+      ctx.session.updateSamplerSetting(index, { muted: !setting.muted });
+      return ok(`Instrument ${index} ${setting.muted ? "unmuted" : "muted"}`);
+    },
+  },
+  {
+    id: "previewinstrument",
+    name: "previewinstrument",
+    aliases: ["auditioninstrument"],
+    description: "Audition an instrument",
+    category: "samples",
+    args: [{ name: "index", type: "number" }],
+    run: async (args, ctx) => {
+      const raw = arg(args, "index");
+      const index =
+        raw !== undefined
+          ? Number(raw)
+          : (ctx.session.instrumentAtCursor() ?? 0);
+      if (!Number.isFinite(index))
+        return fail("instrument index must be a number");
+      await ctx.session.previewAfterRender(index);
+      return ok(`Previewed instrument ${index}`);
+    },
+  },
+  {
+    id: "newinstrumentfromsample",
+    name: "newinstrumentfromsample",
+    aliases: ["instrumentfromsample", "sampletoinstrument"],
+    description: "Create a new instrument pointing at a source sample",
+    category: "edit",
+    args: [{ name: "slot", type: "number", required: true }],
+    run: (args, ctx) => {
+      const slot = Number(arg(args, "slot"));
+      if (!Number.isInteger(slot) || slot < 0)
+        return fail("slot must be a non-negative integer");
+      const index = ctx.session.addInstrumentFromSample(slot);
+      return index >= 0
+        ? ok(`Added instrument ${index} from sample ${slot}`, {
+            instrument: index,
+          })
+        : fail("No song loaded");
+    },
+  },
+  {
+    id: "renameinstrument",
+    name: "renameinstrument",
+    aliases: ["insname"],
+    description: "Rename an instrument",
+    category: "edit",
+    args: [
+      { name: "index", type: "number", required: true },
+      { name: "name", type: "string", required: true },
+    ],
+    run: (args, ctx) => {
+      const index = Number(arg(args, "index"));
+      const name = arg(args, "name") ?? "";
+      if (!Number.isFinite(index))
+        return fail("instrument index must be a number");
+      ctx.session.setInstrumentName(index, name);
+      return ok(`Renamed instrument ${index}`);
     },
   },
   {
@@ -520,6 +646,42 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "actions",
+    name: "actions",
+    aliases: ["contextactions"],
+    description:
+      "List the context actions available at the cursor or a target (JSON)",
+    category: "general",
+    args: [
+      {
+        name: "target",
+        type: "enum",
+        choices: ["tracker", "instrument", "sample", "order"],
+      },
+      { name: "index", type: "number" },
+    ],
+    run: (args, ctx) => {
+      const state = ctx.session.getState();
+      const kind = arg(args, "target") ?? "tracker";
+      const index =
+        arg(args, "index") !== undefined ? Number(arg(args, "index")) : 0;
+      let target: ContextTarget;
+      if (kind === "instrument") target = { kind: "instrument", index };
+      else if (kind === "sample") target = { kind: "sample", slot: index };
+      else if (kind === "order") target = { kind: "order", order: index };
+      else
+        target = {
+          kind: "tracker",
+          channel: state.cursor.channel,
+          order: state.cursor.order,
+          row: state.cursor.row,
+          column: state.cursor.column,
+        };
+      const actions = contextActions(state, target);
+      return ok(`${actions.length} context actions`, { target, actions });
+    },
+  },
+  {
     id: "meters",
     name: "meters",
     description: "Print current channel and master peak levels",
@@ -535,8 +697,14 @@ export const builtinCommands: CommandDef[] = [
     aliases: ["samples", "src"],
     description: "List source samples with names and durations",
     category: "samples",
+    args: [{ name: "slot", type: "number" }],
     run: (_args, ctx) => {
-      ctx.openOverlay?.("samples");
+      const raw = arg(_args, "slot");
+      const slot = raw !== undefined ? Number(raw) : undefined;
+      ctx.openOverlay?.(
+        "samples",
+        slot !== undefined && Number.isFinite(slot) ? slot : undefined,
+      );
       const { sampleNames } = ctx.session.getState();
       const durations = ctx.session.backend?.sampleDurations() ?? [];
       const rows = sampleNames.map((name, index) => ({
@@ -559,6 +727,26 @@ export const builtinCommands: CommandDef[] = [
       if (!Number.isFinite(index)) return fail("sample index must be a number");
       ctx.session.backend?.previewSample(index);
       return ok(`Preview sample ${index}`);
+    },
+  },
+  {
+    id: "importsample",
+    name: "importsample",
+    aliases: ["loadsample", "importaudio"],
+    description: "Import a WAV/OGG/MP3 into a source-sample slot (0-5)",
+    category: "samples",
+    args: [{ name: "slot", type: "number", required: true }, pathArg],
+    examples: ["/importsample 3 ~/kick.wav"],
+    run: async (args, ctx) => {
+      const slot = Number(arg(args, "slot"));
+      const target = arg(args, "path");
+      if (!Number.isInteger(slot) || slot < 0 || slot > 5)
+        return fail("slot must be an integer 0-5");
+      if (!target) return fail("/importsample needs a file path");
+      const result = await importSample(ctx.session, slot, target);
+      return result.ok
+        ? ok(result.message, { path: result.path })
+        : fail(result.error ?? "Import failed");
     },
   },
   {
@@ -872,13 +1060,46 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "save-as",
+    name: "save-as",
+    aliases: ["saveas", "writeas"],
+    description: "Save the project to a new path (Save As)",
+    category: "file",
+    args: [pathArg],
+    run: async (args, ctx) => {
+      const target = arg(args, "path");
+      if (!target) return fail("/save-as requires a file path");
+      const result = await saveProject(ctx.session, target);
+      return result.ok
+        ? ok(result.message, { path: result.path })
+        : fail(result.error ?? "Save failed");
+    },
+  },
+  {
+    id: "recent",
+    name: "recent",
+    aliases: ["recentprojects"],
+    description: "List recently opened projects",
+    category: "file",
+    run: async (_args, ctx) => {
+      const config = await ctx.session.host.config.read();
+      const projects =
+        config.recentProjects ??
+        (config.lastProject ? [config.lastProject] : []);
+      return ok(
+        projects.length ? projects.join("\n") : "(no recent projects)",
+        { projects },
+      );
+    },
+  },
+  {
     id: "restore",
     name: "restore",
     description: "Reload the autosaved backup (default backup.lmpjson)",
     category: "file",
     args: [pathArg],
     run: async (args, ctx) => {
-      const target = arg(args, "path") ?? backupPath();
+      const target = arg(args, "path") ?? backupPath(ctx.session);
       const result = await restoreBackup(ctx.session, target);
       return result.ok
         ? ok(result.message)
@@ -892,10 +1113,10 @@ export const builtinCommands: CommandDef[] = [
     description: "Set the startup file (path), or 'off' / 'last'",
     category: "file",
     args: [{ name: "value", type: "string" }],
-    run: async (args) => {
+    run: async (args, ctx) => {
       const value = arg(args, "value");
       if (!value) {
-        const config = await readConfig();
+        const config = await ctx.session.host.config.read();
         const open = config.defaultOpen;
         const current =
           open?.mode === "file" ? open.path : (open?.mode ?? "last");
@@ -903,17 +1124,19 @@ export const builtinCommands: CommandDef[] = [
       }
       const lower = value.toLowerCase();
       if (lower === "off") {
-        await writeConfig({ defaultOpen: { mode: "off" } });
+        await ctx.session.host.config.write({ defaultOpen: { mode: "off" } });
         return ok("Default open: off (always the bundled default)");
       }
       if (lower === "last") {
-        await writeConfig({ defaultOpen: { mode: "last" } });
+        await ctx.session.host.config.write({ defaultOpen: { mode: "last" } });
         return ok("Default open: last opened project");
       }
-      const resolved = path.resolve(value);
-      if (!(await fileExists(resolved)))
+      const resolved = ctx.session.host.fs.resolvePath(value);
+      if (!(await ctx.session.host.fs.fileExists(resolved)))
         return fail(`No such file: ${resolved}`);
-      await writeConfig({ defaultOpen: { mode: "file", path: resolved } });
+      await ctx.session.host.config.write({
+        defaultOpen: { mode: "file", path: resolved },
+      });
       return ok(`Default open: ${resolved}`);
     },
   },
@@ -931,6 +1154,7 @@ export const builtinCommands: CommandDef[] = [
       },
       pathArg,
     ],
+    examples: ["/export wav song.wav", "/export mid --normalize"],
     run: async (args, ctx) => {
       const format = (arg(args, "format") ?? "wav").toLowerCase();
       const song = ctx.session.getState().song;

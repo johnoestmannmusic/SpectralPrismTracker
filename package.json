@@ -9,29 +9,49 @@
     "lantern-run": "dist/tui/run-script.mjs"
   },
   "scripts": {
+    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
     "build:tui": "node scripts/build-tui.mjs",
+    "build:web": "node scripts/build-web.mjs",
     "dev:tui": "node scripts/build-tui.mjs && node dist/tui/main.mjs",
     "start:tui": "node dist/tui/main.mjs",
+    "serve:web": "node dist/web-host/server.mjs",
+    "test:web": "playwright test --config playwright.web.config.ts",
     "run:script": "node dist/tui/run-script.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:all": "npm run typecheck && npm run test && npm run audit:deps && npm run build:tui",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:all": "npm run typecheck && npm run test && npm run lint && npm run format:check && npm run audit:deps && npm run build:tui && npm run build:web",
     "audit:deps": "node scripts/audit-dependencies.mjs",
     "build:prism-wasm": "node scripts/build-prism-wasm.mjs",
     "vendor:prism-dsp": "node scripts/vendor-prism-dsp.mjs"
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "ink": "^7.1.1",
     "node-web-audio-api": "^2.2.0",
     "react": "^19.3.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.2",
     "@types/react": "^19.3.0",
     "esbuild": "^0.28.2",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "ink-testing-library": "^4.0.0",
+    "prettier": "^3.9.8",
     "typescript": "^7.0.2",
+    "typescript-eslint": "^8.70.0",
+    "typescript6": "npm:typescript@^6.0.3",
+    "vite": "^8.3.0",
     "vitest": "^5.0.0"
   }
 }

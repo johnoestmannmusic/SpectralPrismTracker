@@ -125,11 +125,11 @@ describe("TUI explainer", () => {
       expect(onExplain).toHaveBeenCalled();
       // The instrument name is the first parameter in the Sampler menu.
       expect(onExplain.mock.calls[0]?.[0].title).toContain("Instrument · Name");
-      // Move down to the next parameter (Source sample) and check the panel.
+      // Move down to the next parameter (Spectral layer) and check the panel.
       stdin.write("\u001B[B");
       await new Promise((resolve) => setTimeout(resolve, 20));
       const titles = onExplain.mock.calls.map((call) => call[0].title);
-      expect(titles.some((title) => title.includes("Source sample"))).toBe(
+      expect(titles.some((title) => title.includes("Spectral layer"))).toBe(
         true,
       );
       unmount();
@@ -148,8 +148,54 @@ describe("TUI explainer", () => {
       await new Promise((resolve) => setTimeout(resolve, 120));
       const frame = lastFrame() ?? "";
       expect(frame).toContain("Source Samples");
-      expect(frame).toContain("enter edit info");
+      expect(frame).toContain("enter menu");
       expect(frame).not.toContain("cycle orders");
+      unmount();
+    });
+
+    it("opens the tracker action menu with Enter and the order picker with o", async () => {
+      const { stdin, lastFrame, unmount } = render(<App session={session} />);
+      const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+      stdin.write("\r");
+      await tick();
+      let frame = lastFrame() ?? "";
+      expect(frame).toContain("Actions for this cell");
+      expect(frame).toContain("Audition this row");
+      stdin.write("\x1b");
+      await tick();
+      stdin.write("o");
+      await tick();
+      frame = lastFrame() ?? "";
+      expect(frame).toContain("Go to order");
+      stdin.write("\x1b");
+      await tick();
+      unmount();
+    });
+
+    it("opens the Instruments panel with Shift+I and ignores note-entry keys", async () => {
+      const { stdin, lastFrame, unmount } = render(<App session={session} />);
+      const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+      stdin.write("I");
+      await tick();
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("Instruments");
+      expect(frame).toContain("1/2/3 sampler/spectral/percussion");
+      stdin.write("\x1b");
+      await tick();
+
+      // No letter key enters a note any more.
+      session.setCursor({ order: 0, channel: 3, row: 0, column: 0 });
+      const pattern = session.song!.channels[3]!.orderList[0]!;
+      const before =
+        session.song!.channels[3]!.patterns.get(pattern)!.rows[0]!.note;
+      expect(before?.kind).toBe("note");
+      for (const key of ["d", "g", "b", "h", "n", "j", "m", "l"]) {
+        stdin.write(key);
+        await tick();
+      }
+      const after =
+        session.song!.channels[3]!.patterns.get(pattern)!.rows[0]!.note;
+      expect(after).toEqual(before);
       unmount();
     });
 
@@ -175,7 +221,7 @@ describe("TUI explainer", () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
       frame = lastFrame() ?? "";
       expect(frame).not.toContain("↑↓ step");
-      expect(frame).toContain("space play");
+      expect(frame).toContain("z last value");
       unmount();
     });
   });

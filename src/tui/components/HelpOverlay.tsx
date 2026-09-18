@@ -21,26 +21,31 @@ const KEY_SHORTCUTS: Array<[string, string]> = [
   ["Arrows", "Move selection (wraps across patterns)"],
   ["Ctrl+Up/Down", "Move 16 rows (menus: skip category)"],
   ["Ctrl+Left/Right", "Jump channel (NOTE column)"],
+  ["Enter", "Open the context-action menu for the cursor cell"],
   ["E", "Visual selection: arrows extend · E again copies"],
   ["T", "Cut the highlighted block"],
   ["R / Shift+R", "Paste / flood-paste to end of pattern"],
-  ["v", "Open the cell's instrument settings (sampler/spectral/percussion)"],
+  ["v", "Edit the cell's instrument (sampler/spectral/percussion)"],
+  ["Shift+I", "Open the Instruments panel (list of every instrument)"],
+  ["O", "Go to order… (jump picker)"],
+  ["L", "Loop the viewed order / the whole song"],
   ["Shift+Arrows", "Extend selection (some terminals capture this to scroll)"],
   ["[ / ]", "Cycle orders (previous / next)"],
   ["PgUp / PgDn", "Move order"],
-  ["Z", "Enter last value / repeat"],
-  ["X", "Clear cell or range"],
-  ["C", "Note off"],
-  ["Q / A", "Value +1 / -1"],
-  ["W / S", "Note +/-1 octave"],
+  ["z", "Place the last value (note/ins/vol/effect)"],
+  ["x", "Clear cell or range"],
+  ["c", "Note off"],
+  ["q / a", "Value +1 / -1"],
+  ["w / s", "Value +12 / -12 (coarse)"],
   ["Ctrl+Shift+C / X / V", "Copy / cut / paste"],
   ["Ctrl+Shift+F", "Flood paste to end"],
   ["Ctrl+A", "Select column / all"],
-  ["Ctrl+Z / Y", "Undo / redo"],
+  ["Ctrl+Z / Y", "Undo / redo (pattern, order, instrument and mixer edits)"],
   ["Ctrl+S", "Save the current project"],
+  ["Ctrl+Shift+S", "Save As to a new path"],
+  ["Ctrl+C", "Quit (prompts when there are unsaved changes)"],
   ["Space", "Play from pattern start / pause"],
   ["Ctrl+Space", "Play from the selected cell"],
-  ["Uppercase letters", "Enter notes (Z S X D C V G B H N J M)"],
 ];
 
 function buildLines(commands: CommandDef[]): Line[] {
@@ -87,7 +92,7 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
 
   useInput(
     (char, key) => {
-      if (key.escape || char === "q" || char === "x" || key.return) {
+      if (key.escape || char === "q" || char === "x") {
         onClose();
         return;
       }

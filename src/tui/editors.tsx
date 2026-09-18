@@ -151,6 +151,30 @@ export function samplerGroups(
       ],
     },
     {
+      title: "Layers",
+      params: [
+        bool(
+          "Spectral layer",
+          s.spectral.enabled,
+          (v) => set({ spectral: { ...s.spectral, enabled: !!v } }),
+          true,
+        ),
+        bool(
+          "Percussion stage",
+          s.spectral.percussion.enabled,
+          (v) =>
+            set({
+              spectral: {
+                ...s.spectral,
+                percussion: { ...s.spectral.percussion, enabled: !!v },
+                oneShot: v ? true : s.spectral.oneShot,
+              },
+            }),
+          true,
+        ),
+      ],
+    },
+    {
       title: `Waveform (${s.sourceIndex === null ? "no source" : `src ${s.sourceIndex}`})`,
       graph: (
         <Text color="green">

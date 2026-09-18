@@ -1,7 +1,53 @@
-import { deflateSync } from "node:zlib";
 import { crc32 } from "@/core/export";
 import { GRID, renderCoverFrame } from "@/core/coverArt";
 import type { SongModel } from "@/core/songModel";
+
+/**
+ * Minimal zlib writer using DEFLATE "stored" blocks (BTYPE=00).
+ *
+ * This replaces `node:zlib.deflateSync` so PNG export works in both Node and
+ * the browser bundle without a native dependency. Stored blocks do not
+ * compress, which is fine for the small cover-art images, and the output is a
+ * valid zlib stream every PNG decoder accepts.
+ */
+export function zlibStore(data: Uint8Array): Uint8Array {
+  const MAX = 0xffff;
+  const blocks = Math.max(1, Math.ceil(data.length / MAX));
+  // 2-byte zlib header + per-block 5-byte header + 4-byte Adler-32 trailer.
+  const out = new Uint8Array(2 + blocks * 5 + data.length + 4);
+  let offset = 0;
+  out[offset++] = 0x78; // CMF: deflate, 32K window
+  out[offset++] = 0x01; // FLG: no dict, fastest (0x7801 % 31 === 0)
+  for (let i = 0; i < blocks; i++) {
+    const start = i * MAX;
+    const end = Math.min(data.length, start + MAX);
+    const len = end - start;
+    const final = i === blocks - 1;
+    out[offset++] = final ? 0x01 : 0x00; // BFINAL | BTYPE=00
+    out[offset++] = len & 0xff;
+    out[offset++] = (len >> 8) & 0xff;
+    out[offset++] = ~len & 0xff;
+    out[offset++] = (~len >> 8) & 0xff;
+    out.set(data.subarray(start, end), offset);
+    offset += len;
+  }
+  const adler = adler32(data);
+  out[offset++] = (adler >>> 24) & 0xff;
+  out[offset++] = (adler >>> 16) & 0xff;
+  out[offset++] = (adler >>> 8) & 0xff;
+  out[offset++] = adler & 0xff;
+  return out.subarray(0, offset);
+}
+
+function adler32(data: Uint8Array): number {
+  let a = 1;
+  let b = 0;
+  for (let i = 0; i < data.length; i++) {
+    a = (a + data[i]!) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
 
 /** Encodes raw 8-bit RGBA pixels as a PNG (colour type 6, no interlace). */
 export function encodePng(
@@ -31,7 +77,7 @@ export function encodePng(
 
   const chunks = [
     chunk("IHDR", ihdr),
-    chunk("IDAT", new Uint8Array(deflateSync(raw))),
+    chunk("IDAT", zlibStore(raw)),
     chunk("IEND", new Uint8Array(0)),
   ];
   const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);

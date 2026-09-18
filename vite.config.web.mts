@@ -1,0 +1,23 @@
+import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+
+const src = fileURLToPath(new URL("./src", import.meta.url));
+const webRoot = fileURLToPath(new URL("./src/web", import.meta.url));
+const outDir = fileURLToPath(new URL("./dist/web", import.meta.url));
+
+/**
+ * Static client for the web deployment. The TUI itself runs in the Node host
+ * (`src/web/server.ts`) and is streamed to this page over SSE, so the client
+ * bundle only needs xterm.js and the shell buttons.
+ */
+export default defineConfig({
+  root: webRoot,
+  base: "./",
+  resolve: { alias: { "@": src } },
+  build: {
+    outDir,
+    emptyOutDir: true,
+    target: "chrome120",
+    sourcemap: true,
+  },
+});

@@ -1,0 +1,85 @@
+{
+  "generatorVersion": 1,
+  "constraintsFile": "CONSTRAINTS.md",
+  "constraintsHash": "f8bd167a85d77f81758bf616b38a7329e9ac5b288c5b64692b58429860b6e2a7",
+  "testsDir": "constraints-tests",
+  "tests": [
+    {
+      "id": "G001",
+      "title": "Create a TUI 4-channel tracker that makes my entire compositional workflow transparent to the end-user, and speeds up my compositional process.",
+      "severity": "info",
+      "category": "goal",
+      "kind": "manual",
+      "file": "generated/G001.test.mjs",
+      "checks": []
+    },
+    {
+      "id": "HC001",
+      "title": "Must be a TUI (the web-deployed version will be a TUI inside a frame with some extra non TUI buttons)",
+      "severity": "blocking",
+      "category": "hard",
+      "kind": "auto",
+      "file": "generated/HC001.test.mjs",
+      "checks": [
+        "must exist: src/tui/App.tsx",
+        "run `npm run build:tui` (must exit 0)"
+      ],
+      "rationale": "The TUI is the product; the web frame may only add non-TUI chrome around it."
+    },
+    {
+      "id": "HC002",
+      "title": "All menus and parameters must be reachable within 2 button presses",
+      "severity": "blocking",
+      "category": "hard",
+      "kind": "auto",
+      "file": "generated/HC002.test.mjs",
+      "checks": [
+        "run `npx vitest run tests/unit/reachability.test.ts` (must exit 0)"
+      ],
+      "rationale": "The tracker must stay fast and discoverable; nothing may be buried behind long navigation."
+    },
+    {
+      "id": "HC003",
+      "title": "Must work cross-platform, both as a desktop app, and web-deployed app",
+      "severity": "blocking",
+      "category": "hard",
+      "kind": "auto",
+      "file": "generated/HC003.test.mjs",
+      "checks": [
+        "must exist: src/web/main.tsx",
+        "must exist: src/web/server.tsx",
+        "run `npm run build:web` (must exit 0)"
+      ],
+      "rationale": "The same TUI ships as the `lantern` desktop binary and as the streamed web host + xterm frame."
+    },
+    {
+      "id": "HC004",
+      "title": "Any additional packages must be checked against typosquatting and other security vulnerabilities",
+      "severity": "blocking",
+      "category": "hard",
+      "kind": "auto",
+      "file": "generated/HC004.test.mjs",
+      "checks": [
+        "run `npm run audit:deps -- --offline` (must exit 0)"
+      ],
+      "rationale": "Slopsquatting is the main supply-chain risk for an AI-assisted project."
+    },
+    {
+      "id": "SC001",
+      "title": "TypeScript as the language",
+      "severity": "warning",
+      "category": "soft",
+      "kind": "auto",
+      "file": "generated/SC001.test.mjs",
+      "checks": [
+        "must not exist: src/tui/**/\\*.js",
+        "must not exist: src/core/**/_.js",
+        "must not exist: src/host/\\**/_.js",
+        "must not exist: src/web/**/\\*.js",
+        "must not exist: src/runtime/**/*.js",
+        "must exist: tsconfig.json"
+      ],
+      "rationale": "Keeps the domain, hosts and UI type-safe and testable."
+    }
+  ]
+}

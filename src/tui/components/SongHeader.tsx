@@ -45,6 +45,7 @@ export function SongHeader({ state, playhead, context }: Props) {
           {song.meta.patternLength} rows · order {viewOrder}/
           {Math.max(song.meta.orderLength - 1, 0)} · row {row} ·{" "}
           {song.instruments.length} ins
+          {state.loopMode === "order" ? ` · LOOP order ${viewOrder}` : ""}
         </Text>
       </Box>
       <OrderStrip state={state} playhead={playhead} context={context} />

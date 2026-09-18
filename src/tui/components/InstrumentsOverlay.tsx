@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useSession } from "../hooks";
 import { instrumentExplain, type ExplainerText } from "../explainer";
 import type { Session, SessionState } from "../session";
+import { ActionMenu } from "./ActionMenu";
+import { contextActions, type ContextAction } from "../contextActions";
 
 export type InstrumentTab = "sampler" | "spectral" | "percussion";
 
@@ -19,6 +21,8 @@ interface Props {
   state?: SessionState;
   /** Stepthrough instrument to mark. */
   highlightInstrument?: number;
+  /** Executes a slash command chosen from the action menu. */
+  onCommand?: (line: string) => void;
 }
 
 /** Instrument list: pick an instrument, then edit its settings in tabs. */
@@ -31,11 +35,14 @@ export function InstrumentsOverlay({
   height,
   state: stateOverride,
   highlightInstrument,
+  onCommand,
 }: Props) {
   const live = useSession(session);
   const state = stateOverride ?? live;
   const [index, setIndex] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   const instruments = state.song?.instruments ?? [];
   const selected = Math.min(index, Math.max(instruments.length - 1, 0));
@@ -67,8 +74,41 @@ export function InstrumentsOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, onExplain, instruments.length]);
 
+  const runAction = (action: ContextAction) => {
+    setMenuOpen(false);
+    if (action.special === "rename-instrument") {
+      setRenaming(instruments[selected]?.name ?? "");
+      return;
+    }
+    if (action.special === "delete-instrument") {
+      setConfirmDelete(true);
+      return;
+    }
+    if (action.command) onCommand?.(action.command);
+  };
+
   useInput(
     (char, key) => {
+      if (renaming !== null) {
+        if (key.escape) {
+          setRenaming(null);
+          return;
+        }
+        if (key.return) {
+          const next = renaming.trim();
+          if (next) session.setInstrumentName(selected, next);
+          setRenaming(null);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setRenaming((text) => (text ?? "").slice(0, -1));
+          return;
+        }
+        if (key.ctrl || key.meta || key.tab) return;
+        if (char) setRenaming((text) => (text ?? "") + char);
+        return;
+      }
+      if (menuOpen) return; // ActionMenu owns the keyboard while open.
       if (confirmDelete) {
         if (char === "y" || key.return) {
           const deleting = selected;
@@ -117,7 +157,7 @@ export function InstrumentsOverlay({
         return;
       }
       if (key.return || char === "z") {
-        onOpen(selected, "sampler");
+        setMenuOpen(true);
         return;
       }
       if (char === "1") {
@@ -145,6 +185,21 @@ export function InstrumentsOverlay({
     { isActive: active },
   );
 
+  if (menuOpen) {
+    return (
+      <ActionMenu
+        title={`Instrument ${String(selected).padStart(2, "0")} · ${
+          instruments[selected]?.name ?? ""
+        }`}
+        actions={contextActions(state, { kind: "instrument", index: selected })}
+        active={active}
+        height={height}
+        onClose={() => setMenuOpen(false)}
+        onRun={runAction}
+      />
+    );
+  }
+
   return (
     <Box
       flexDirection="column"
@@ -156,8 +211,8 @@ export function InstrumentsOverlay({
         Instruments
       </Text>
       <Text dimColor wrap="truncate-end">
-        ↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · a add ·
-        d delete · m mute · p preview · esc close
+        ↑↓ select · 1/2/3 sampler/spectral/percussion · enter menu · a add · d
+        delete · m mute · p preview · esc close
         {instruments.length > visible
           ? ` · ${start + 1}-${Math.min(start + visible, instruments.length)}/${instruments.length}`
           : ""}
@@ -166,6 +221,12 @@ export function InstrumentsOverlay({
         <Text color="red" bold>
           Delete instrument {String(selected).padStart(2, "0")} “
           {instruments[selected]!.name}”? Are you sure? (y/n)
+        </Text>
+      ) : null}
+      {renaming !== null ? (
+        <Text color="cyan">
+          Rename “{instruments[selected]?.name}” → {renaming}▏ · enter apply ·
+          esc cancel
         </Text>
       ) : null}
       <Box flexDirection="column">

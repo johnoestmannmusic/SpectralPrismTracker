@@ -9,7 +9,7 @@ export interface WorkerLike {
   terminate(): void;
 }
 
-function realWorker(): WorkerLike {
+export function createBrowserWorker(): WorkerLike {
   return new Worker(new URL("./prism.worker.ts", import.meta.url), {
     type: "module",
   }) as unknown as WorkerLike;
@@ -31,7 +31,7 @@ export class PrismWorkerClient {
   private worker: WorkerLike;
 
   constructor(worker?: WorkerLike) {
-    this.worker = worker ?? realWorker();
+    this.worker = worker ?? createBrowserWorker();
     this.worker.onmessage = (event) => {
       const data = event.data;
       const entry = this.pending.get(data.id);

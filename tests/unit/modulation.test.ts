@@ -6,7 +6,6 @@ import {
   makeClip,
   sampleSpectralModulation,
   spectralParamIsModulated,
-  type SpectralSettings,
 } from "@/core/spectral";
 import { makeSpectralRenderer, type PrismWasmModule } from "@/wasm/prism";
 import {

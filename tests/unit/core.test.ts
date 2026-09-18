@@ -8,8 +8,7 @@ import {
   retime,
   type SongModel,
 } from "@/core/songModel";
-import { rowDurationSec, songPositionAt, rowTime } from "@/core/timing";
-import { DEFAULT_ENTRY_NOTE } from "@/core/pitch";
+import { rowDurationSec, songPositionAt } from "@/core/timing";
 import {
   LOOKAHEAD_SEC,
   setSpectralEnabled,
@@ -18,7 +17,6 @@ import {
   envelopeAt,
   loopChannel,
   samplePosition,
-  sequenceDuration,
   sequenceFromSong,
   waveform,
 } from "@/core/sampler";

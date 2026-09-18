@@ -69,21 +69,6 @@ export interface SongPosition {
   row: number;
 }
 
-function partitionPoint<T>(
-  items: ArrayLike<T>,
-  predicate: (item: T) => boolean,
-): number {
-  let lo = 0;
-  let hi = items.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (predicate(items[mid] as T)) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
-/** Partition-point over `items[0..end)` without allocating a slice. */
 function partitionPointRange<T>(
   items: ArrayLike<T>,
   end: number,

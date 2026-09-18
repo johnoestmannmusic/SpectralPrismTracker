@@ -28,19 +28,31 @@ const MIN_WEEKLY_DOWNLOADS = 10_000;
 /** Reviewed direct dependencies and the upstream repo each must resolve to. */
 const ALLOWED = {
   react: /github\.com\/(facebook|react)\/react/i,
-  "react-dom": /github\.com\/(facebook|react)\/react/i,
-  "@vitejs/plugin-react": /github\.com\/vitejs\/vite-plugin-react/i,
-  electron: /github\.com\/electron\/electron/i,
+  "@xterm/xterm": /github\.com\/xtermjs\/xterm\.js/i,
+  "@xterm/addon-fit": /github\.com\/xtermjs\/xterm\.js/i,
   esbuild: /github\.com\/evanw\/esbuild/i,
-  jsdom: /github\.com\/jsdom\/jsdom/i,
   typescript: /github\.com\/microsoft\/TypeScript/i,
   vite: /github\.com\/vitejs\/vite/i,
   vitest: /github\.com\/vitest-dev\/vitest/i,
   "@playwright/test": /github\.com\/microsoft\/playwright/i,
   "@types/node": /github\.com\/DefinitelyTyped\/DefinitelyTyped/i,
   "@types/react": /github\.com\/DefinitelyTyped\/DefinitelyTyped/i,
-  "@types/react-dom": /github\.com\/DefinitelyTyped\/DefinitelyTyped/i,
+  ink: /github\.com\/vadimdemedes\/ink/i,
+  "node-web-audio-api": /github\.com\/ircam-ismm\/node-web-audio-api/i,
+  "ink-testing-library": /github\.com\/vadimdemedes\/ink-testing-library/i,
+  "@eslint/js": /github\.com\/eslint\/eslint/i,
+  eslint: /github\.com\/eslint\/eslint/i,
+  "eslint-config-prettier": /github\.com\/prettier\/eslint-config-prettier/i,
+  "eslint-plugin-react-hooks": /github\.com\/facebook\/react/i,
+  globals: /github\.com\/sindresorhus\/globals/i,
+  prettier: /github\.com\/prettier\/prettier/i,
+  "typescript-eslint": /github\.com\/typescript-eslint\/typescript-eslint/i,
+  // npm alias for the TypeScript 6 API used by the linter (see eslint.config.mjs).
+  typescript6: /github\.com\/microsoft\/TypeScript/i,
 };
+
+/** Direct deps installed as npm aliases: alias name -> real registry package. */
+const ALIASES = { typescript6: "typescript" };
 
 const failures = [];
 const warnings = [];
@@ -111,9 +123,10 @@ if (!offline) {
   console.log("\nRegistry provenance checks (direct dependencies)");
   for (const [name, expectedRepo] of Object.entries(ALLOWED)) {
     if (!(name in direct)) continue; // allowlist entry not currently a dependency
+    const registryName = ALIASES[name] ?? name;
     try {
       const meta = await fetchJson(
-        `https://registry.npmjs.org/${encodeURIComponent(name)}`,
+        `https://registry.npmjs.org/${encodeURIComponent(registryName)}`,
       );
       const latest = meta["dist-tags"]?.latest;
       const versionMeta = latest ? meta.versions?.[latest] : undefined;
@@ -155,7 +168,7 @@ if (!offline) {
       }
 
       const downloads = await fetchJson(
-        `https://api.npmjs.org/downloads/point/last-week/${name}`,
+        `https://api.npmjs.org/downloads/point/last-week/${registryName}`,
       ).catch(() => null);
       if (downloads && typeof downloads.downloads === "number") {
         if (downloads.downloads < MIN_WEEKLY_DOWNLOADS) {

@@ -10,6 +10,8 @@ import {
   writeConfig,
 } from "@/runtime/config";
 import { backupPath, restoreBackup, saveBackup } from "@/tui/autosave";
+import { createNodeConfig } from "@/host/node/config";
+import { createNodeHost } from "@/host/node";
 import { AUTOSAVE_EVERY, Session } from "@/tui/session";
 import { resolveStartupProject } from "@/tui/startup";
 
@@ -60,6 +62,19 @@ describe("runtime config", () => {
     await writeFile(configPath(env), "{ not json", "utf8");
     expect(await readConfig(env)).toEqual({});
   });
+
+  it("keeps up to 10 recent projects, newest first, de-duplicated", async () => {
+    for (let i = 0; i < 12; i++) {
+      await recordLastProject(`/songs/s${i}.lampjson`, env);
+    }
+    await recordLastProject("/songs/s5.lampjson", env);
+    const config = await readConfig(env);
+    expect(config.recentProjects?.[0]).toBe(path.resolve("/songs/s5.lampjson"));
+    expect(config.recentProjects?.length).toBe(10);
+    expect(new Set(config.recentProjects).size).toBe(
+      config.recentProjects?.length,
+    );
+  });
 });
 
 describe("startup project resolution", () => {
@@ -90,11 +105,12 @@ describe("startup project resolution", () => {
 describe("autosave", () => {
   let dir: string;
   let env: NodeJS.ProcessEnv;
-  const session = new Session();
+  let session: Session;
 
   beforeAll(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "lantern-autosave-"));
     env = { LANTERN_CONFIG: path.join(dir, "config.json") };
+    session = new Session(createNodeHost(createNodeConfig(env)));
     await session.init();
   }, 60_000);
 
@@ -119,11 +135,11 @@ describe("autosave", () => {
 
   it("writes the live project to backup.lmpjson and restores it", async () => {
     session.setMasterVolume(0.42);
-    expect(await saveBackup(session, env)).toBe(true);
-    expect(backupPath(env)).toBe(path.join(dir, "backup.lmpjson"));
+    expect(await saveBackup(session)).toBe(true);
+    expect(backupPath(session)).toBe(path.join(dir, "backup.lmpjson"));
 
     session.setMasterVolume(1);
-    const result = await restoreBackup(session, backupPath(env));
+    const result = await restoreBackup(session, backupPath(session));
     expect(result.ok).toBe(true);
     expect(session.getState().masterVolume).toBeCloseTo(0.42);
   });

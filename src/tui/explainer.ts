@@ -214,20 +214,46 @@ export function explainCursor(state: SessionState): ExplainerText {
   if (!song) return DEFAULT_EXPLAINER;
   const { cursor } = state;
   const column = flatColumnsForChannel(song, cursor.channel)[cursor.column];
-  if (!column) {
-    return channelExplain(
-      song,
-      cursor.channel,
-      state.channelMuted[cursor.channel] ?? false,
-    );
+  const base = !column
+    ? channelExplain(
+        song,
+        cursor.channel,
+        state.channelMuted[cursor.channel] ?? false,
+      )
+    : cellExplain(
+        song,
+        cursor.channel,
+        cursor.order,
+        cursor.row,
+        column,
+        cellAt(song, cursor.channel, cursor.order, cursor.row),
+      );
+  return { ...base, body: `${base.body}\n\n${trackerActionHint(state)}` };
+}
+
+/**
+ * Short "what can I do here" line for the tracker cursor. Shared by the
+ * explainer and the status bar so the two can never drift.
+ */
+export function trackerActionHint(state: SessionState): string {
+  const song = state.song;
+  if (!song) return "space play · / commands · ? help";
+  if (state.selectionAnchor) {
+    return "e copy · t cut · r paste · R flood-paste · esc clear selection";
   }
-  const cell = cellAt(song, cursor.channel, cursor.order, cursor.row);
-  return cellExplain(
-    song,
-    cursor.channel,
-    cursor.order,
-    cursor.row,
-    column,
-    cell,
-  );
+  const column = flatColumnsForChannel(song, state.cursor.channel)[
+    state.cursor.column
+  ];
+  switch (column?.kind) {
+    case "note":
+      return "z last value · v instrument · enter actions · ctrl+space audition";
+    case "ins":
+      return "q/a or ←→ adjust · v instrument · enter actions";
+    case "vol":
+      return "q/a or ←→ adjust volume · enter actions";
+    case "fx":
+      return "q/a or ←→ adjust · w/s effect value · enter actions";
+    default:
+      return "arrows move · o orders · / commands · ? help";
+  }
 }

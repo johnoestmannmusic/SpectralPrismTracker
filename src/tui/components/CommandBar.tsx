@@ -7,6 +7,12 @@ export interface Suggestion {
   insert: string;
   /** Character index in the input where the replacement begins. */
   replaceFrom: number;
+  /** Usage string shown for the highlighted command (e.g. `/seek <time>`). */
+  usage?: string;
+  /** Example invocation shown for the highlighted command. */
+  example?: string;
+  /** "recent" entries are de-duplicated from command history. */
+  kind?: "recent" | "command" | "arg";
 }
 
 interface Props {
@@ -43,10 +49,21 @@ export function CommandBar({
               </Text>
               <Text dimColor={index !== selected}>
                 {" "}
-                {suggestion.description ?? ""}
+                {suggestion.kind === "recent"
+                  ? `recent · ${suggestion.description ?? ""}`
+                  : (suggestion.description ?? "")}
               </Text>
             </Box>
           ))}
+          {suggestions[selected]?.usage ? (
+            <Text dimColor wrap="truncate-end">
+              {"   "}
+              {suggestions[selected]!.usage}
+              {suggestions[selected]!.example
+                ? `  e.g. ${suggestions[selected]!.example}`
+                : ""}
+            </Text>
+          ) : null}
         </Box>
       ) : null}
       <Box>

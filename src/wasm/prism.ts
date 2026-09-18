@@ -249,7 +249,6 @@ export function makeSpectralRenderer(
       );
     }
     const channelCount = Math.max(result.channelCount, 1);
-    const frames = Math.floor(result.data.length / channelCount);
     if (settings.percussion.enabled && wasm.render_percussion) {
       const p = settings.percussion;
       result = wasm.render_percussion(

@@ -1,4 +1,4 @@
-import type { LanternConfig } from "@/runtime/config";
+import type { LanternConfig } from "@/host/types";
 
 /**
  * Chooses the project to open at startup, or null to use the bundled default.

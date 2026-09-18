@@ -1,25 +1,22 @@
-import path from "node:path";
 import { projectToJson } from "@/core/project";
-import { configDir } from "@/runtime/config";
-import { readTextSafe, writeBytesSafe } from "@/runtime/files";
 import { loadedSongFromProjectText, type IoResult } from "./io";
 import type { Session } from "./session";
 
-/** Path of the rolling autosave backup (`<config dir>/backup.lmpjson`). */
-export function backupPath(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(configDir(env), "backup.lmpjson");
+/** Path/identifier of the rolling autosave backup for this session's host. */
+export function backupPath(session: Session): string {
+  return session.host.config.backupPath();
 }
 
 /** Writes the live project to the backup file. Returns false when unwritable. */
 export async function saveBackup(
   session: Session,
-  env: NodeJS.ProcessEnv = process.env,
+  filePath: string = backupPath(session),
 ): Promise<boolean> {
   const project = session.buildProjectFile();
   if (!project) return false;
   const json = projectToJson(project, true);
-  const written = await writeBytesSafe(
-    backupPath(env),
+  const written = await session.host.fs.writeBytesSafe(
+    filePath,
     new TextEncoder().encode(json),
   );
   return written.ok;
@@ -28,12 +25,12 @@ export async function saveBackup(
 /** Reloads a backup project into the session. */
 export async function restoreBackup(
   session: Session,
-  filePath: string = backupPath(),
+  filePath: string = backupPath(session),
 ): Promise<IoResult> {
-  const text = await readTextSafe(filePath);
+  const text = await session.host.fs.readTextSafe(filePath);
   if (!text.ok) return { ok: false, error: text.error };
   try {
-    const loaded = await loadedSongFromProjectText(text.value);
+    const loaded = await loadedSongFromProjectText(text.value, session.host);
     await session.load(loaded);
     return {
       ok: true,

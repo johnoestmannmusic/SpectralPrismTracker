@@ -260,14 +260,30 @@ export interface ScheduledRow {
   when: number;
 }
 
+export interface LoopRange {
+  /** Absolute row index (order * patternLength + row) to loop from. */
+  startRow: number;
+  /** Absolute row index to loop to (exclusive). */
+  endRow: number;
+}
+
 export class Scheduler {
   private readonly rowTimes: number[];
   private readonly duration: number;
   private nextRow: number;
   private readonly startClock: number;
   private readonly offset: number;
+  private readonly loop: LoopRange | null;
+  private readonly loopRows: number;
+  private readonly loopStartTime: number;
+  private readonly loopDuration: number;
 
-  constructor(sequence: Sequence, startClock: number, offset: number) {
+  constructor(
+    sequence: Sequence,
+    startClock: number,
+    offset: number,
+    loop?: LoopRange | null,
+  ) {
     const duration = sequenceDuration(sequence);
     if (!(
       Number.isFinite(duration) &&
@@ -278,24 +294,82 @@ export class Scheduler {
         "Scheduler requires a positive-duration, non-empty sequence",
       );
     }
+    const rowCount = sequence.rows.length;
     const clampedOffset = Math.max(offset, 0);
     this.rowTimes = sequence.rowTimes.slice();
     this.duration = duration;
     this.startClock = startClock;
     this.offset = clampedOffset;
-    const cycle = Math.floor(clampedOffset / duration);
-    const within = ((clampedOffset % duration) + duration) % duration;
-    const row = Math.max(
-      partitionPoint(
-        this.rowTimes.slice(0, sequence.rows.length),
-        (time) => time <= within,
-      ) - 1,
-      0,
-    );
-    this.nextRow = cycle * sequence.rows.length + row;
+
+    const validLoop =
+      loop &&
+      loop.startRow >= 0 &&
+      loop.endRow > loop.startRow &&
+      loop.endRow <= rowCount
+        ? loop
+        : null;
+    this.loop = validLoop ? { ...validLoop } : null;
+
+    if (this.loop) {
+      const { startRow, endRow } = this.loop;
+      this.loopRows = endRow - startRow;
+      this.loopStartTime = this.rowTimes[startRow] ?? 0;
+      const loopEndTime = this.rowTimes[endRow] ?? duration;
+      this.loopDuration = Math.max(loopEndTime - this.loopStartTime, 1e-9);
+      const within =
+        clampedOffset <= this.loopStartTime
+          ? 0
+          : (((clampedOffset - this.loopStartTime) % this.loopDuration) +
+              this.loopDuration) %
+            this.loopDuration;
+      const local = Math.max(
+        partitionPoint(
+          this.rowTimes.slice(startRow, endRow),
+          (time) => time - this.loopStartTime <= within,
+        ) - 1,
+        0,
+      );
+      this.nextRow = local;
+    } else {
+      this.loopRows = 0;
+      this.loopStartTime = 0;
+      this.loopDuration = duration;
+      const cycle = Math.floor(clampedOffset / duration);
+      const within = ((clampedOffset % duration) + duration) % duration;
+      const row = Math.max(
+        partitionPoint(
+          this.rowTimes.slice(0, rowCount),
+          (time) => time <= within,
+        ) - 1,
+        0,
+      );
+      this.nextRow = cycle * rowCount + row;
+    }
   }
 
   tick(now: number, lookahead: number): ScheduledRow[] {
+    const result: ScheduledRow[] = [];
+    if (this.loop) {
+      const horizon =
+        this.offset + now - this.startClock + Math.max(lookahead, 0);
+      const startRow = this.loop.startRow;
+      for (;;) {
+        const local = this.nextRow % this.loopRows;
+        const cycle = Math.floor(this.nextRow / this.loopRows);
+        const row = startRow + local;
+        const time = (this.rowTimes[row] ?? 0) + cycle * this.loopDuration;
+        if (time > horizon) break;
+        result.push({
+          row,
+          when: Math.max(
+            Math.max(this.startClock + time - this.offset, now),
+            this.startClock,
+          ),
+        });
+        this.nextRow += 1;
+      }
+      return result;
+    }
     const songTime = this.offset + now - this.startClock;
     const rowCount = this.rowTimes.length - 1;
     const locate = (time: number): number => {
@@ -315,7 +389,6 @@ export class Scheduler {
       locate(Math.max(songTime, this.offset)),
     );
     const horizon = songTime + Math.max(lookahead, 0);
-    const result: ScheduledRow[] = [];
     for (;;) {
       const cycle = Math.floor(this.nextRow / rowCount);
       const row = this.nextRow % rowCount;

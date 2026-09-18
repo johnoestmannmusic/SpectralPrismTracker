@@ -3,15 +3,17 @@ import { createRegistry } from "./commands";
 import { App } from "./App";
 import { Session } from "./session";
 import { ControlServer } from "@/control/server";
-import { readConfig } from "@/runtime/config";
+import { setHost } from "@/host";
+import { nodeHost } from "@/host/node";
 import { initPrismWasm } from "@/wasm/prismNode";
 import { openPath } from "./io";
 import { saveBackup } from "./autosave";
 import { resolveStartupProject } from "./startup";
 
 export async function main(): Promise<void> {
+  setHost(nodeHost);
   const session = new Session();
-  const instance = render(<App session={session} />);
+  const instance = render(<App session={session} />, { exitOnCtrlC: false });
 
   // WASM is optional: without it spectral instruments fall back to their
   // plain sample rather than failing. Prefer the worker thread when bundled.
@@ -36,7 +38,7 @@ export async function main(): Promise<void> {
 
   // Reopen the configured/last project when there is one; otherwise the
   // bundled default loaded by init() stays in place.
-  const config = await readConfig();
+  const config = await nodeHost.config.read();
   const startup = resolveStartupProject(config);
   if (startup) {
     const opened = await openPath(session, startup);
@@ -53,7 +55,6 @@ export async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  // eslint-disable-next-line no-console
   console.error(error);
   process.exitCode = 1;
 });

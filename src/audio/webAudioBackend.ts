@@ -1,9 +1,9 @@
 import type { AudioClip } from "@/core/dsp";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
-import { clipDuration } from "@/core/dsp";
 import {
   Scheduler,
   waveform,
+  type LoopRange,
   type SamplerSettings,
   type Sequence,
 } from "@/core/sampler";
@@ -77,6 +77,14 @@ export class WebAudioBackend implements AudioBackend {
   private songStarted = false;
 
   private sequence: Sequence | null = null;
+  /** Active loop range (order loop), or null for whole-song playback. */
+  private loopRange: LoopRange | null = null;
+
+  /** Sets the loop range and re-seeks so playback restarts inside it. */
+  setLoopRange(range: LoopRange | null): void {
+    this.loopRange = range;
+    if (this.songStarted) this.seek(this.currentTime());
+  }
 
   ensureStarted(): void {
     if (this.ctx) return;
@@ -105,6 +113,12 @@ export class WebAudioBackend implements AudioBackend {
     this.ctx = ctx;
     this.masterGain = master;
     this.masterAnalyser = masterAnalyser;
+  }
+
+  /** Resumes a suspended context (browser autoplay policy needs a gesture). */
+  resume(): void {
+    this.ensureStarted();
+    void this.ctx?.resume();
   }
 
   loadSampler(
@@ -470,6 +484,7 @@ export class WebAudioBackend implements AudioBackend {
           this.sequence,
           startTime,
           offset,
+          this.loopRange,
         );
         this.startTimer(ctx);
       }
@@ -522,6 +537,14 @@ export class WebAudioBackend implements AudioBackend {
     const raw =
       this.songStartOffset +
       Math.max(this.ctx.currentTime - this.songStartCtxTime, 0);
+    if (this.loopRange && this.sequence) {
+      const start = this.sequence.rowTimes[this.loopRange.startRow] ?? 0;
+      const end =
+        this.sequence.rowTimes[this.loopRange.endRow] ?? this.songDuration();
+      const length = end - start;
+      if (length > 0)
+        return start + ((((raw - start) % length) + length) % length);
+    }
     const duration = this.songDuration();
     if (duration > 0) return ((raw % duration) + duration) % duration;
     return raw;

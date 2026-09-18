@@ -64,7 +64,9 @@ describe("TUI overlays", () => {
       <SamplesOverlay session={session} active onClose={() => {}} />,
     );
     const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
-    stdin.write("\r");
+    stdin.write("\r"); // open the source-sample action menu
+    await tick();
+    stdin.write("2"); // "Rename & info…"
     await tick();
     expect(lastFrame() ?? "").toContain("Source Sample 00 — info");
     stdin.write("Kick");
@@ -209,7 +211,7 @@ describe("TUI overlays", () => {
   });
 
   describe("instrument list", () => {
-    it("lists instruments and opens the editor on enter", async () => {
+    it("lists instruments and opens the editor with 1/2/3", async () => {
       const onOpen = vi.fn();
       const { stdin, lastFrame, unmount } = render(
         <InstrumentsOverlay
@@ -220,7 +222,7 @@ describe("TUI overlays", () => {
         />,
       );
       expect(lastFrame() ?? "").toContain("StringSynth 1");
-      stdin.write("\r");
+      stdin.write("1");
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(onOpen).toHaveBeenCalledWith(0, "sampler");
       unmount();

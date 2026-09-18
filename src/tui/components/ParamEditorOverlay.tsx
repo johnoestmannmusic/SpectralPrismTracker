@@ -182,21 +182,48 @@ export function ParamEditorOverlay({
   highlight,
   height,
 }: Props) {
-  const flat = groups.flatMap((group, groupIndex) =>
+  const [filter, setFilter] = useState("");
+  const [filterEditing, setFilterEditing] = useState(false);
+  /** Values as they were when this editor/tab opened, for "modified" + reset. */
+  const baseline = useRef(new Map<string, number | boolean | string>());
+  useEffect(() => {
+    const map = new Map<string, number | boolean | string>();
+    for (const group of groups)
+      for (const param of group.params)
+        map.set(`${group.title}::${param.label}`, param.value);
+    baseline.current = map;
+    // Re-baseline when switching instrument/tab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, tabs?.active]);
+
+  const matchFilter = (groupTitle: string, label: string) => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return true;
+    return `${groupTitle} ${label}`.toLowerCase().includes(query);
+  };
+  const shownGroups = filter.trim()
+    ? groups.map((group) => ({
+        ...group,
+        params: group.params.filter((param) =>
+          matchFilter(group.title, param.label),
+        ),
+      }))
+    : groups;
+  const flat = shownGroups.flatMap((group, groupIndex) =>
     group.params.map((param) => ({ groupIndex, param })),
   );
   // Flat index of each group's first param, for Ctrl+↑/↓ category skips.
   const groupFirstFlat: number[] = [];
   {
     let cursor = 0;
-    for (const group of groups) {
+    for (const group of shownGroups) {
       groupFirstFlat.push(cursor);
       cursor += group.params.length;
     }
   }
   const rows: Row[] = [];
   let flatIndex = 0;
-  groups.forEach((group, groupIndex) => {
+  shownGroups.forEach((group, groupIndex) => {
     rows.push({ kind: "header", text: group.title, groupIndex });
     if (group.graph)
       rows.push({ kind: "graph", node: group.graph, groupIndex });
@@ -237,6 +264,12 @@ export function ParamEditorOverlay({
     setSelected(0);
   }, [tabs?.active]);
 
+  // Reset the highlighted row whenever the filter changes the visible list.
+  // (Declared before the stepthrough-highlight effect so mount order is right.)
+  useEffect(() => {
+    setSelected(0);
+  }, [filter]);
+
   // In stepthrough, scroll to (and select) the step's highlighted parameter so
   // it is never hidden past the current scroll window.
   const highlightKey =
@@ -244,7 +277,7 @@ export function ParamEditorOverlay({
   useEffect(() => {
     if (!highlight || highlight.length === 0) return;
     const index = flat.findIndex(({ groupIndex, param }) => {
-      const groupTitle = groups[groupIndex]?.title ?? "";
+      const groupTitle = shownGroups[groupIndex]?.title ?? "";
       return highlight.some(
         (h) =>
           (h.group === undefined || h.group === groupTitle) &&
@@ -263,7 +296,10 @@ export function ParamEditorOverlay({
       return;
     }
     onExplain(
-      describeParam(groups[current.groupIndex]?.title ?? "", current.param),
+      describeParam(
+        shownGroups[current.groupIndex]?.title ?? "",
+        current.param,
+      ),
     );
     // `flat`/`groups` are rebuilt each render; selection/title are the real
     // triggers.
@@ -274,6 +310,22 @@ export function ParamEditorOverlay({
     if (!param.preview || !onPreview) return;
     if (previewTimer.current) clearTimeout(previewTimer.current);
     previewTimer.current = setTimeout(() => onPreview(), 350);
+  };
+
+  const isModified = (groupTitle: string, param: EditorParam): boolean => {
+    const base = baseline.current.get(`${groupTitle}::${param.label}`);
+    return base !== undefined && base !== param.value;
+  };
+
+  const resetCurrent = () => {
+    const entry = flat[Math.max(0, Math.min(selected, flat.length - 1))];
+    if (!entry) return;
+    const base = baseline.current.get(
+      `${shownGroups[entry.groupIndex]?.title ?? ""}::${entry.param.label}`,
+    );
+    if (base === undefined) return;
+    entry.param.set(base);
+    schedulePreview(entry.param);
   };
 
   const adjust = (param: EditorParam, direction: 1 | -1, large = false) => {
@@ -312,6 +364,20 @@ export function ParamEditorOverlay({
 
   useInput(
     (char, key) => {
+      // Filter entry swallows keys while the search box is focused.
+      if (filterEditing) {
+        if (key.escape || key.return) {
+          setFilterEditing(false);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setFilter((value) => value.slice(0, -1));
+          return;
+        }
+        if (key.ctrl || key.meta || key.tab) return;
+        if (char && char !== "/") setFilter((value) => value + char);
+        return;
+      }
       // Inline value entry swallows every key until Enter/Escape.
       if (editing !== null) {
         if (key.escape || char === "x") {
@@ -342,7 +408,19 @@ export function ParamEditorOverlay({
       }
 
       if (key.escape || char === "x") {
+        if (filter) {
+          setFilter("");
+          return;
+        }
         onClose();
+        return;
+      }
+      if (char === "/") {
+        setFilterEditing(true);
+        return;
+      }
+      if (char === "r") {
+        resetCurrent();
         return;
       }
       if (tabs) {
@@ -400,7 +478,7 @@ export function ParamEditorOverlay({
       if (key.downArrow) {
         if (key.ctrl) {
           const group = current?.groupIndex ?? 0;
-          const target = Math.min(group + 1, groups.length - 1);
+          const target = Math.min(group + 1, shownGroups.length - 1);
           setSelected(groupFirstFlat[target] ?? Math.max(0, flat.length - 1));
           return;
         }
@@ -469,6 +547,16 @@ export function ParamEditorOverlay({
           ? ` · ${offset + 1}-${Math.min(offset + visibleRows, rows.length)}`
           : ""}
       </Text>
+      {filterEditing || filter ? (
+        <Text color={filterEditing ? "cyan" : "gray"} wrap="truncate-end">
+          {"filter: "}
+          {filter}
+          {filterEditing ? "▏" : ""}
+          {filterEditing
+            ? " · type · enter/esc done"
+            : ` · ${flat.length} params · / edit · esc clear`}
+        </Text>
+      ) : null}
       {window.map((row, index) => {
         const key = `${offset}-${index}`;
         if (row.kind === "blank") return <Text key={key}> </Text>;
@@ -487,13 +575,14 @@ export function ParamEditorOverlay({
           return <Box key={key}>{row.node}</Box>;
         }
         const isSelected = row.flat === selected;
-        const groupTitle = groups[row.groupIndex]?.title ?? "";
+        const groupTitle = shownGroups[row.groupIndex]?.title ?? "";
         const isHighlighted =
           highlight?.some(
             (h) =>
               (h.group === undefined || h.group === groupTitle) &&
               (h.label === undefined || h.label === row.param.label),
           ) ?? false;
+        const modified = isModified(groupTitle, row.param);
         const ratio = proportion(row.param);
         return (
           <Box key={key}>
@@ -504,7 +593,10 @@ export function ParamEditorOverlay({
               backgroundColor={isSelected ? "white" : undefined}
               bold={isHighlighted}
             >
-              {((isHighlighted ? "◆ " : "  ") + row.param.label).padEnd(22)}
+              {(
+                (isHighlighted ? "◆ " : modified ? "• " : "  ") +
+                row.param.label
+              ).padEnd(22)}
             </Text>
             <Text color={isSelected ? "yellow" : "green"}>
               {ratio !== null

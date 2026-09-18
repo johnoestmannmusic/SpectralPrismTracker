@@ -11,7 +11,6 @@ import {
 } from "@/wasm/vendor/prism/prism_wasm.js";
 import { resolveAssetsDir } from "@/runtime/assets";
 import {
-  makeSpectralRenderer,
   registerPrismWasm,
   registerPrismWasmWorker,
   type PrismWasmModule,

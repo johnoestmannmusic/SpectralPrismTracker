@@ -9,7 +9,6 @@ import {
   cellAt,
   instrumentColor,
   patternSnapshot,
-  retime,
   type SongModel,
 } from "@/core/songModel";
 import {
@@ -24,11 +23,7 @@ import {
 } from "@/core/sampler";
 import { rowDuration, rowTime, songPositionAt } from "@/core/timing";
 import { samplerPlaybackRate } from "@/core/pitch";
-import {
-  cloneTarget,
-  type BuildStep,
-  type BuildTarget,
-} from "@/core/stepthrough";
+import { type BuildStep, type BuildTarget } from "@/core/stepthrough";
 import {
   adjustCell,
   applyLastValue as applyLastValueToCell,
@@ -56,8 +51,7 @@ import {
   type EditColumn,
   type LastValues,
 } from "@/core/tracker";
-import { installWebAudioGlobals } from "@/runtime/audio";
-import { loadDefaultSong } from "@/runtime/assets";
+import { getHost, type Host } from "@/host";
 import type { LoadedSong } from "@/shared/types";
 
 /** Mutating actions between autosave backups. */
@@ -88,6 +82,8 @@ export interface SessionState {
   playing: boolean;
   time: number;
   duration: number;
+  /** Whole-song loop (default) or repeat just the viewed order. */
+  loopMode: "song" | "order";
   /** Order currently shown in the tracker view. */
   viewOrder: number;
   cursor: Cursor;
@@ -116,7 +112,39 @@ interface HistoryEntry {
   after: PatternCell;
 }
 
-type HistoryGroup = HistoryEntry[];
+/** A fine-grained group of pattern-cell edits (one tracker action). */
+interface CellHistoryGroup {
+  kind: "cells";
+  entries: HistoryEntry[];
+}
+
+/**
+ * A whole-state snapshot for structural/settings edits, which do not map to
+ * individual pattern cells. Captured before and after the mutation so undo can
+ * restore and redo can re-apply.
+ */
+export interface SessionMemento {
+  song: SongModel | null;
+  project: ProjectFile | null;
+  settings: SamplerSettings[];
+  sampleNames: string[];
+  channelVolume: number[];
+  channelMuted: boolean[];
+  masterVolume: number;
+  masterFx: MasterFxSettings;
+}
+
+interface MementoHistoryGroup {
+  kind: "memento";
+  label: string;
+  before: SessionMemento;
+  after: SessionMemento;
+}
+
+type HistoryGroup = CellHistoryGroup | MementoHistoryGroup;
+
+/** Maximum undo steps retained (cell groups and mementos share the stack). */
+export const MAX_HISTORY = 100;
 
 function initialState(): SessionState {
   return {
@@ -135,6 +163,7 @@ function initialState(): SessionState {
     playing: false,
     time: 0,
     duration: 0,
+    loopMode: "song",
     viewOrder: 0,
     cursor: { order: 0, channel: 0, row: 0, column: 0 },
     selectionAnchor: null,
@@ -155,17 +184,25 @@ function initialState(): SessionState {
  * script/agent driver talk to this and nothing else.
  */
 export class Session {
+  /** Platform services (Node or browser). */
+  readonly host: Host;
   private state: SessionState = initialState();
   private listeners = new Set<() => void>();
   private engine: WebAudioBackend | null = null;
   private history: HistoryGroup[] = [];
   private redoStack: HistoryGroup[] = [];
+  /** >0 while a composite mutation records a single memento for the whole op. */
+  private historySuspended = 0;
   private last = defaultLastValues();
   private lastOctave = 4;
   private clipboard: string | null = null;
   private historyCursor: number | null = null;
   /** Guards stale async stepthrough auditions (bumped on every step). */
   private previewToken = 0;
+
+  constructor(host: Host = getHost()) {
+    this.host = host;
+  }
 
   /** Counts mutating actions; every AUTOSAVE_EVERYth fires the autosave hook. */
   private actionCount = 0;
@@ -227,12 +264,17 @@ export class Session {
     return this.engine;
   }
 
+  /** Resumes a suspended audio context in response to a user gesture (web). */
+  resumeAudio(): void {
+    this.engine?.resume();
+  }
+
   /** Loads the bundled default song and wires up the audio backend. */
   async init(): Promise<void> {
-    installWebAudioGlobals();
+    this.host.audio.installGlobals();
     this.patch({ status: "Loading bundled song…" });
     try {
-      const result = await loadDefaultSong();
+      const result = await this.host.assets.loadDefaultSong();
       await this.applyLoaded(result);
     } catch (error) {
       this.patch({ error: String(error), status: "" });
@@ -244,7 +286,7 @@ export class Session {
   }
 
   private async applyLoaded(
-    result: Awaited<ReturnType<typeof loadDefaultSong>>,
+    result: LoadedSong | { error: string },
   ): Promise<void> {
     if ("error" in result && result.error) {
       this.patch({ error: result.error, status: "" });
@@ -302,6 +344,7 @@ export class Session {
       status: `${model.meta.name} — ${model.instruments.length} instruments`,
       dirty: false,
       projectPath: null,
+      loopMode: "song",
       viewOrder: 0,
       cursor: { order: 0, channel: 0, row: 0, column: 0 },
       selectionAnchor: null,
@@ -374,6 +417,7 @@ export class Session {
       : engine.currentTime();
     if (engine.isPlaying()) engine.seek(start);
     else engine.play(start);
+    this.syncLoopRange();
     this.refreshPlayhead();
   }
 
@@ -388,6 +432,7 @@ export class Session {
       : engine.currentTime();
     if (engine.isPlaying()) engine.seek(start);
     else engine.play(start);
+    this.syncLoopRange();
     this.refreshPlayhead();
   }
 
@@ -426,6 +471,41 @@ export class Session {
     this.patch({
       viewOrder: clamped,
       cursor: { ...this.state.cursor, order: clamped },
+    });
+    this.syncLoopRange();
+  }
+
+  /** Loop the whole song (default) or just the viewed order. */
+  setLoopMode(mode: "song" | "order"): void {
+    this.patch({ loopMode: mode });
+    this.syncLoopRange();
+  }
+
+  /** Flips between whole-song and single-order looping; returns true for order. */
+  toggleOrderLoop(): boolean {
+    const next = this.state.loopMode === "order" ? "song" : "order";
+    this.patch({ loopMode: next });
+    this.syncLoopRange();
+    return next === "order";
+  }
+
+  /** Pushes the current loop policy to the backend (null = whole song). */
+  private syncLoopRange(): void {
+    const engine = this.engine;
+    if (!engine) return;
+    const song = this.state.song;
+    if (!song || this.state.loopMode !== "order") {
+      engine.setLoopRange(null);
+      return;
+    }
+    const patternLength = Math.max(song.meta.patternLength, 1);
+    const order = Math.min(
+      Math.max(this.state.viewOrder, 0),
+      Math.max(song.meta.orderLength - 1, 0),
+    );
+    engine.setLoopRange({
+      startRow: order * patternLength,
+      endRow: (order + 1) * patternLength,
     });
   }
 
@@ -821,10 +901,87 @@ export class Session {
         cell: entry.after,
       });
     }
-    this.history.push(entries);
-    this.redoStack = [];
+    this.pushHistory({ kind: "cells", entries });
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ dirty: true });
+    this.markAction();
+  }
+
+  /** Pushes an undo group, clearing redo and trimming to MAX_HISTORY. */
+  private pushHistory(group: HistoryGroup): void {
+    if (this.historySuspended > 0) return;
+    this.history.push(group);
+    if (this.history.length > MAX_HISTORY) this.history.shift();
+    this.redoStack = [];
+  }
+
+  /** Deep-clones the mutable project state for a structural undo step. */
+  private captureMemento(): SessionMemento {
+    const state = this.state;
+    return {
+      song: state.song ? structuredClone(state.song) : null,
+      project: state.project ? structuredClone(state.project) : null,
+      settings: structuredClone(state.settings),
+      sampleNames: [...state.sampleNames],
+      channelVolume: [...state.channelVolume],
+      channelMuted: [...state.channelMuted],
+      masterVolume: state.masterVolume,
+      masterFx: structuredClone(state.masterFx),
+    };
+  }
+
+  /**
+   * Records a structural/settings mutation as one undo step. Call captureMemento()
+   * before the mutation and pass it here after success.
+   */
+  private recordMemento(label: string, before: SessionMemento): void {
+    if (this.historySuspended > 0) return;
+    this.pushHistory({
+      kind: "memento",
+      label,
+      before,
+      after: this.captureMemento(),
+    });
+  }
+
+  /** Restores a memento and re-syncs the audio engine to it. */
+  private restoreMemento(memento: SessionMemento): void {
+    this.state = {
+      ...this.state,
+      song: memento.song ? structuredClone(memento.song) : null,
+      project: memento.project ? structuredClone(memento.project) : null,
+      settings: structuredClone(memento.settings),
+      sampleNames: [...memento.sampleNames],
+      channelVolume: [...memento.channelVolume],
+      channelMuted: [...memento.channelMuted],
+      masterVolume: memento.masterVolume,
+      masterFx: structuredClone(memento.masterFx),
+      dirty: true,
+    };
+    const song = this.state.song;
+    if (song) {
+      this.engine?.replaceSettings(this.state.settings);
+      this.engine?.updateSequence(sequenceFromSong(song));
+      // replaceSettings drops cached renders; rebuild enabled Spectral layers.
+      this.state.settings.forEach((setting, index) => {
+        if (setting.spectral.enabled && setting.sourceIndex !== null) {
+          this.engine?.renderFusion(index);
+        }
+      });
+    }
+    for (let channel = 0; channel < 4; channel++) {
+      this.engine?.setChannelVolume(
+        channel,
+        this.state.channelVolume[channel] ?? 1,
+      );
+      this.engine?.setChannelMute(
+        channel,
+        this.state.channelMuted[channel] ?? false,
+      );
+    }
+    this.engine?.setMasterVolume(this.state.masterVolume);
+    this.engine?.setMasterFx(this.state.masterFx);
+    this.notify();
     this.markAction();
   }
 
@@ -850,7 +1007,8 @@ export class Session {
   undo(): boolean {
     const group = this.history.pop();
     if (!group) return false;
-    this.applyEntries(group, "before");
+    if (group.kind === "cells") this.applyEntries(group.entries, "before");
+    else this.restoreMemento(group.before);
     this.redoStack.push(group);
     return true;
   }
@@ -858,7 +1016,8 @@ export class Session {
   redo(): boolean {
     const group = this.redoStack.pop();
     if (!group) return false;
-    this.applyEntries(group, "after");
+    if (group.kind === "cells") this.applyEntries(group.entries, "after");
+    else this.restoreMemento(group.after);
     this.history.push(group);
     return true;
   }
@@ -1042,8 +1201,7 @@ export class Session {
     if (entries.length === 0) return false;
     // interpolateColumn already mutated the model; commit() would re-apply
     // identical values, so record history without re-applying.
-    this.history.push(entries);
-    this.redoStack = [];
+    this.pushHistory({ kind: "cells", entries });
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ dirty: true });
     this.markAction();
@@ -1061,16 +1219,16 @@ export class Session {
   insertPatternAt(order: number, duplicate = false): boolean {
     const song = this.state.song;
     if (!song) return false;
+    const before = this.captureMemento();
     const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
     const snapshot = patternSnapshot(song);
     insertPatternAfter(snapshot, pos, song.meta.patternLength, duplicate);
     applySnapshot(song, snapshot);
-    this.history = [];
-    this.redoStack = [];
     this.patch({
       dirty: true,
       viewOrder: Math.min(pos + 1, song.meta.orderLength - 1),
     });
+    this.recordMemento(duplicate ? "duplicate order" : "insert order", before);
     this.markAction();
     return true;
   }
@@ -1082,16 +1240,16 @@ export class Session {
   removePatternAt(order: number): boolean {
     const song = this.state.song;
     if (!song || song.meta.orderLength <= 1) return false;
+    const before = this.captureMemento();
     const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
     const snapshot = patternSnapshot(song);
     removePatternAtSnapshot(snapshot, pos);
     applySnapshot(song, snapshot);
-    this.history = [];
-    this.redoStack = [];
     this.patch({
       dirty: true,
       viewOrder: Math.min(pos, song.meta.orderLength - 1),
     });
+    this.recordMemento("remove order", before);
     this.markAction();
     return true;
   }
@@ -1101,12 +1259,12 @@ export class Session {
     const song = this.state.song;
     if (!song) return false;
     const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
+    const before = this.captureMemento();
     const snapshot = patternSnapshot(song);
     if (!moveOrderSnapshot(snapshot, pos, direction)) return false;
     applySnapshot(song, snapshot);
-    this.history = [];
-    this.redoStack = [];
     this.patch({ dirty: true, viewOrder: pos + direction });
+    this.recordMemento("move order", before);
     this.markAction();
     return true;
   }
@@ -1117,13 +1275,13 @@ export class Session {
     if (!song) return false;
     const pos = Math.min(Math.max(order, 0), song.meta.orderLength - 1);
     const next = Math.min(Math.max(Math.round(patternIndex), 0), 255);
+    const before = this.captureMemento();
     const snapshot = patternSnapshot(song);
     if (!setOrderPattern(snapshot, pos, next, song.meta.patternLength))
       return false;
     applySnapshot(song, snapshot);
-    this.history = [];
-    this.redoStack = [];
     this.patch({ dirty: true });
+    this.recordMemento("set pattern number", before);
     this.markAction();
     return true;
   }
@@ -1132,12 +1290,12 @@ export class Session {
   clearAllPatterns(): boolean {
     const song = this.state.song;
     if (!song) return false;
+    const before = this.captureMemento();
     const snapshot = patternSnapshot(song);
     clearPatternsSnapshot(snapshot, song.meta.patternLength);
     applySnapshot(song, snapshot);
-    this.history = [];
-    this.redoStack = [];
     this.patch({ dirty: true, viewOrder: 0 });
+    this.recordMemento("clear all patterns", before);
     this.markAction();
     return true;
   }
@@ -1212,10 +1370,12 @@ export class Session {
   // ---- mixer ---------------------------------------------------------------
 
   setChannelMute(channel: number, muted: boolean): void {
+    const before = this.captureMemento();
     this.engine?.setChannelMute(channel, muted);
     const channelMuted = this.state.channelMuted.slice();
     channelMuted[channel] = muted;
     this.patch({ channelMuted });
+    this.recordMemento("mute channel", before);
     this.markAction();
   }
 
@@ -1225,23 +1385,29 @@ export class Session {
 
   setChannelVolume(channel: number, volume: number): void {
     const clamped = Math.min(Math.max(volume, 0), 1);
+    const before = this.captureMemento();
     this.engine?.setChannelVolume(channel, clamped);
     const channelVolume = this.state.channelVolume.slice();
     channelVolume[channel] = clamped;
     this.patch({ channelVolume });
+    this.recordMemento("channel volume", before);
     this.markAction();
   }
 
   setMasterVolume(volume: number): void {
     const clamped = Math.min(Math.max(volume, 0), 1);
+    const before = this.captureMemento();
     this.engine?.setMasterVolume(clamped);
     this.patch({ masterVolume: clamped });
+    this.recordMemento("master volume", before);
     this.markAction();
   }
 
   setMasterFx(settings: MasterFxSettings): void {
+    const before = this.captureMemento();
     this.engine?.setMasterFx(settings);
     this.patch({ masterFx: settings });
+    this.recordMemento("master fx", before);
     this.markAction();
   }
 
@@ -1282,6 +1448,7 @@ export class Session {
     if (!song || !instrument) return;
     const next = name.trim();
     if (!next || next === instrument.name) return;
+    const before = this.captureMemento();
     instrument.name = next;
     const project = this.state.project;
     let nextProject = project;
@@ -1292,6 +1459,7 @@ export class Session {
       nextProject = { ...project, instrumentNames };
     }
     this.patch({ project: nextProject, dirty: true });
+    this.recordMemento("rename instrument", before);
     this.markAction();
   }
 
@@ -1299,6 +1467,7 @@ export class Session {
   addInstrument(): number {
     const song = this.state.song;
     if (!song) return -1;
+    const before = this.captureMemento();
     const index = this.state.settings.length;
     const settings = this.state.settings.slice();
     settings.push(defaultSamplerSettings());
@@ -1322,7 +1491,69 @@ export class Session {
     this.engine?.replaceSettings(settings);
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ settings, project: nextProject, dirty: true });
+    this.recordMemento("add instrument", before);
     this.markAction();
+    return index;
+  }
+
+  /** Clones an instrument (settings + name) and inserts it after `index`. */
+  duplicateInstrument(index: number): number {
+    const song = this.state.song;
+    if (!song || !song.instruments[index]) return -1;
+    const before = this.captureMemento();
+    const source = song.instruments[index]!;
+    const insertAt = index + 1;
+    const settings = this.state.settings.slice();
+    settings.splice(
+      insertAt,
+      0,
+      structuredClone(settings[index] ?? defaultSamplerSettings()),
+    );
+    song.instruments.splice(insertAt, 0, {
+      ...source,
+      name: `${source.name} copy`,
+    });
+    song.instruments.forEach((instrument, i) => {
+      instrument.colorRgb = instrumentColor(i);
+    });
+    const project = this.state.project;
+    let nextProject = project;
+    if (project) {
+      const instrumentNames = project.instrumentNames.slice();
+      while (instrumentNames.length < settings.length) instrumentNames.push("");
+      instrumentNames.splice(insertAt, 0, `${source.name} copy`);
+      nextProject = { ...project, instrumentNames };
+    }
+    this.engine?.replaceSettings(settings);
+    this.engine?.updateSequence(sequenceFromSong(song));
+    this.patch({ settings, project: nextProject, dirty: true });
+    this.recordMemento("duplicate instrument", before);
+    this.markAction();
+    return insertAt;
+  }
+
+  /**
+   * Creates a new instrument pointing at a source-sample slot, named after it.
+   * The whole composite records a single undo step.
+   */
+  addInstrumentFromSample(slot: number): number {
+    const before = this.captureMemento();
+    this.historySuspended += 1;
+    let index: number;
+    try {
+      index = this.addInstrument();
+      if (index >= 0) {
+        this.updateSamplerSetting(index, { sourceIndex: slot });
+        this.setInstrumentName(
+          index,
+          this.sampleName(slot) || `Sample ${slot}`,
+        );
+      }
+    } finally {
+      this.historySuspended -= 1;
+    }
+    if (index < 0) return -1;
+    this.recordMemento("new instrument from sample", before);
     return index;
   }
 
@@ -1332,6 +1563,7 @@ export class Session {
     if (!song || !song.instruments[index]) return false;
     // Keep at least one instrument so downstream code always has a valid 0.
     if (song.instruments.length <= 1) return false;
+    const before = this.captureMemento();
     const settings = this.state.settings.slice();
     settings.splice(index, 1);
     song.instruments.splice(index, 1);
@@ -1348,11 +1580,10 @@ export class Session {
       instrumentNames.splice(index, 1);
       nextProject = { ...project, instrumentNames };
     }
-    this.history = [];
-    this.redoStack = [];
     this.engine?.replaceSettings(settings);
     this.engine?.updateSequence(sequenceFromSong(song));
     this.patch({ settings, project: nextProject, dirty: true });
+    this.recordMemento("delete instrument", before);
     this.markAction();
     return true;
   }
@@ -1364,6 +1595,7 @@ export class Session {
    */
   updateSamplerSetting(index: number, patch: Partial<SamplerSettings>): void {
     const engine = this.engine;
+    const before = this.captureMemento();
     const settings = this.state.settings.slice();
     const current = settings[index] ?? defaultSamplerSettings();
     let merged: SamplerSettings = { ...current, ...patch };
@@ -1386,6 +1618,7 @@ export class Session {
     const next = this.state.settings.slice();
     next[index] = merged;
     this.patch({ settings: next, dirty: true });
+    this.recordMemento("change setting", before);
     this.markAction();
   }
 
@@ -1641,6 +1874,7 @@ export class Session {
         time: state.time,
         duration: state.duration,
         order: state.viewOrder,
+        loop: state.loopMode,
       },
       tracker: {
         order: cursor.order,
@@ -1742,6 +1976,7 @@ export class Session {
     slot: number,
     patch: { name?: string; comments?: string },
   ): void {
+    const before = this.captureMemento();
     const sampleNames = this.state.sampleNames.slice();
     while (sampleNames.length < 6) sampleNames.push("");
     if (patch.name !== undefined) sampleNames[slot] = patch.name;
@@ -1760,6 +1995,40 @@ export class Session {
       nextProject = { ...project, sourceSamples };
     }
     this.patch({ sampleNames, project: nextProject, dirty: true });
+    this.recordMemento("edit sample info", before);
+    this.markAction();
+  }
+
+  /**
+   * Installs raw audio for a source-sample slot (FEAT-99): stores it as an
+   * embedded data URL in the project and hands the bytes to the backend so the
+   * slot is immediately playable. One undo step.
+   */
+  setSampleData(
+    slot: number,
+    data: { name: string; dataUrl: string; bytes: Uint8Array },
+  ): void {
+    const before = this.captureMemento();
+    const sampleNames = this.state.sampleNames.slice();
+    while (sampleNames.length < 6) sampleNames.push("");
+    sampleNames[slot] = data.name;
+    const project = this.state.project;
+    let nextProject = project;
+    if (project) {
+      const sourceSamples = project.sourceSamples.slice();
+      while (sourceSamples.length < 6) sourceSamples.push(null);
+      const existing = sourceSamples[slot];
+      sourceSamples[slot] = {
+        name: data.name,
+        url: existing?.url ?? null,
+        comments: existing?.comments ?? "",
+        dataUrl: data.dataUrl,
+      };
+      nextProject = { ...project, sourceSamples };
+    }
+    this.engine?.replaceSample(slot, data.bytes);
+    this.patch({ sampleNames, project: nextProject, dirty: true });
+    this.recordMemento(`import sample ${slot}`, before);
     this.markAction();
   }
 

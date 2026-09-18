@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput, useWindowSize } from "ink";
+import { Box, useApp, useInput, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tokenize } from "./commands/registry";
 import { createRegistry } from "./commands";
@@ -8,6 +8,13 @@ import { PatternView } from "./components/PatternView";
 import { CommandBar, type Suggestion } from "./components/CommandBar";
 import { StatusBar } from "./components/StatusBar";
 import { HelpOverlay } from "./components/HelpOverlay";
+import { ActionMenu } from "./components/ActionMenu";
+import { OrderPicker } from "./components/OrderPicker";
+import {
+  contextActions,
+  type ContextAction,
+  type ContextTarget,
+} from "./contextActions";
 import { MixerOverlay } from "./components/MixerOverlay";
 import { SamplesOverlay } from "./components/SamplesOverlay";
 import {
@@ -31,6 +38,7 @@ import {
 import {
   DEFAULT_EXPLAINER,
   explainCursor,
+  trackerActionHint,
   type ExplainerText,
 } from "./explainer";
 import {
@@ -46,37 +54,6 @@ import {
 } from "./editors";
 import { useSession } from "./hooks";
 import type { Session, SessionState } from "./session";
-
-/**
- * Note entry keys. Uppercase letters enter the full chromatic scale; a few
- * non-conflicting lowercase keys also work. Lowercase letters that overlap the
- * original EDIT MODE functions (z/x/c/q/a/w/s) stay reserved for those.
- */
-const NOTE_KEYS: Record<string, number> = {
-  Z: 0,
-  S: 1,
-  X: 2,
-  D: 3,
-  C: 4,
-  V: 5,
-  G: 6,
-  B: 7,
-  H: 8,
-  N: 9,
-  J: 10,
-  M: 11,
-  d: 3,
-  v: 5,
-  g: 6,
-  b: 7,
-  h: 8,
-  n: 9,
-  j: 10,
-  m: 11,
-  l: 13,
-  ",": 12,
-  ".": 14,
-};
 
 /** "N rows × M cols" for the current block selection, or null when none. */
 function selectionSummary(session: Session): string | null {
@@ -161,6 +138,22 @@ export function App({ session }: Props) {
   const [selected, setSelected] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>("none");
+  /** Context-action popup for the tracker cursor / block (FEAT-88). */
+  const [actionTarget, setActionTarget] = useState<ContextTarget | null>(null);
+  /** Fast order jump picker (FEAT-91). */
+  const [orderPickerOpen, setOrderPickerOpen] = useState(false);
+  /** Slot the Source Samples overlay should focus when opened. */
+  const [samplesSlot, setSamplesSlot] = useState(0);
+  /** Destructive command held back until the user resolves unsaved work. */
+  const [pending, setPending] = useState<{
+    raw: string;
+    description: string;
+  } | null>(null);
+  /** Recent projects picker (FEAT-94). */
+  const [recentPickerOpen, setRecentPickerOpen] = useState(false);
+  const [recent, setRecent] = useState<
+    Array<{ path: string; exists: boolean }>
+  >([]);
   const [editInstrument, setEditInstrument] = useState(0);
   /** When true, closing the editor returns to the instrument list. */
   const [returnToList, setReturnToList] = useState(false);
@@ -248,6 +241,14 @@ export function App({ session }: Props) {
           else startStepthrough();
           return;
         }
+        if (name === "samples") {
+          if (arg !== undefined && Number.isFinite(arg)) {
+            setSamplesSlot(Math.max(0, Math.round(arg)));
+          }
+          setReturnToList(false);
+          setOverlay("samples");
+          return;
+        }
         if (arg !== undefined && Number.isFinite(arg)) {
           const count = session.getState().song?.instruments.length ?? 1;
           setEditInstrument(
@@ -261,8 +262,43 @@ export function App({ session }: Props) {
     [session, exit, registry, startStepthrough, stopStepthrough],
   );
 
+  /** Loads the recent-project list (with existence flags) and opens the picker. */
+  const openRecentPicker = useCallback(async () => {
+    const config = await session.host.config.read();
+    const entries = await Promise.all(
+      (config.recentProjects ?? []).map(async (entry) => ({
+        path: entry,
+        exists: await session.host.fs.fileExists(entry),
+      })),
+    );
+    setRecent(entries);
+    setRecentPickerOpen(true);
+  }, [session]);
+
   const runCommand = useCallback(
     async (raw: string) => {
+      // Guard destructive commands behind an unsaved-changes prompt (FEAT-93).
+      const name = raw.trim().replace(/^\//, "").split(/\s+/)[0] ?? "";
+      const def = registry.get(name);
+      if (def?.id === "recent") {
+        void openRecentPicker();
+        return;
+      }
+      if (
+        def &&
+        ["new", "open", "restore", "quit"].includes(def.id) &&
+        session.getState().dirty &&
+        !raw.includes("--force")
+      ) {
+        setPending({
+          raw,
+          description:
+            def.id === "quit"
+              ? "Quit with unsaved changes?"
+              : `Run /${def.id} and discard unsaved changes?`,
+        });
+        return;
+      }
       const result = await registry.execute(raw, ctx);
       session.recordCommand(raw);
       setPaletteOpen(false);
@@ -280,7 +316,67 @@ export function App({ session }: Props) {
         session.setError(result.error ?? "Command failed");
       }
     },
-    [registry, ctx, session],
+    [registry, ctx, session, openRecentPicker],
+  );
+
+  /** Runs a context-menu action: commands go through the registry. */
+  const runMenuAction = useCallback(
+    (action: ContextAction) => {
+      setActionTarget(null);
+      if (action.special === "order-picker") {
+        setOrderPickerOpen(true);
+        return;
+      }
+      if (action.command) void runCommand(action.command);
+    },
+    [runCommand],
+  );
+
+  const menuActions = useMemo(
+    () => (actionTarget ? contextActions(state, actionTarget) : []),
+    [actionTarget, state],
+  );
+
+  /** Ctrl+C / quit with an unsaved-changes guard. */
+  const requestQuit = useCallback(() => {
+    if (session.getState().dirty) {
+      setPending({ raw: "/quit", description: "Quit with unsaved changes?" });
+      return;
+    }
+    exit();
+  }, [session, exit]);
+
+  useInput(
+    (_char, key) => {
+      if (key.ctrl && _char === "c") requestQuit();
+    },
+    { isActive: true },
+  );
+
+  const resolvePending = useCallback(
+    (action: ContextAction) => {
+      const current = pending;
+      setPending(null);
+      if (!current) return;
+      if (action.special === "confirm-cancel") return;
+      if (action.special === "confirm-discard") {
+        void runCommand(`${current.raw} --force`);
+        return;
+      }
+      if (action.special === "confirm-save") {
+        const target = session.getState().projectPath;
+        if (!target) {
+          setPaletteOpen(true);
+          setInput("/save ");
+          return;
+        }
+        void (async () => {
+          await runCommand(`/save "${target}"`);
+          await runCommand(`${current.raw} --force`);
+        })();
+      }
+    },
+    [pending, runCommand, session],
   );
 
   // Cheap poll for the transport position/playhead.
@@ -309,17 +405,63 @@ export function App({ session }: Props) {
     const cap = Math.max(0, Math.min(8, rows - 11));
     let cancelled = false;
     void (async () => {
-      const raw = input.startsWith("/") ? input.slice(1) : input;
+      const raw = input.replace(/^[/:]/, "");
       const tokens = tokenize(raw);
       const trailing = /\s$/.test(raw);
       if (!trailing && tokens.length <= 1) {
         const query = tokens[0] ?? "";
-        const items = registry.suggest(query, 8).map<Suggestion>((command) => ({
-          label: `/${command.name}`,
-          description: command.description,
-          insert: `/${command.name} `,
-          replaceFrom: 0,
-        }));
+        const usageFor = (command: {
+          name: string;
+          args?: Array<{ name: string; required?: boolean }>;
+        }) => {
+          const args = (command.args ?? [])
+            .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
+            .join(" ");
+          return `/${command.name}${args ? ` ${args}` : ""}`;
+        };
+        const commandItems = registry
+          .suggest(query, 8)
+          .map<Suggestion>((command) => ({
+            label: `/${command.name}`,
+            description: command.description,
+            insert: `/${command.name} `,
+            replaceFrom: 0,
+            kind: "command" as const,
+            usage: usageFor(command),
+            example: command.examples?.[0],
+          }));
+        // When the query is empty, surface recently used commands first.
+        const recentItems: Suggestion[] = query
+          ? []
+          : [
+              ...new Set(
+                [...session.getState().commandHistory]
+                  .reverse()
+                  .map(
+                    (line) =>
+                      line.trim().replace(/^[/:]/, "").split(/\s+/)[0] ?? "",
+                  )
+                  .filter(Boolean),
+              ),
+            ]
+              .slice(0, 5)
+              .map((name) => registry.get(name))
+              .filter((command) => command !== undefined)
+              .map<Suggestion>((command) => ({
+                label: `/${command.name}`,
+                description: command.description,
+                insert: `/${command.name} `,
+                replaceFrom: 0,
+                kind: "recent" as const,
+                usage: usageFor(command),
+                example: command.examples?.[0],
+              }));
+        const seen = new Set<string>();
+        const items = [...recentItems, ...commandItems].filter((item) => {
+          if (seen.has(item.label)) return false;
+          seen.add(item.label);
+          return true;
+        });
         if (!cancelled) {
           setSuggestions(items.slice(0, cap));
           setSelected(0);
@@ -344,7 +486,7 @@ export function App({ session }: Props) {
         return;
       }
       const prefix = trailing ? "" : (tokens[tokens.length - 1] ?? "");
-      let candidates: string[] = [];
+      let candidates: string[];
       try {
         candidates = await registry.completeArg(def, argIndex, prefix, ctx);
       } catch {
@@ -365,7 +507,7 @@ export function App({ session }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [input, paletteOpen, registry, ctx, rows]);
+  }, [input, paletteOpen, registry, ctx, rows, session]);
 
   const applySuggestion = useCallback(() => {
     const suggestion = suggestionsRef.current[selected];
@@ -458,8 +600,30 @@ export function App({ session }: Props) {
         setInput("/");
         return;
       }
+      // ':' is an alias that opens the palette with an empty query.
+      if (char === ":") {
+        setPaletteOpen(true);
+        setInput("");
+        return;
+      }
       if (char === "?") {
         setHelpOpen(true);
+        return;
+      }
+      // Enter opens the context-action menu for the cursor cell (FEAT-88).
+      if (key.return) {
+        setActionTarget({
+          kind: "tracker",
+          channel: state.cursor.channel,
+          order: state.cursor.order,
+          row: state.cursor.row,
+          column: state.cursor.column,
+        });
+        return;
+      }
+      // o: fast "go to order" picker (FEAT-91).
+      if (char === "o") {
+        setOrderPickerOpen(true);
         return;
       }
       // Visual selection mode (`e`): a terminal-safe alternative to
@@ -522,6 +686,12 @@ export function App({ session }: Props) {
         setOverlay(instrumentTabFor(state.settings[index]));
         return;
       }
+      // Shift+I: open the Instruments panel (the full instrument list).
+      if (char === "I") {
+        setReturnToList(false);
+        setOverlay("instruments");
+        return;
+      }
       if (key.escape) {
         session.clearSelection();
         setSelectMode(false);
@@ -554,6 +724,11 @@ export function App({ session }: Props) {
       // keys (X/C/V) keep working.
       const ctrlShift = (letter: string) =>
         key.ctrl && key.shift && char?.toLowerCase() === letter;
+      if (ctrlShift("s")) {
+        setPaletteOpen(true);
+        setInput("/save-as ");
+        return;
+      }
       if (ctrlShift("c")) {
         const summary = selectionSummary(session);
         session.setStatus(
@@ -665,6 +840,12 @@ export function App({ session }: Props) {
         session.moveCursor({ order: 1 });
         return;
       }
+      // L: toggle repeating the viewed order while editing (FEAT-95).
+      if (char === "L") {
+        const looping = session.toggleOrderLoop();
+        session.setStatus(looping ? "Loop: viewed order" : "Loop: whole song");
+        return;
+      }
       if (key.delete || key.backspace) {
         session.clearCell();
         return;
@@ -675,6 +856,8 @@ export function App({ session }: Props) {
       }
 
       // Single-key edit functions (match the original EDIT MODE shortcuts).
+      // There is no keyboard note entry: `z` places the last value/note, and
+      // notes are entered with the /note command or pasted from elsewhere.
       if (char === "z") {
         session.applyLastValue();
         return;
@@ -703,21 +886,17 @@ export function App({ session }: Props) {
         session.adjustValue(-12);
         return;
       }
-      if (char === "+" || char === "=") {
-        session.setLastOctave(session.lastOctaveValue + 1);
-        return;
-      }
-      if (char === "-" || char === "_") {
-        session.setLastOctave(session.lastOctaveValue - 1);
-        return;
-      }
-      const semitone = NOTE_KEYS[char];
-      if (semitone !== undefined) {
-        const note = 60 + session.lastOctaveValue * 12 + semitone;
-        session.editCell({ note: { kind: "note", note } });
-      }
     },
-    { isActive: overlay === "none" && !helpOpen && !stepMode },
+    {
+      isActive:
+        overlay === "none" &&
+        !helpOpen &&
+        !stepMode &&
+        !actionTarget &&
+        !orderPickerOpen &&
+        !pending &&
+        !recentPickerOpen,
+    },
   );
 
   // Visual selection only applies to the tracker; leaving it (or opening any
@@ -813,8 +992,8 @@ export function App({ session }: Props) {
   const trackerExplainer = useMemo(() => explainCursor(state), [state]);
   const editorHint =
     overlay === "fx"
-      ? "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · esc"
-      : "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · [ ] mode · , . ins · esc";
+      ? "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · / filter · r reset · esc"
+      : "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · [ ] mode · , . ins · / filter · r reset · esc";
   const explainer: ExplainerText = helpOpen
     ? {
         title: "Help — commands & keys",
@@ -951,7 +1130,70 @@ export function App({ session }: Props) {
       <SongHeader state={state} playhead={playhead} context={menuContext} />
       <Box flexDirection="row" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1}>
-          {helpOpen ? (
+          {actionTarget ? (
+            <ActionMenu
+              title="Actions for this cell"
+              actions={menuActions}
+              active
+              height={viewportRows}
+              onClose={() => setActionTarget(null)}
+              onRun={runMenuAction}
+            />
+          ) : orderPickerOpen ? (
+            <OrderPicker
+              session={session}
+              active
+              height={contentHeight}
+              onClose={() => setOrderPickerOpen(false)}
+            />
+          ) : pending ? (
+            <ActionMenu
+              title={pending.description}
+              actions={[
+                {
+                  id: "confirm-save",
+                  label: "Save and continue",
+                  special: "confirm-save",
+                  enabled: !!session.getState().projectPath,
+                  hint: session.getState().projectPath
+                    ? undefined
+                    : "(no path yet)",
+                },
+                {
+                  id: "confirm-discard",
+                  label: "Discard changes and continue",
+                  special: "confirm-discard",
+                },
+                {
+                  id: "confirm-cancel",
+                  label: "Cancel",
+                  special: "confirm-cancel",
+                },
+              ]}
+              active
+              height={viewportRows}
+              onClose={() => setPending(null)}
+              onRun={resolvePending}
+            />
+          ) : recentPickerOpen ? (
+            <ActionMenu
+              title="Recent projects"
+              actions={recent.map((entry, index) => ({
+                id: `recent-${index}`,
+                label: entry.path,
+                command: `/open "${entry.path}"`,
+                enabled: entry.exists,
+                hint: entry.exists ? undefined : "(missing)",
+              }))}
+              active
+              height={viewportRows}
+              onClose={() => setRecentPickerOpen(false)}
+              onRun={(action) => {
+                setRecentPickerOpen(false);
+                if (action.command) void runCommand(action.command);
+              }}
+            />
+          ) : helpOpen ? (
             <HelpOverlay
               commands={registry.all()}
               active={helpOpen}
@@ -997,6 +1239,7 @@ export function App({ session }: Props) {
               height={contentHeight}
               state={stepMode ? state : undefined}
               highlightInstrument={highlightedInstrument}
+              onCommand={(line) => void runCommand(line)}
             />
           ) : activeOverlay === "patterns" ? (
             <PatternsOverlay
@@ -1027,6 +1270,13 @@ export function App({ session }: Props) {
               height={contentHeight}
               state={stepMode ? state : undefined}
               highlightSlot={highlightedSlot}
+              initialSlot={samplesSlot}
+              onCommand={(line) => void runCommand(line)}
+              onImportSample={(slot) => {
+                setOverlay("none");
+                setPaletteOpen(true);
+                setInput(`/importsample ${slot} `);
+              }}
             />
           ) : (
             <PatternView
@@ -1059,7 +1309,9 @@ export function App({ session }: Props) {
         error={state.error}
         hint={
           menuContext?.hint ??
-          "space play · q/a ±value · / commands · ctrl+p recall · ? help"
+          (stepMode
+            ? "↑↓ step · pgup/pgdn chapter · esc exit"
+            : trackerActionHint(state))
         }
       />
       <CommandBar

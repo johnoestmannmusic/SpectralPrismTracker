@@ -413,7 +413,7 @@ export function projectFromJson(text: string): ProjectFile {
   try {
     value = JSON.parse(text) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`Invalid Project JSON: ${String(e)}`);
+    throw new Error(`Invalid Project JSON: ${String(e)}`, { cause: e });
   }
   return projectFromValue(value);
 }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Lantern — a terminal music tracker, sampler and spectral synthesiser in the browser."
+    />
+    <title>Lantern — Web Terminal</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="shell-bar">
+        <span class="brand">LANTERN</span>
+        <div class="buttons" id="shell-buttons"></div>
+        <span class="status" id="shell-status">Loading…</span>
+      </header>
+      <main class="terminal-frame">
+        <div id="terminal" tabindex="0"></div>
+      </main>
+      <footer class="shell-hint" id="shell-hint">
+        Type <kbd>/</kbd> for commands · <kbd>Tab</kbd> completes ·
+        <kbd>Enter</kbd> opens menus · <kbd>?</kbd> help
+      </footer>
+    </div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

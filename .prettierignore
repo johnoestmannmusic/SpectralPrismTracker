@@ -1,0 +1,11 @@
+# Generated / vendored / non-source files Prettier must not rewrite.
+dist
+node_modules
+native
+assets
+test-results
+coverage
+src/wasm/vendor
+.pi
+package-lock.json
+KANBAN.md

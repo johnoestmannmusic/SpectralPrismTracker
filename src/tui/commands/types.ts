@@ -73,6 +73,8 @@ export interface CommandDef {
   description: string;
   category: string;
   args?: CommandArg[];
+  /** Example invocations shown in the palette's detail line. */
+  examples?: string[];
   run: (
     args: ParsedArgs,
     ctx: CommandContext,

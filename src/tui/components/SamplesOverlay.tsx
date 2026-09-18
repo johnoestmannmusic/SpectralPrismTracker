@@ -5,6 +5,8 @@ import type { Session } from "../session";
 import { useSession } from "../hooks";
 import type { ExplainerText } from "../explainer";
 import type { SessionState } from "../session";
+import { ActionMenu } from "./ActionMenu";
+import { contextActions, type ContextAction } from "../contextActions";
 
 interface Props {
   session: Session;
@@ -19,6 +21,12 @@ interface Props {
   state?: SessionState;
   /** Stepthrough sample slot to mark. */
   highlightSlot?: number;
+  /** Slot to focus when the overlay opens (e.g. from an instrument menu). */
+  initialSlot?: number;
+  /** Executes a slash command chosen from the action menu. */
+  onCommand?: (line: string) => void;
+  /** Opens the command bar prefilled to import into this slot. */
+  onImportSample?: (slot: number) => void;
 }
 
 type InfoField = "name" | "comments";
@@ -40,12 +48,20 @@ export function SamplesOverlay({
   height: availableHeight,
   state: stateOverride,
   highlightSlot,
+  initialSlot,
+  onCommand,
+  onImportSample,
 }: Props) {
   const live = useSession(session);
   const state = stateOverride ?? live;
   const { columns } = useWindowSize();
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(initialSlot ?? 0);
   const [edit, setEdit] = useState<EditState | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialSlot !== undefined) setIndex(initialSlot);
+  }, [initialSlot]);
 
   const names = state.sampleNames;
   const durations = session.sampleDurations();
@@ -72,6 +88,19 @@ export function SamplesOverlay({
       comments: edit.comments,
     });
     setEdit(null);
+  };
+
+  const runAction = (action: ContextAction) => {
+    setMenuOpen(false);
+    if (action.special === "edit-sample") {
+      openEdit(selected);
+      return;
+    }
+    if (action.special === "import-sample") {
+      onImportSample?.(selected);
+      return;
+    }
+    if (action.command) onCommand?.(action.command);
   };
 
   useEffect(() => {
@@ -135,6 +164,8 @@ export function SamplesOverlay({
         return;
       }
 
+      if (menuOpen) return; // ActionMenu owns the keyboard while open.
+
       if (key.escape || char === "q" || char === "x") {
         onClose();
         return;
@@ -152,7 +183,7 @@ export function SamplesOverlay({
         return;
       }
       if (key.return || char === "z") {
-        openEdit(selected);
+        setMenuOpen(true);
         return;
       }
       if (char === "p") {
@@ -161,6 +192,20 @@ export function SamplesOverlay({
     },
     { isActive: active },
   );
+
+  if (menuOpen) {
+    return (
+      <ActionMenu
+        title={`Source sample ${String(selected).padStart(2, "0")} · ${
+          names[selected] || `sample ${selected}`
+        }`}
+        actions={contextActions(state, { kind: "sample", slot: selected })}
+        active={active}
+        onClose={() => setMenuOpen(false)}
+        onRun={runAction}
+      />
+    );
+  }
 
   if (edit) {
     const field = (name: InfoField, label: string) => (
@@ -208,7 +253,7 @@ export function SamplesOverlay({
       <Text bold color="magenta">
         Source Samples
       </Text>
-      <Text dimColor>↑↓ select · p preview · enter edit info · esc close</Text>
+      <Text dimColor>↑↓ select · p preview · enter menu · esc close</Text>
       <Box flexDirection="column">
         {names.map((name, sampleIndex) => {
           const cursor = sampleIndex === selected;
