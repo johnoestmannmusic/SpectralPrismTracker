@@ -2,6 +2,7 @@ import type { AudioClip } from "@/core/dsp";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import {
   Scheduler,
+  chordVoices,
   waveform,
   type LoopRange,
   type SamplerSettings,
@@ -32,7 +33,7 @@ async function decodeBytes(
 const PREVIEW_RATE = Math.pow(2, 3 / 12);
 
 interface InstrumentPreview {
-  voice: Voice;
+  voices: Voice[];
   tone: OscillatorNode | null;
   toneGain: GainNode | null;
 }
@@ -247,8 +248,10 @@ export class WebAudioBackend implements AudioBackend {
           .map((v) => v.playhead(now))
           .filter((p): p is SamplePlayhead => p !== null),
       );
-    const preview = this.instrumentPreview?.voice.playhead(now);
-    if (preview) out.push(preview);
+    const preview = this.instrumentPreview?.voices
+      .map((voice) => voice.playhead(now))
+      .filter((p): p is SamplePlayhead => p !== null);
+    if (preview) out.push(...preview);
     if (this.sourcePreview) {
       const position = now - this.sourcePreview.start;
       if (position >= 0 && position <= this.sourcePreview.duration) {
@@ -320,28 +323,58 @@ export class WebAudioBackend implements AudioBackend {
     }
     const settings = this.sampler.settings[instrument];
     if (!settings) return;
-    let voice: Voice;
+    // A chord instrument previews its full voicing, matching pattern playback.
+    const chord = settings.chord;
+    const voices: Voice[] = [];
+    const when = ctx.currentTime + 0.01;
     try {
-      voice = buildVoice(
-        ctx,
-        buffer,
-        settings,
-        instrument,
-        0,
-        PREVIEW_RATE,
-        settings.volume,
-        ctx.currentTime + 0.01,
-        ctx.destination,
-      );
+      if (chord.enabled) {
+        for (const voice of chordVoices(chord)) {
+          voices.push(
+            buildVoice(
+              ctx,
+              buffer,
+              settings,
+              instrument,
+              0,
+              PREVIEW_RATE * voice.rateRatio,
+              // buildVoice already applies settings.volume.
+              voice.gain,
+              when + voice.delaySec,
+              ctx.destination,
+              voice.pan,
+            ),
+          );
+        }
+      } else {
+        voices.push(
+          buildVoice(
+            ctx,
+            buffer,
+            settings,
+            instrument,
+            0,
+            PREVIEW_RATE,
+            // buildVoice already applies settings.volume.
+            1,
+            when,
+            ctx.destination,
+          ),
+        );
+      }
     } catch (e) {
+      for (const voice of voices) voice.dispose();
       this.webError = `Cannot preview: ${String(e)}`;
       return;
     }
+    const first = voices[0]!;
     if (settings.looping) {
-      voice.release(
-        voice.start + 1.5,
-        Math.min(Math.max(settings.release, 0), 5),
-      );
+      for (const voice of voices) {
+        voice.release(
+          voice.start + 1.5,
+          Math.min(Math.max(settings.release, 0), 5),
+        );
+      }
     }
 
     let tone: OscillatorNode | null = null;
@@ -350,8 +383,8 @@ export class WebAudioBackend implements AudioBackend {
       tone = ctx.createOscillator();
       toneGain = ctx.createGain();
       tone.frequency.value = this.tuning * PREVIEW_RATE;
-      const start = voice.start;
-      const end = Math.min(voice.end, start + 5);
+      const start = first.start;
+      const end = Math.min(first.end, start + 5);
       const fade = Math.min(0.01, (end - start) / 4);
       const level = Math.pow(10, -8 / 20);
       toneGain.gain.setValueAtTime(0, start);
@@ -363,13 +396,13 @@ export class WebAudioBackend implements AudioBackend {
       tone.start(start);
       tone.stop(end + 0.02);
     }
-    this.instrumentPreview = { voice, tone, toneGain };
+    this.instrumentPreview = { voices, tone, toneGain };
   }
 
   stopPreview(): void {
     const preview = this.instrumentPreview;
     if (!preview) return;
-    preview.voice.dispose();
+    for (const voice of preview.voices) voice.dispose();
     if (preview.tone) {
       try {
         preview.tone.stop();
@@ -385,8 +418,8 @@ export class WebAudioBackend implements AudioBackend {
   previewPosition(): { instrument: number; position: number } | null {
     if (!this.instrumentPreview || !this.ctx) return null;
     const now = this.ctx.currentTime;
-    const voice = this.instrumentPreview.voice;
-    if (now >= voice.end) return null;
+    const voice = this.instrumentPreview.voices[0];
+    if (!voice || now >= voice.end) return null;
     return { instrument: voice.instrument, position: voice.position(now) };
   }
 

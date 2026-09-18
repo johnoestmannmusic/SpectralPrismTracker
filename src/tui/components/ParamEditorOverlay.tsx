@@ -109,7 +109,10 @@ function proportion(param: EditorParam): number | null {
     param.max <= param.min
   )
     return null;
-  return ((param.value as number) - param.min) / (param.max - param.min);
+  const ratio = ((param.value as number) - param.min) / (param.max - param.min);
+  // Clamp: a preset can hold a value outside the editor's slider range, which
+  // otherwise makes the bar's `"░".repeat(12 - n)` count negative.
+  return Math.min(Math.max(ratio, 0), 1);
 }
 
 /** Multiplier applied to `step` when Ctrl+←/→ is held. */
@@ -235,6 +238,11 @@ export function ParamEditorOverlay({
 
   const [selected, setSelected] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
+  /** Open enum chooser popup (Enter on an enum). */
+  const [choosing, setChoosing] = useState<{
+    options: string[];
+    index: number;
+  } | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const current = flat[Math.max(0, Math.min(selected, flat.length - 1))];
@@ -378,6 +386,51 @@ export function ParamEditorOverlay({
         if (char && char !== "/") setFilter((value) => value + char);
         return;
       }
+      // Enum chooser popup swallows keys until Enter/Escape.
+      if (choosing) {
+        if (key.escape || char === "x") {
+          setChoosing(null);
+          return;
+        }
+        if (key.return) {
+          const option = choosing.options[choosing.index];
+          if (option !== undefined && current) {
+            current.param.set(option);
+            schedulePreview(current.param);
+          }
+          setChoosing(null);
+          return;
+        }
+        if (key.upArrow || key.leftArrow) {
+          setChoosing((state) =>
+            state ? { ...state, index: Math.max(0, state.index - 1) } : state,
+          );
+          return;
+        }
+        if (key.downArrow || key.rightArrow) {
+          setChoosing((state) =>
+            state
+              ? {
+                  ...state,
+                  index: Math.min(state.options.length - 1, state.index + 1),
+                }
+              : state,
+          );
+          return;
+        }
+        const digit = Number(char);
+        if (
+          char &&
+          Number.isInteger(digit) &&
+          digit >= 1 &&
+          digit <= choosing.options.length
+        ) {
+          setChoosing((state) =>
+            state ? { ...state, index: digit - 1 } : state,
+          );
+        }
+        return;
+      }
       // Inline value entry swallows every key until Enter/Escape.
       if (editing !== null) {
         if (key.escape || char === "x") {
@@ -494,7 +547,18 @@ export function ParamEditorOverlay({
         return;
       }
       if (key.return || char === "z") {
-        if (current) setEditing(initialEditText(current.param));
+        if (current) {
+          if (current.param.kind === "enum") {
+            const options = current.param.choices ?? [];
+            const index = Math.max(
+              0,
+              options.indexOf(String(current.param.value)),
+            );
+            setChoosing({ options, index });
+          } else {
+            setEditing(initialEditText(current.param));
+          }
+        }
         return;
       }
       if (char === "p") {
@@ -516,27 +580,22 @@ export function ParamEditorOverlay({
         {title}
       </Text>
       {tabs ? (
-        <Box>
+        <Text>
           {tabs.labels.map((label, tabIndex) => {
             const isActive = tabIndex === tabs.active;
             const isOn = tabs.highlight?.[tabIndex] ?? false;
             return (
-              <Text key={label}>
-                <Text
-                  bold={isOn}
-                  inverse={isActive}
-                  color={isOn ? "green" : isActive ? "black" : "gray"}
-                >
-                  {` ${label} `}
-                </Text>
+              <Text
+                key={label}
+                bold={isOn}
+                inverse={isActive}
+                color={isOn ? "green" : isActive ? "black" : "gray"}
+              >
+                {` ${label} `}
               </Text>
             );
           })}
-          <Text dimColor>
-            {"  "}chain: sampler -&gt; spectral -&gt; percussion (each
-            transforms the previous)
-          </Text>
-        </Box>
+        </Text>
       ) : null}
       <Text dimColor wrap="truncate-end">
         {editing !== null
@@ -557,58 +616,87 @@ export function ParamEditorOverlay({
             : ` · ${flat.length} params · / edit · esc clear`}
         </Text>
       ) : null}
-      {window.map((row, index) => {
-        const key = `${offset}-${index}`;
-        if (row.kind === "blank") return <Text key={key}> </Text>;
-        if (row.kind === "header") {
+      {choosing ? (
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor="cyan"
+          paddingX={1}
+        >
+          <Text dimColor>
+            choose {current?.param.label ?? "value"} · ↑↓ move · enter select ·
+            esc cancel
+          </Text>
+          {choosing.options.map((option, index) => (
+            <Text
+              key={option}
+              inverse={index === choosing.index}
+              color={index === choosing.index ? undefined : "gray"}
+            >
+              {index === choosing.index ? "▶ " : "  "}
+              {option}
+            </Text>
+          ))}
+        </Box>
+      ) : (
+        window.map((row, index) => {
+          const key = `${offset}-${index}`;
+          if (row.kind === "blank") return <Text key={key}> </Text>;
+          if (row.kind === "header") {
+            return (
+              <Text
+                key={key}
+                bold
+                color={row.groupIndex === selectedGroup ? "cyan" : "gray"}
+              >
+                {row.text}
+              </Text>
+            );
+          }
+          if (row.kind === "graph") {
+            return <Box key={key}>{row.node}</Box>;
+          }
+          const isSelected = row.flat === selected;
+          const groupTitle = shownGroups[row.groupIndex]?.title ?? "";
+          const isHighlighted =
+            highlight?.some(
+              (h) =>
+                (h.group === undefined || h.group === groupTitle) &&
+                (h.label === undefined || h.label === row.param.label),
+            ) ?? false;
+          const modified = isModified(groupTitle, row.param);
+          const ratio = proportion(row.param);
           return (
-            <Text
-              key={key}
-              bold
-              color={row.groupIndex === selectedGroup ? "cyan" : "gray"}
-            >
-              {row.text}
-            </Text>
+            <Box key={key}>
+              <Text
+                color={isHighlighted ? "yellow" : undefined}
+                inverse={isSelected}
+                bold={isHighlighted}
+              >
+                {(
+                  (isHighlighted ? "◆ " : modified ? "• " : "  ") +
+                  row.param.label
+                ).padEnd(22)}
+              </Text>
+              <Text
+                color={
+                  isHighlighted ? "yellow" : isSelected ? undefined : "green"
+                }
+                inverse={isSelected}
+              >
+                {ratio !== null
+                  ? `${"█".repeat(Math.round(ratio * 12))}${"░".repeat(
+                      Math.max(0, 12 - Math.round(ratio * 12)),
+                    )} `
+                  : ""}
+                {isSelected && editing !== null
+                  ? `${editing}▏`
+                  : displayValue(row.param)}
+              </Text>
+            </Box>
           );
-        }
-        if (row.kind === "graph") {
-          return <Box key={key}>{row.node}</Box>;
-        }
-        const isSelected = row.flat === selected;
-        const groupTitle = shownGroups[row.groupIndex]?.title ?? "";
-        const isHighlighted =
-          highlight?.some(
-            (h) =>
-              (h.group === undefined || h.group === groupTitle) &&
-              (h.label === undefined || h.label === row.param.label),
-          ) ?? false;
-        const modified = isModified(groupTitle, row.param);
-        const ratio = proportion(row.param);
-        return (
-          <Box key={key}>
-            <Text
-              color={
-                isSelected ? "black" : isHighlighted ? "yellow" : undefined
-              }
-              backgroundColor={isSelected ? "white" : undefined}
-              bold={isHighlighted}
-            >
-              {(
-                (isHighlighted ? "◆ " : modified ? "• " : "  ") +
-                row.param.label
-              ).padEnd(22)}
-            </Text>
-            <Text color={isSelected ? "yellow" : "green"}>
-              {ratio !== null
-                ? `${"█".repeat(Math.round(ratio * 12))}${"░".repeat(12 - Math.round(ratio * 12))} `
-                : ""}
-              {isSelected && editing !== null
-                ? `${editing}▏`
-                : displayValue(row.param)}
-            </Text>
-          </Box>
-        );
-      })}
+        })
+      )}
     </Box>
   );
 }

@@ -87,7 +87,7 @@ export function defaultChordSettings(): ChordSettings {
     detuneCents: 0,
     strumSec: 0,
     panSpread: 0.3,
-    voiceCap: 8,
+    voiceCap: 12,
   };
 }
 
@@ -142,8 +142,9 @@ export function chordVoices(settings: ChordSettings): ChordVoice[] {
         (detune === 0 ? 0 : ((index % 2 === 0 ? 1 : -1) * detune) / 100)) /
         12,
     ),
-    // Split the level so a dense chord does not clip the channel.
-    gain: 1 / Math.sqrt(count),
+    // Normalise by voice count so a dense chord cannot clip the channel
+    // (the voices share a source and can sum constructively at the onset).
+    gain: 1 / count,
     pan: count <= 1 ? 0 : panSpread * ((index / (count - 1)) * 2 - 1),
     delaySec: strum * index,
   }));

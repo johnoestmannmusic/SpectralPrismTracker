@@ -15,6 +15,7 @@ import {
   channelStepAtGlobal,
   totalSongRows,
 } from "@/core/layout";
+import { percussionPreset, percussionPresetName } from "@/core/spectral";
 import {
   LOOKAHEAD_SEC,
   setSpectralEnabled,
@@ -512,6 +513,13 @@ describe("project json", () => {
     expect(rates[2]! / rates[0]!).toBeCloseTo(Math.pow(2, 7 / 12), 5);
   });
 
+  it("derives the percussion preset name and reports custom after a tweak", () => {
+    expect(percussionPresetName(percussionPreset("snare"))).toBe("snare");
+    expect(percussionPresetName(percussionPreset("hat"))).toBe("hat");
+    const custom = { ...percussionPreset("snare"), noiseAmount: 1.5 };
+    expect(percussionPresetName(custom)).toBe("custom");
+  });
+
   it("builds chord intervals and serialises chord settings", () => {
     const chord = defaultChordSettings();
     chord.preset = "major";
@@ -521,15 +529,21 @@ describe("project json", () => {
     chord.inversion = 0;
     chord.octaves = 2;
     expect(chordIntervals(chord)).toEqual([0, 4, 7, 12, 16, 19]);
+    // The default voice cap must fit three octaves of a seventh chord.
+    chord.preset = "major7";
+    chord.octaves = 3;
+    expect(chordIntervals(chord)).toHaveLength(12);
+    chord.preset = "major";
+    chord.octaves = 1;
 
     chord.octaves = 1;
     chord.enabled = true;
     chord.detuneCents = 10;
     const voices = chordVoices(chord);
     expect(voices).toHaveLength(3);
-    // Level is split so a dense chord does not clip.
+    // Level is normalised by voice count so a dense chord cannot clip.
     expect(voices.reduce((sum, voice) => sum + voice.gain, 0)).toBeCloseTo(
-      Math.sqrt(3),
+      1,
       6,
     );
 

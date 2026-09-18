@@ -4,6 +4,7 @@ import {
   PERCUSSION_PRESETS,
   SPECTRAL_FUSION_MODES,
   percussionPreset,
+  percussionPresetName,
   spectralModeHasAmount,
   spectralModeLabel,
   spectralModeNeedsB,
@@ -12,6 +13,7 @@ import {
 } from "@/core/spectral";
 import type { MasterFxSettings } from "@/core/masterFx";
 import {
+  CHORD_PRESET_INTERVALS,
   CHORD_PRESETS,
   chordIntervals,
   defaultSamplerSettings,
@@ -558,9 +560,10 @@ export function percussionGroups(
         ),
         en(
           "Preset",
-          "",
-          [...PERCUSSION_PRESETS],
+          percussionPresetName(percussion),
+          [...PERCUSSION_PRESETS, "custom"],
           (v) => {
+            if (!(PERCUSSION_PRESETS as string[]).includes(String(v))) return;
             session.updateSamplerSetting(index, {
               spectral: {
                 ...sp,
@@ -615,7 +618,7 @@ export function percussionGroups(
             "Frequency",
             percussion.transientFrequency,
             (v) => set({ transientFrequency: v as number }),
-            { min: 100, max: 8000, step: 10, unit: "Hz", preview: true },
+            { min: 100, max: 12000, step: 10, unit: "Hz", preview: true },
           ),
         ],
       },
@@ -711,6 +714,12 @@ export function chordGroups(
   const set = (patch: Partial<typeof chord>) =>
     session.updateSamplerSetting(index, { chord: { ...chord, ...patch } });
   const intervals = chordIntervals(chord).join(", ");
+  const countFor = (preset: ChordPreset) =>
+    preset === "custom"
+      ? Math.max(chord.intervals.length, 1)
+      : (CHORD_PRESET_INTERVALS[preset]?.length ?? 1);
+  const fittedCap = (preset: ChordPreset, octaves: number) =>
+    Math.max(chord.voiceCap, countFor(preset) * Math.max(octaves, 1));
   const customParam: EditorParam = {
     label: "Custom intervals",
     kind: "text",
@@ -734,7 +743,11 @@ export function chordGroups(
           "Shape",
           chord.preset,
           [...CHORD_PRESETS],
-          (v) => set({ preset: v as ChordPreset }),
+          (v) =>
+            set({
+              preset: v as ChordPreset,
+              voiceCap: fittedCap(v as ChordPreset, chord.octaves),
+            }),
           true,
         ),
       ],
@@ -753,7 +766,11 @@ export function chordGroups(
               num(
                 "Octaves",
                 chord.octaves,
-                (v) => set({ octaves: v as number }),
+                (v) =>
+                  set({
+                    octaves: v as number,
+                    voiceCap: fittedCap(chord.preset, v as number),
+                  }),
                 {
                   min: 1,
                   max: 3,

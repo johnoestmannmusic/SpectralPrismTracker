@@ -230,6 +230,18 @@ describe("tracker block operations", () => {
     }
   });
 
+  it("re-expands the sequence when the chord shape changes", () => {
+    const engine = session.backend!;
+    const spy = vi.spyOn(engine, "updateSequence");
+    const current = session.samplerSettings(0)!;
+    session.updateSamplerSetting(0, {
+      chord: { ...current.chord, enabled: true, preset: "sus2" },
+    });
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    session.undo();
+  });
+
   it("recalls command history", () => {
     session.recordCommand("preview 5");
     session.recordCommand("info");

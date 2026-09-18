@@ -12,6 +12,7 @@ import {
   ParamEditorOverlay,
   initialEditText,
   parseEditText,
+  type EditorGroup,
   type EditorParam,
 } from "@/tui/components/ParamEditorOverlay";
 import { HelpOverlay } from "@/tui/components/HelpOverlay";
@@ -268,7 +269,7 @@ describe("TUI overlays", () => {
         />,
       );
       expect(lastFrame() ?? "").toContain("Percussion");
-      expect(lastFrame() ?? "").toContain("chain: sampler");
+      expect(lastFrame() ?? "").toContain("Sampler");
       const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
       stdin.write("\t");
       await tick();
@@ -459,6 +460,94 @@ describe("TUI overlays", () => {
       const frame = lastFrame() ?? "";
       expect(frame.split("\n")).toHaveLength(2);
       expect(frame).toContain("a · b · c");
+      unmount();
+    });
+  });
+
+  describe("editor tab bar", () => {
+    it("renders every instrument tab label", () => {
+      const { lastFrame, unmount } = render(
+        <ParamEditorOverlay
+          title="Spectral — Instrument"
+          groups={spectralGroups(session, 0)}
+          active
+          onClose={() => {}}
+          height={24}
+          tabs={{
+            labels: ["Sampler", "Spectral", "Percussion", "Chord"],
+            active: 1,
+            onSelect: () => {},
+            highlight: [false, true, false, false],
+          }}
+        />,
+      );
+      const frame = lastFrame() ?? "";
+      for (const label of ["Sampler", "Spectral", "Percussion", "Chord"]) {
+        expect(frame).toContain(label);
+      }
+      unmount();
+    });
+  });
+
+  describe("number bar", () => {
+    it("clamps a value outside the slider range instead of crashing", () => {
+      const param: EditorParam = {
+        label: "Frequency",
+        kind: "number",
+        value: 8500,
+        min: 100,
+        max: 8000,
+        step: 10,
+        set: () => {},
+      };
+      const groups: EditorGroup[] = [{ title: "Transient", params: [param] }];
+      const { lastFrame, unmount } = render(
+        <ParamEditorOverlay
+          title="Test"
+          groups={groups}
+          active
+          onClose={() => {}}
+          height={10}
+        />,
+      );
+      expect(lastFrame() ?? "").toContain("Frequency");
+      unmount();
+    });
+  });
+
+  describe("enum chooser", () => {
+    it("opens a list on enter and selects with arrows", async () => {
+      const set = vi.fn();
+      const choices = ["kick", "snare", "metal", "hat"];
+      const param: EditorParam = {
+        label: "Preset",
+        kind: "enum",
+        value: "snare",
+        choices,
+        set,
+      };
+      const groups: EditorGroup[] = [{ title: "Percussion", params: [param] }];
+      const { stdin, lastFrame, unmount } = render(
+        <ParamEditorOverlay
+          title="Test"
+          groups={groups}
+          active
+          onClose={() => {}}
+          height={20}
+        />,
+      );
+      stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("choose Preset");
+      expect(frame).toContain("metal");
+      expect(frame).toContain("hat");
+      // Chooser opens on the current value (snare); down + enter picks metal.
+      stdin.write("\u001B[B");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(set).toHaveBeenCalledWith("metal");
       unmount();
     });
   });

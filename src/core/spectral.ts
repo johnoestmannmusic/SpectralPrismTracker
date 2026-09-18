@@ -501,6 +501,23 @@ export function percussionPreset(name: PercussionPreset): PercussionSettings {
   return { enabled: true, ...PERCUSSION_PRESET_VALUES[name] };
 }
 
+/**
+ * Which built-in preset the current percussion params match, or `custom` once
+ * any value has been tweaked. Used to label the editor's preset control.
+ */
+export function percussionPresetName(
+  settings: PercussionSettings,
+): PercussionPreset | "custom" {
+  for (const preset of PERCUSSION_PRESETS) {
+    const values = PERCUSSION_PRESET_VALUES[preset];
+    const matches = (Object.keys(values) as Array<keyof typeof values>).every(
+      (key) => settings[key] === values[key],
+    );
+    if (matches) return preset;
+  }
+  return "custom";
+}
+
 export function defaultPercussionSettings(): PercussionSettings {
   return { enabled: false, ...PERCUSSION_PRESET_VALUES.kick };
 }

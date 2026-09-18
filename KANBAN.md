@@ -350,6 +350,109 @@ assets/ demo project, tests/unit/*, tests/e2e, constraints-tests/, package.json 
 
 ## Implemented
 
+### BUG-25 — Hat preset crashed the editor: negative String.repeat in the value bar
+- priority: critical
+- tags: tui, editor, percussion, crash
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User crash report: selecting the Percussion "hat" preset crashed the TUI with `RangeError: Invalid count value: -1` at `String.repeat` in ParamEditorOverlay.
+
+Cause: `proportion()` returned an unclamped `(value - min) / (max - min)`. The hat preset's `transientFrequency` is 8500 while the editor's slider max was 8000, so the bar computed `12 - round(ratio*12) === -1` and `"░".repeat(-1)` threw.
+
+Fixes:
+- `proportion()` now clamps to 0..1, and the bar's shade count uses `Math.max(0, ...)`.
+- Raised the Transient Frequency editor range to 100..12000 so preset values are representable (no silent snapping).
+
+Audited other `.repeat()` bars (MixerOverlay clamps via level; ExplainerPanel already uses Math.max(0, ...)).
+
+Tests: added a ParamEditorOverlay test rendering a number param with value 8500 in a 100..8000 range (previously crashed). 274 tests pass.
+
+### BUG-24 — Percussion Preset didn't cycle and Enter opened text entry, not a list
+- priority: medium
+- tags: tui, editor, percussion, ux
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report: the Percussion "Preset" control did not cycle through the presets, and Enter did not present a list to choose from.
+
+Cause 1: `percussionGroups` built the enum with a hardcoded empty value (`en("Preset", "", ...)`), so it never displayed the current preset and arrow-cycling used `indexOf("") === -1`, effectively bouncing between two entries.
+Cause 2: ParamEditorOverlay's Enter on an enum opened free-text value entry rather than a choice list.
+
+Fixes:
+- Added `percussionPresetName(settings)` in spectral.ts, which derives which built-in preset the current params match (or `custom` after a tweak). The Preset enum now uses it as its value and includes `custom` in the list, so ←/→ cycles correctly.
+- ParamEditorOverlay now opens an enum chooser list on Enter: ↑↓/←→ move, number keys jump, Enter selects, Esc cancels (works for every enum, e.g. Spectral Fusion mode too).
+
+Tests: added `percussionPresetName` derivation test and an enum-chooser test (opens list, down+enter applies the next choice). 273 tests pass.
+
+### BUG-23 — Instrument editor tab bar collapsed/wrapped, hiding the active tab content
+- priority: medium
+- tags: tui, editor, spectral, chord, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (Chord follow-up): the Spectral editor's "Enabled" option looked invisible/wrong.
+
+Cause: after adding the Chord tab, the ParamEditorOverlay tab bar exceeded the editor pane width because the 4 tab labels and the long "chain: sampler -> spectral -> percussion (each transforms the previous)" hint shared one row and wrapped/overlapped (e.g. `Spect` over `Sample`). Rendering the bar as a `<Box>` of `<Text>` children also collapsed in the real App's height-constrained column (Yoga shrank it), so the tab row vanished entirely. Additionally the selected row used `backgroundColor="white"` + `color="yellow"` for the value, which is unreadable on light terminals.
+
+Fixes:
+- Tab bar is now a single nested `<Text>` (the structure that renders reliably in the App), with the long chain hint removed (the tab labels already convey the chain).
+- Selected row uses `inverse` (terminal-agnostic) instead of white background + yellow/black, so the label and its value stay readable on light and dark themes.
+
+Tests: added an editor tab-bar test asserting all four labels render; updated the existing tab test that asserted the removed chain hint. 271 tests pass.
+
+### BUG-22 — Preview louder than pattern; chord octaves truncated by voice cap
+- priority: high
+- tags: chord, audio, preview, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (BUG-21 follow-up):
+1. Chords were quieter in pattern playback than in the instrument preview.
+2. Chord Octaves 3 sounded identical to Octaves 2.
+
+Cause 1: WebAudioBackend.preview passed `settings.volume` (or `settings.volume * voice.gain`) into buildVoice, which applies `settings.volume` again, so the preview was `volume²` while pattern playback was `volume¹` (`previewPattern`/sequence events pass a 0..1 level). The preview also bypasses channel/master gain, compounding the mismatch.
+Cause 2: `chordIntervals` slices the octave-expanded list to `voiceCap`; the default cap (8) truncated 3-octave 4-note chords (12 tones) back to the 2-octave set, and the editor never grew the cap.
+
+Fixes:
+1. preview now passes `1` (single) or `voice.gain` (chord) to buildVoice, so `settings.volume` is applied exactly once, matching pattern playback.
+2. Default `ChordSettings.voiceCap` raised to 12, and the Chord editor's Shape/Octaves setters auto-grow `voiceCap` to `preset-interval-count * octaves` so octave layers are never silently truncated.
+
+Tests: added an assertion that a 3-octave major7 yields 12 intervals under the default cap. 270 tests pass.
+
+### BUG-21 — Chord shape edits were stale; chord voices clipped
+- priority: high
+- tags: chord, audio, cycles, session
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (FEAT-121 follow-up):
+1. Changing the chord shape (e.g. sus2) still played the old major shape in the pattern.
+2. Chord voices clipped (preview and playback).
+
+Cause 1: chord intervals are baked into the sequence as per-voice rates by `sequenceFromSong`, but `Session.updateSamplerSetting` only updated per-instrument settings and never rebuilt the sequence, so the previously expanded chord kept playing.
+Cause 2: `chordVoices` gain was `1/sqrt(count)`, so a 3-note chord summed to ~1.73x amplitude and clipped.
+
+Fixes:
+1. `updateSamplerSetting` now calls `engine.updateSequence(sequenceFromSong(song, next))` whenever `patch.chord` is present.
+2. `chordVoices` gain is now `1/count`, so the chord's levels sum to 1 and cannot clip.
+
+Tests: added a session test asserting the sequence is re-expanded on a chord edit; updated the chord gain test to expect a sum of 1. 270 tests pass.
+
+### BUG-20 — Instrument preview played only the chord root
+- priority: medium
+- tags: chord, preview, audio, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (FEAT-121 follow-up): the instrument-menu preview (ParamEditorOverlay `p`) played only the root note for a Chord instrument, while pattern playback correctly played the whole chord.
+
+Cause: WebAudioBackend.preview built a single voice at PREVIEW_RATE and ignored settings.chord.
+
+Fix: InstrumentPreview now holds a voice array. preview() expands settings.chord via chordVoices() (per-voice rate, gain, pan offset, strum delay) when chord is enabled, releases every voice together for looping previews, and stopPreview/previewPosition/samplePlayheads handle the array. Offline export and row audition already expanded chords, so this was realtime-preview only.
+
+Tests: existing chordVoices/sequence tests cover the expansion; 269 tests pass.
+
 ### FEAT-121 — Chord mode: TS voicing expansion, voice groups & realtime/offline parity
 - priority: critical
 - tags: plan-cycles-mode-glitch-ambient-workspace, cycles, chord, audio, export

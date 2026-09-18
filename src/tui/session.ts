@@ -2059,6 +2059,12 @@ export class Session {
     const next = this.state.settings.slice();
     next[index] = merged;
     this.patch({ settings: next, dirty: true });
+    // Chord voicing is baked into the sequence (per-voice rates), so a chord
+    // edit must re-expand it or the old shape keeps playing.
+    if (patch.chord !== undefined) {
+      const song = this.state.song;
+      if (song) engine?.updateSequence(sequenceFromSong(song, next));
+    }
     this.recordMemento("change setting", before);
     this.markAction();
   }
