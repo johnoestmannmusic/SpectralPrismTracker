@@ -15,7 +15,13 @@ import {
   channelStepAtGlobal,
   totalSongRows,
 } from "@/core/layout";
-import { percussionPreset, percussionPresetName } from "@/core/spectral";
+import {
+  defaultMicroTextureSettings,
+  defaultSpectralSettings,
+  percussionPreset,
+  percussionPresetName,
+  spectralRenderEnabled,
+} from "@/core/spectral";
 import {
   LOOKAHEAD_SEC,
   setSpectralEnabled,
@@ -225,6 +231,43 @@ describe("song model", () => {
     const position = songPositionAt(song, song.rowTimes[8]! + 0.0001);
     expect(position.orderPos).toBe(1);
     expect(position.row).toBe(0);
+  });
+
+  it("applies per-channel phase offset and speed", () => {
+    const cell = (note: number) => ({
+      note: { kind: "note" as const, note },
+      instrument: 0,
+      volume: 15,
+      effects: [],
+    });
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.patternSnapshot = {
+      orderLength: 1,
+      channels: [
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [[0, [cell(60)], 4]],
+          phaseOffsetRows: 2,
+          speed: 1,
+        },
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [[0, [cell(67)], 4]],
+          phaseOffsetRows: 0,
+          speed: 2,
+        },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    // Offset shifts the cycle start by two rows.
+    expect(channelStepAtGlobal(song, 0, 0)).toMatchObject({ row: 2 });
+    expect(channelStepAtGlobal(song, 0, 2)).toMatchObject({ row: 0 });
+    // Speed 2 advances two rows per global row.
+    expect(channelStepAtGlobal(song, 1, 1)).toMatchObject({ row: 2 });
+    expect(channelStepAtGlobal(song, 1, 2)).toMatchObject({ row: 0 });
   });
 
   it("drifts channels independently in true polymeter", () => {
@@ -513,6 +556,48 @@ describe("project json", () => {
     expect(rates[2]! / rates[0]!).toBeCloseTo(Math.pow(2, 7 / 12), 5);
   });
 
+  it("treats each post-fusion stage as independently renderable", () => {
+    const base = defaultSpectralSettings();
+    expect(spectralRenderEnabled(base)).toBe(false);
+
+    const spectral = { ...base, enabled: true };
+    expect(spectralRenderEnabled(spectral)).toBe(true);
+
+    // Percussion must work without Spectral.
+    const percussionOnly = {
+      ...base,
+      enabled: false,
+      percussion: { ...base.percussion, enabled: true },
+    };
+    expect(spectralRenderEnabled(percussionOnly)).toBe(true);
+
+    // MicroTextures must work without Spectral too.
+    const microOnly = {
+      ...base,
+      enabled: false,
+      microTextures: { ...base.microTextures, enabled: true },
+    };
+    expect(spectralRenderEnabled(microOnly)).toBe(true);
+  });
+
+  it("serialises microtextures settings", () => {
+    const micro = defaultMicroTextureSettings();
+    micro.enabled = true;
+    micro.formantShift = 7;
+    micro.grainChaos = 0.6;
+    micro.densityModDepth = 0.5;
+
+    const project = defaultProject();
+    project.instruments = [
+      {
+        ...defaultSamplerSettings(),
+        spectral: { ...defaultSpectralSettings(), microTextures: micro },
+      },
+    ];
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.instruments[0]!.spectral.microTextures).toEqual(micro);
+  });
+
   it("derives the percussion preset name and reports custom after a tweak", () => {
     expect(percussionPresetName(percussionPreset("snare"))).toBe("snare");
     expect(percussionPresetName(percussionPreset("hat"))).toBe("hat");
@@ -598,6 +683,34 @@ describe("project json", () => {
     expect(song.meta.orderLength).toBe(3);
     expect(song.channels.map((channel) => channel.orderLength)).toEqual([
       3, 1, 2, 1,
+    ]);
+  });
+
+  it("round-trips per-channel phase offset and speed", () => {
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.patternSnapshot = {
+      orderLength: 1,
+      channels: [
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [],
+          phaseOffsetRows: 5,
+          speed: 0.5,
+        },
+        { orderLength: 1, orderList: [0], patterns: [], speed: 2 },
+      ],
+    };
+    const reread = projectFromJson(projectToJson(project));
+    expect(
+      reread.patternSnapshot!.channels.map((channel) => [
+        channel.phaseOffsetRows,
+        channel.speed,
+      ]),
+    ).toEqual([
+      [5, 0.5],
+      [0, 2],
     ]);
   });
 

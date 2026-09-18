@@ -3,7 +3,7 @@ import { samplerPlaybackRate } from "./pitch";
 import type { SongModel } from "./songModel";
 import { defaultSpectralSettings, type SpectralSettings } from "./spectral";
 import { rowDuration } from "./timing";
-import { channelSteps, songLoopRows } from "./layout";
+import { channelPositionAt, channelSteps, songLoopRows } from "./layout";
 
 export const LOOKAHEAD_SEC = 0.15;
 export const POLL_INTERVAL_MS = 25;
@@ -365,7 +365,7 @@ export function sequenceFromSong(
       const steps = stepsByChannel[channel]!;
       if (steps.length === 0) continue;
       // True polymeter: each channel wraps its own cycle independently.
-      const step = steps[globalRow % steps.length]!;
+      const step = steps[channelPositionAt(ch, globalRow, steps.length)]!;
       const pattern = ch.patterns.get(step.patternIndex);
       const cell = pattern?.rows[step.row];
       if (!cell) continue;

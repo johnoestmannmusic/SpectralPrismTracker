@@ -43,6 +43,7 @@ import {
   totalSongRows,
 } from "@/core/layout";
 import { samplerPlaybackRate } from "@/core/pitch";
+import { spectralRenderEnabled } from "@/core/spectral";
 import { type BuildStep, type BuildTarget } from "@/core/stepthrough";
 import {
   adjustCell,
@@ -134,6 +135,14 @@ export interface SessionState {
    * around a centred playhead instead of the normal aligned tracker grid.
    */
   cyclesMode: boolean;
+  /** WAV export modal options (loops, fades, normalize, cycles length cap). */
+  wavExport: {
+    loops: number;
+    fadeInMs: number;
+    fadeOutMs: number;
+    normalize: boolean;
+    lengthSeconds: number;
+  };
   /** Row the view scrolls to while following (null when not following). */
   viewRow: number | null;
   dirty: boolean;
@@ -210,6 +219,13 @@ function initialState(): SessionState {
     follow: true,
     colorInstruments: true,
     cyclesMode: false,
+    wavExport: {
+      loops: 0,
+      fadeInMs: 0,
+      fadeOutMs: 0,
+      normalize: false,
+      lengthSeconds: 0,
+    },
     viewRow: null,
     dirty: false,
     commandHistory: [],
@@ -473,6 +489,10 @@ export class Session {
     const next = !this.state.cyclesMode;
     this.patch({ cyclesMode: next });
     return next;
+  }
+
+  setWavExport(patch: Partial<SessionState["wavExport"]>): void {
+    this.patch({ wavExport: { ...this.state.wavExport, ...patch } });
   }
 
   /** Current order/row under the playhead, or null when not playing. */
@@ -1091,14 +1111,7 @@ export class Session {
     };
     const song = this.state.song;
     if (song) {
-      this.engine?.replaceSettings(this.state.settings);
-      this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
-      // replaceSettings drops cached renders; rebuild enabled Spectral layers.
-      this.state.settings.forEach((setting, index) => {
-        if (setting.spectral.enabled && setting.sourceIndex !== null) {
-          this.engine?.renderFusion(index);
-        }
-      });
+      this.applyInstrumentSettings(song, this.state.settings);
     }
     for (let channel = 0; channel < 4; channel++) {
       this.engine?.setChannelVolume(
@@ -1445,6 +1458,51 @@ export class Session {
     return song.channels.map(
       (channel) => channel.orderLength || channel.orderList.length,
     );
+  }
+
+  /** Cycles phasing: rows to shift a channel's cycle start. */
+  channelPhaseOffset(channel: number): number {
+    return this.state.song?.channels[channel]?.phaseOffsetRows ?? 0;
+  }
+
+  setChannelPhaseOffset(channel: number, rows: number): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const next = Math.max(0, Math.round(rows));
+    if (next === ch.phaseOffsetRows) return false;
+    const before = this.captureMemento();
+    ch.phaseOffsetRows = next;
+    this.retimeAndRepublish(song);
+    this.recordMemento("set channel phase", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Cycles phasing: a channel's row-advance multiplier. */
+  channelSpeed(channel: number): number {
+    return this.state.song?.channels[channel]?.speed ?? 1;
+  }
+
+  setChannelSpeed(channel: number, speed: number): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const next = Math.min(Math.max(speed, 0.25), 4);
+    if (Math.abs(next - ch.speed) < 1e-9) return false;
+    const before = this.captureMemento();
+    ch.speed = next;
+    this.retimeAndRepublish(song);
+    this.recordMemento("set channel speed", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Recomputes row timing and pushes the new sequence after a phase edit. */
+  private retimeAndRepublish(song: SongModel): void {
+    retime(song);
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
+    this.patch({ dirty: true });
   }
 
   /** Inserts a new order into one channel only; `duplicate` clones its pattern. */
@@ -1929,8 +1987,7 @@ export class Session {
       }
       nextProject = { ...project, instrumentNames };
     }
-    this.engine?.replaceSettings(settings);
-    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
+    this.applyInstrumentSettings(song, settings);
     this.patch({ settings, project: nextProject, dirty: true });
     this.recordMemento("add instrument", before);
     this.markAction();
@@ -1965,8 +2022,7 @@ export class Session {
       instrumentNames.splice(insertAt, 0, `${source.name} copy`);
       nextProject = { ...project, instrumentNames };
     }
-    this.engine?.replaceSettings(settings);
-    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
+    this.applyInstrumentSettings(song, settings);
     this.patch({ settings, project: nextProject, dirty: true });
     this.recordMemento("duplicate instrument", before);
     this.markAction();
@@ -2021,8 +2077,7 @@ export class Session {
       instrumentNames.splice(index, 1);
       nextProject = { ...project, instrumentNames };
     }
-    this.engine?.replaceSettings(settings);
-    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
+    this.applyInstrumentSettings(song, settings);
     this.patch({ settings, project: nextProject, dirty: true });
     this.recordMemento("delete instrument", before);
     this.markAction();
@@ -2046,7 +2101,7 @@ export class Session {
     }
     engine?.setSamplerSettings(index, merged);
     if (
-      merged.spectral.enabled &&
+      spectralRenderEnabled(merged.spectral) &&
       (patch.spectral !== undefined || patch.sourceIndex !== undefined)
     ) {
       engine?.renderFusion(index);
@@ -2074,12 +2129,41 @@ export class Session {
    * auditions it once ready — the TUI equivalent of FEAT-16's preview on slider
    * release. Plain instruments preview immediately.
    */
+  /**
+   * Replaces the engine's instrument settings, re-publishes the sequence and
+   * re-renders every enabled stage. Used after add/delete/duplicate so baked
+   * renders cannot be read at a shifted index.
+   */
+  private applyInstrumentSettings(
+    song: SongModel,
+    settings: SamplerSettings[],
+  ): void {
+    this.engine?.replaceSettings(settings);
+    this.engine?.updateSequence(sequenceFromSong(song, settings));
+    this.renderEnabledInstruments(settings);
+  }
+
+  /** Queues a render for every instrument whose chain has an enabled stage. */
+  private renderEnabledInstruments(settings: SamplerSettings[]): void {
+    settings.forEach((setting, index) => {
+      if (
+        spectralRenderEnabled(setting.spectral) &&
+        setting.sourceIndex !== null
+      ) {
+        this.engine?.renderFusion(index);
+      }
+    });
+  }
+
   async previewAfterRender(index: number, timeoutMs = 30_000): Promise<void> {
     const engine = this.engine;
     if (!engine) return;
     const settings = this.state.settings[index];
     if (!settings) return;
-    if (!settings.spectral.enabled || settings.sourceIndex === null) {
+    if (
+      !spectralRenderEnabled(settings.spectral) ||
+      settings.sourceIndex === null
+    ) {
       engine.preview(index, this.state.reference);
       return;
     }
@@ -2143,7 +2227,10 @@ export class Session {
       if (!note || instrument === null) continue;
       const setting = settings[instrument];
       if (!setting || setting.muted || setting.sourceIndex === null) continue;
-      if (setting.spectral.enabled && !this.engine?.fusionReady(instrument))
+      if (
+        spectralRenderEnabled(setting.spectral) &&
+        !this.engine?.fusionReady(instrument)
+      )
         continue;
       const rate = samplerPlaybackRate(note, song.meta.tuningA4, 0);
       if (rate === null || !(rate > 0)) continue;
@@ -2220,7 +2307,10 @@ export class Session {
     // Pattern steps preview the whole row: held/cell note, volume and the
     // 01/02 pitch-slide effect, through the fused render when Spectral is on.
     if (action.kind === "patternCell") {
-      if (settings.spectral.enabled && !engine.fusionReady(instrument)) {
+      if (
+        spectralRenderEnabled(settings.spectral) &&
+        !engine.fusionReady(instrument)
+      ) {
         engine.renderFusion(instrument);
         const deadline = Date.now() + 8000;
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2247,9 +2337,9 @@ export class Session {
       }
     }
 
-    // Spectral/Percussion parameter steps must be rendered before they can be
-    // heard.
-    if (settings.spectral.enabled) {
+    // Spectral/Percussion/MicroTextures parameter steps must be rendered
+    // before they can be heard.
+    if (spectralRenderEnabled(settings.spectral)) {
       engine.renderFusion(instrument);
       const deadline = Date.now() + 8000;
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2284,7 +2374,7 @@ export class Session {
     this.previewToken += 1;
     settings.forEach((setting, index) => {
       if (
-        setting.spectral.enabled &&
+        spectralRenderEnabled(setting.spectral) &&
         setting.sourceIndex !== null &&
         (setting.spectral.mode === "off" ||
           setting.spectral.sourceIndex2 !== null)

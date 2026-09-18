@@ -2,6 +2,7 @@ import init, {
   render_fused,
   render_fused_loop_lengths,
   render_fused_modulated,
+  render_microtextures,
   render_percussion,
 } from "@/wasm/vendor/prism/prism_wasm.js";
 import {
@@ -28,6 +29,7 @@ function ensureReady(): Promise<SyncSpectralRenderFn> {
         render_fused_modulated,
         render_fused_loop_lengths,
         render_percussion,
+        render_microtextures,
       } as unknown as PrismWasmModule),
     );
   }

@@ -132,6 +132,33 @@ export interface PrismWasmModule {
     stereoWidthPct: number,
     lengthSeconds: number,
   ): PrismWasmOutput;
+  /**
+   * MicroTextures post-stage: granular re-texturing + formant filter +
+   * retrigger + bit-crush. Optional so an older WASM build still works.
+   */
+  render_microtextures?(
+    fusedFlat: Float32Array,
+    fusedChannels: number,
+    sampleRate: number,
+    rootNote: number,
+    grainSeconds: number,
+    densityHz: number,
+    jitter: number,
+    reverseProbability: number,
+    pitchScatterSemitones: number,
+    panScatter: number,
+    volumeVariance: number,
+    densityModRateHz: number,
+    densityModDepth: number,
+    grainChaos: number,
+    retriggerHz: number,
+    retriggerAmount: number,
+    bitDepth: number,
+    downsample: number,
+    formantShiftSemitones: number,
+    formantResonance: number,
+    formantMix: number,
+  ): PrismWasmOutput;
 }
 
 function flatten(clip: AudioClip): Float32Array {
@@ -274,6 +301,32 @@ export function makeSpectralRenderer(
         p.compressAmount,
         p.stereoWidth,
         p.lengthSeconds,
+      );
+    }
+    const micro = settings.microTextures;
+    if (micro.enabled && wasm.render_microtextures) {
+      result = wasm.render_microtextures(
+        result.data,
+        Math.max(result.channelCount, 1),
+        result.sampleRate,
+        SPECTRAL_ROOT_NOTE,
+        micro.grainSeconds,
+        micro.densityHz,
+        micro.jitter,
+        micro.reverseProbability,
+        micro.pitchScatter,
+        micro.panScatter,
+        micro.volumeVariance,
+        micro.densityModRate,
+        micro.densityModDepth,
+        micro.grainChaos,
+        micro.retriggerHz,
+        micro.retriggerAmount,
+        micro.bitDepth,
+        micro.downsample,
+        micro.formantShift,
+        micro.formantResonance,
+        micro.formantMix,
       );
     }
     const outChannels = Math.max(result.channelCount, 1);

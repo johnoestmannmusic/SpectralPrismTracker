@@ -259,6 +259,8 @@ export interface WavExportOptions {
   fadeInMs?: number;
   fadeOutMs?: number;
   normalize?: boolean;
+  /** Cap the one-pass length in seconds (0/undefined = full song loop). */
+  lengthSeconds?: number;
 }
 
 /** Waits for spectral fusion renders so the export uses the fused clips. */
@@ -315,8 +317,15 @@ export async function exportWav(
     fadeInMs: options.fadeInMs ?? 0,
     fadeOutMs: options.fadeOutMs ?? 0,
     normalize: options.normalize ?? false,
+    lengthSeconds: options.lengthSeconds ?? 0,
   };
-  const arranged = arrangeExport(base, params.loops, params.fadeOutMs);
+  // A Cycles loop can be very long; an explicit length caps one pass before
+  // the loop/arrange and envelope stages.
+  const source =
+    params.lengthSeconds > 0
+      ? clipSlice(base, Math.round(params.lengthSeconds * base.sampleRate))
+      : base;
+  const arranged = arrangeExport(source, params.loops, params.fadeOutMs);
   const wet = await applyMasterFxOffline(arranged, masterFx);
   const trimmed =
     params.fadeOutMs > 0 ? clipSlice(wet, clipLen(arranged)) : wet;

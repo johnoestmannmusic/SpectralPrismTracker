@@ -160,6 +160,26 @@ export function songLoopRows(song: SongModel): number {
   );
 }
 
+/**
+ * A channel's row index within its own cycle at a global row, honouring the
+ * per-channel phase offset and speed (Cycles phasing). Speed < 1 is half-time,
+ * > 1 is double-time. Returns an integer in `0..cycleRows-1`.
+ */
+export function channelPositionAt(
+  channel: Channel,
+  globalRow: number,
+  cycleRows: number,
+): number {
+  const speed =
+    Number.isFinite(channel.speed) && channel.speed > 0 ? channel.speed : 1;
+  const offset = Number.isFinite(channel.phaseOffsetRows)
+    ? channel.phaseOffsetRows
+    : 0;
+  const cycle = Math.max(Math.floor(cycleRows), 1);
+  const position = Math.floor(globalRow * speed + offset);
+  return ((position % cycle) + cycle) % cycle;
+}
+
 /** A channel's own (order, row) at a global polymeter row. */
 export function channelStepAtGlobal(
   song: SongModel,
@@ -170,6 +190,5 @@ export function channelStepAtGlobal(
   if (!ch) return null;
   const steps = channelSteps(ch, Math.max(song.meta.patternLength, 1));
   if (steps.length === 0) return null;
-  const index = ((globalRow % steps.length) + steps.length) % steps.length;
-  return steps[index]!;
+  return steps[channelPositionAt(ch, globalRow, steps.length)]!;
 }

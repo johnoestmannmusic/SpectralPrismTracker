@@ -35,6 +35,8 @@ interface Props {
   hint?: string;
   onPrev?: () => void;
   onNext?: () => void;
+  /** Optional primary action fired by `key` (e.g. the WAV export modal). */
+  submit?: { key: string; label: string; run: () => void };
   /** Receives the highlighted setting for the right-hand explainer panel. */
   onExplain?: (content: ExplainerText) => void;
   /** Optional tab bar (e.g. Sampler / Spectral / Percussion). */
@@ -181,6 +183,7 @@ export function ParamEditorOverlay({
   onPrev,
   onNext,
   onExplain,
+  submit,
   tabs,
   highlight,
   height,
@@ -249,7 +252,11 @@ export function ParamEditorOverlay({
   const selectedGroup = current?.groupIndex ?? 0;
 
   // Scroll so the selected param stays on screen.
-  const visibleRows = Math.max(4, height - 3);
+  // Chrome rows that are not part of the scrollable param list: border (2),
+  // title (1), hint (1), plus the tab bar and filter line when shown. Counting
+  // these keeps the last rows from being clipped by the box border.
+  const chromeRows = 3 + (tabs ? 1 : 0) + (filterEditing || filter ? 1 : 0);
+  const visibleRows = Math.max(4, height - chromeRows);
   const selectedRow = rows.findIndex(
     (row) => row.kind === "param" && row.flat === selected,
   );
@@ -460,6 +467,11 @@ export function ParamEditorOverlay({
         return;
       }
 
+      if (submit && char === submit.key) {
+        submit.run();
+        return;
+      }
+
       if (key.escape || char === "x") {
         if (filter) {
           setFilter("");
@@ -601,7 +613,8 @@ export function ParamEditorOverlay({
         {editing !== null
           ? `type ${current?.param.label ?? "value"}: ${editing}▏ · enter apply · esc cancel`
           : (hint ??
-            "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · esc")}
+              "↑↓ select · ctrl+↑↓ cat · ←→ adj · ctrl+←→ big · enter type · p preview · esc") +
+            (submit ? ` · ${submit.label}: ${submit.key}` : "")}
         {editing === null && rows.length > visibleRows
           ? ` · ${offset + 1}-${Math.min(offset + visibleRows, rows.length)}`
           : ""}

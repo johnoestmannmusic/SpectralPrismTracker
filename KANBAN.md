@@ -70,117 +70,6 @@ Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundat
 - FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - FEAT-128 — Cycles demo project + walkthrough + end-to-end & constraint verification
 
-### FEAT-119 — Phasing: per-channel start offset + playback speed
-- priority: high
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, phasing, audio, session
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Add Channel.phaseOffsetRows (start each channel at a different order/row) and Channel.speed (playback-rate multiplier: half/double-time). Extend the sequence builder to apply the offset when locating a channel's first row and to scale per-channel row advance. Expose both in a Cycles channel editor (an extension of the mixer or a new per-channel page) reachable in <=2 presses. Persist in Project JSON with defaults 0 / 1.
-
-**Architecture**
-src/core/songModel.ts (Channel fields), src/core/project.ts, src/core/sampler.ts (sequenceFromSong/Scheduler), src/tui/components/MixerOverlay.tsx or a new Cycles channel page, src/tui/session.ts.
-
-**Key decisions**
-- Speed is a channel-level multiplier applied in the sequence/timing layer, not a per-voice transpose.
-
-**Alternatives considered**
-- Global tape speed only: rejected — phasing needs per-channel independence.
-
-**Open questions**
-- Should speed changes be musical (multiples) or free ratios?
-
-**Depends on**
-- Per-channel order lengths: LCM timing, scheduler & sequence wrapping
-
-**Acceptance criteria**
-- Two channels with different speeds drift and re-align exactly at the LCM loop point.
-- Phase offset survives save/load.
-- Offline export matches realtime drift.
-
-### FEAT-122 — MicroTextures DSP: Rust granular + formant filter + WASM binding
-- priority: critical
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, microtextures, rust, wasm, formant
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Add `native/prism_dsp/src/microtextures.rs` (grain scheduling, grain size/envelope, density, jitter, reverse probability, pitch/pan scatter, retrigger gating, volume variance, bitcrush/downsample) and a resonant formant filter (F1/F2 vowel presets + resonance, replacing a plain low-pass) either in microtextures.rs or a new filter.rs. Expose `render_microtextures(fusedFlat, channels, sampleRate, params...) -> LoopBufferData` from native/prism-wasm/src/lib.rs, mirroring the percussion binding shape. Rebuild via scripts/build-prism-wasm.mjs (wasm-bindgen is available; wasm32 target installed). Add declarations to src/wasm/vendor/prism/prism_wasm.d.ts and extend PrismWasmModule + makeSpectralRenderer wiring in src/wasm/prism.ts.
-
-**Architecture**
-native/prism_dsp/src/microtextures.rs (new), native/prism_dsp/src/lib.rs (pub mod), native/prism-wasm/src/lib.rs (export), native/prism-wasm/pkg -> src/wasm/vendor/prism (build script), src/wasm/prism.ts (optional method + call), src/core/spectral.ts (settings types) or a new src/core/microtextures.ts.
-
-**Key decisions**
-- Heavy granular/formant DSP is Rust/WASM (user decision).
-- Formant filter is the MicroTextures tone-shaper, replacing low-pass.
-- Binding is optional so an older WASM build degrades gracefully (as with percussion).
-
-**Alternatives considered**
-- Pure TS granular: rejected by user.
-- Reuse existing spectral formant shift only: rejected — it is an envelope shift, not a resonant filter.
-
-**Open questions**
-- Grain scheduling determinism: fixed PRNG seed (matching export) vs random per render?
-
-**Acceptance criteria**
-- `npm run build:prism-wasm` succeeds and publishes artifacts.
-- render_microtextures produces a non-empty loop with audible retrigger gating.
-- Formant preset changes spectrum shape; absent WASM falls back without crashing.
-
-### FEAT-123 — MicroTextures: settings model, project serde & editor tab
-- priority: high
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, microtextures, instrument, project
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Add `MicroTextureSettings` to SamplerSettings: enabled, grain size, density, jitter, reverse probability, pitch scatter, pan scatter, retrigger count/rate, volume variance, envelope shape, bit-crush/downsample, formant vowel + F1/F2 + resonance + mix. Wire defaults, serde, the editor tab after Chord (microtextureGroups), the InstrumentTab union + instrumentTabFor, an `overlay:microtextures` entry, `/microtextures` command, and SamplerEngine.renderMicroTextures (cached like spectral/percussion) so `effectiveClip` feeds offline export.
-
-**Architecture**
-src/core/sampler.ts (MicroTextureSettings), src/core/project.ts (serde), src/tui/editors.tsx (microtextureGroups), src/tui/commands/types.ts, builtins.ts, src/tui/App.tsx, src/audio/webSampler.ts (renderMicroTextures + effective clip), src/host/browser/prism.ts / node worker wiring.
-
-**Key decisions**
-- Baked at instrument-render time (same lifecycle as Spectral/Percussion); retriggers are gated inside the render.
-
-**Alternatives considered**
-- Per-note granular scheduling in TS: rejected — DSP belongs in Rust per user.
-
-**Open questions**
-- Should MicroTextures auto-enable looping/one-shot, or respect the Sampler loop flags?
-
-**Depends on**
-- MicroTextures DSP: Rust granular + formant filter + WASM binding
-
-**Acceptance criteria**
-- MicroTextures settings round-trip in .lampjson.
-- Editor tab reachable <=2 presses; preview auditions the rendered texture.
-- Exported WAV uses the rendered microtexture clip.
-
 ### FEAT-124 — Tone/space: formant presets, micro-detune drift, bitcrush & freeze/hold
 - priority: medium
 - tags: plan-cycles-mode-glitch-ambient-workspace, cycles, tone, fx, audio
@@ -252,26 +141,6 @@ src/core/tracker.ts (FX_CATALOG), src/core/sampler.ts (SamplerEvent fields, expa
 - FX help lists the new codes with descriptions.
 - Probability is deterministic across realtime and export.
 - Ratchet produces N evenly spaced triggers within the row.
-
-### FEAT-126 — Instrument-level stutter / beat-repeat (inside MicroTextures)
-- priority: medium
-- tags: cycles, fx, microtextures, instrument, rust, wasm
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-RE-SCOPED by user (2026-09-18): stutter is NOT a master-bus effect. It must happen at the instrument level, and should live inside the MicroTextures stage of the instrument chain (Sampler → Spectral → Percussion → Chord → MicroTextures).
-
-Revised approach:
-- Add stutter/beat-repeat controls to the MicroTextureSettings block (enable, division/rate, mix, feedback/decay, probability), rendered as a MicroTextures sub-group.
-- Implement it in the Rust/WASM microtexture render (native/prism_dsp) so it is baked per instrument, alongside the granular/formant/bitcrush work — i.e. it becomes part of FEAT-122/FEAT-123 rather than a separate master FX.
-- Expose per-instrument controls in the MicroTextures editor tab; keep reachable <=2 presses.
-- Remove the MasterFxSettings/masterFxGraph approach from the original plan.
-- Offline WAV export uses the rendered microtexture clip (same lifecycle as Spectral/Percussion), so no separate export path is needed.
-
-Supersedes the original "Master stutter / beat-repeat FX" card content below.
 
 ### FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - priority: medium
@@ -349,6 +218,206 @@ assets/ demo project, tests/unit/*, tests/e2e, constraints-tests/, package.json 
 ## Blocked
 
 ## Implemented
+
+### BUG-29 — Duplicate preview used a shifted render index; percussion stopped when spectral was off
+- priority: critical
+- tags: instrument, render, percussion, spectral, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+
+Two user reports:
+1. After duplicating an instrument, previewing it played the wrong instrument until Perc mode was toggled.
+2. Turning Spectral off stopped Percussion too — chain stages must be independent.
+
+Cause 1: `WebAudioBackend.replaceSettings` (called on add/delete/duplicate) set the new settings and cleared loop caches but did NOT clear the index-keyed baked renders (`fused`/`fusedClips`/`fusedWaveforms`). Inserting a duplicate shifted the array, so index N read the previous instrument N's render. Also `duplicateInstrument` (and add/delete) re-published the sequence with the stale `this.state.settings`.
+Cause 2: render gating only checked `spectral.enabled || microTextures.enabled`, so a percussion-only instrument never baked a render.
+
+Fixes:
+- Added `SamplerEngine.resetRenders()`; `replaceSettings` now clears all baked renders. Session `applyInstrumentSettings()` re-publishes the sequence with the new settings and re-renders every enabled stage; used by load/add/delete/duplicate.
+- Added `spectralRenderEnabled(settings)` = `enabled || percussion.enabled || microTextures.enabled` and used it at every render/preview gate (webSampler spectralActive/decode/render guard, webAudioBackend replaceSample, session load/setting/preview/collect/stepthrough).
+
+Tests: `spectralRenderEnabled` truth table, `resetRenders` clearing, duplicate re-publishes the sequence. 289 tests pass; constraints green.
+
+### BUG-28 — Duplicating a pattern reset its row count to 64
+- priority: high
+- tags: cycles, patterns, duplicate, tracker
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (FEAT-129 follow-up): duplicating a pattern in Cycles Mode reset its row count back to 64 instead of copying the source pattern's rows.
+
+Cause: `insertPatternInChannel` pushed the new snapshot pattern as `[index, rows]`, omitting the optional `rowLength`/`name` tail. `applySnapshot` then defaulted rowLength to `song.meta.patternLength` (64).
+
+Fix: the tuple now carries the source pattern's `rowLength` and `name` on duplicate (and the song default for a fresh pattern): `[nextIndex, rows, rowLength, name]`.
+
+Test: added a tracker test asserting a duplicated 8-row named pattern keeps rows=8 and name after `applySnapshot`. 283 tests pass.
+
+### BUG-27 — Clipped editor rows; grain chaos changed pitch instead of timbre
+- priority: high
+- tags: microtextures, tui, granular, chaos
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (MicroTextures follow-up):
+1. The "Density mod depth" row appeared invisible.
+2. Grain chaos changed grain tuning; it should change per-grain timbre instead.
+
+Cause 1: ParamEditorOverlay computed `visibleRows = height - 3`, but the instrument tabs add an extra chrome row, so the last visible row(s) overflowed and were clipped by the box border. With the 5-tab bar, "Density mod depth"/"Grain chaos" were cut off.
+Cause 2: grain chaos added a random pitch offset to each grain.
+
+Fixes:
+1. `visibleRows` now subtracts chrome rows including the tab bar (and filter line): `3 + (tabs?1:0) + (filter?1:0)`. Non-tab overlays are unchanged.
+2. Grain chaos now varies per-grain timbre: a random one-pole low-pass cutoff, per-grain bit reduction, per-grain sample-and-hold downsampling, plus random reverse/pan/gain/length. It no longer touches pitch (only `pitchScatter` moves tuning). Rebuilt the WASM.
+
+Verified in the full App that "Density mod depth" and "Grain chaos" render. 282 tests pass; cargo test microtextures passes.
+
+### BUG-26 — MicroTextures was registered nowhere, so the DSP never ran
+- priority: critical
+- tags: microtextures, wasm, audio, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (FEAT-122/123): MicroTextures parameters were visible but made no audible difference.
+
+Cause 1 (main): none of the four WASM registration points included the newly generated `render_microtextures` export — `prismNode.ts`, `prism.worker.node.ts`, `prism.worker.ts`, `host/browser/prism.ts` each hard-code the module surface. So `wasm.render_microtextures` was undefined and `makeSpectralRenderer` silently skipped the stage (it is optional for older builds).
+Cause 2: `Session.updateSamplerSetting` only kicked off a render when `spectral.enabled` was true, and preview/render gates at several call sites ignored `microTextures.enabled`, so enabling MicroTextures alone never rendered the instrument.
+
+Fixes:
+- Added `render_microtextures` to all four WASM module registrations (Node main-thread, Node worker, browser worker, browser main-thread).
+- All render/preview gates now use `spectral.enabled || spectral.microTextures.enabled` (load, setting change, preview-after-render, collectNotes, previewBuildStep, stepthrough engine sync).
+
+Test: added a regression that registers the real Node host (`initPrismWasmNode`) and asserts `spectralRender` with microTextures enabled differs from the plain render (it would be identical before the fix). 282 tests pass.
+
+### FEAT-126 — Instrument-level stutter / beat-repeat (inside MicroTextures)
+- priority: medium
+- tags: cycles, fx, microtextures, instrument, rust, wasm
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+RE-SCOPED by user (2026-09-18): stutter is NOT a master-bus effect. It must happen at the instrument level, and should live inside the MicroTextures stage of the instrument chain (Sampler → Spectral → Percussion → Chord → MicroTextures).
+
+Revised approach:
+- Add stutter/beat-repeat controls to the MicroTextureSettings block (enable, division/rate, mix, feedback/decay, probability), rendered as a MicroTextures sub-group.
+- Implement it in the Rust/WASM microtexture render (native/prism_dsp) so it is baked per instrument, alongside the granular/formant/bitcrush work — i.e. it becomes part of FEAT-122/FEAT-123 rather than a separate master FX.
+- Expose per-instrument controls in the MicroTextures editor tab; keep reachable <=2 presses.
+- Remove the MasterFxSettings/masterFxGraph approach from the original plan.
+- Offline WAV export uses the rendered microtexture clip (same lifecycle as Spectral/Percussion), so no separate export path is needed.
+
+Supersedes the original "Master stutter / beat-repeat FX" card content below.
+
+### FEAT-123 — MicroTextures: settings model, project serde & editor tab
+- priority: high
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, microtextures, instrument, project
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Add `MicroTextureSettings` to SamplerSettings: enabled, grain size, density, jitter, reverse probability, pitch scatter, pan scatter, retrigger count/rate, volume variance, envelope shape, bit-crush/downsample, formant vowel + F1/F2 + resonance + mix. Wire defaults, serde, the editor tab after Chord (microtextureGroups), the InstrumentTab union + instrumentTabFor, an `overlay:microtextures` entry, `/microtextures` command, and SamplerEngine.renderMicroTextures (cached like spectral/percussion) so `effectiveClip` feeds offline export.
+
+**Architecture**
+src/core/sampler.ts (MicroTextureSettings), src/core/project.ts (serde), src/tui/editors.tsx (microtextureGroups), src/tui/commands/types.ts, builtins.ts, src/tui/App.tsx, src/audio/webSampler.ts (renderMicroTextures + effective clip), src/host/browser/prism.ts / node worker wiring.
+
+**Key decisions**
+- Baked at instrument-render time (same lifecycle as Spectral/Percussion); retriggers are gated inside the render.
+
+**Alternatives considered**
+- Per-note granular scheduling in TS: rejected — DSP belongs in Rust per user.
+
+**Open questions**
+- Should MicroTextures auto-enable looping/one-shot, or respect the Sampler loop flags?
+
+**Depends on**
+- MicroTextures DSP: Rust granular + formant filter + WASM binding
+
+**Acceptance criteria**
+- MicroTextures settings round-trip in .lampjson.
+- Editor tab reachable <=2 presses; preview auditions the rendered texture.
+- Exported WAV uses the rendered microtexture clip.
+
+### FEAT-122 — MicroTextures DSP: Rust granular + formant filter + WASM binding
+- priority: critical
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, microtextures, rust, wasm, formant
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Add `native/prism_dsp/src/microtextures.rs` (grain scheduling, grain size/envelope, density, jitter, reverse probability, pitch/pan scatter, retrigger gating, volume variance, bitcrush/downsample) and a resonant formant filter (F1/F2 vowel presets + resonance, replacing a plain low-pass) either in microtextures.rs or a new filter.rs. Expose `render_microtextures(fusedFlat, channels, sampleRate, params...) -> LoopBufferData` from native/prism-wasm/src/lib.rs, mirroring the percussion binding shape. Rebuild via scripts/build-prism-wasm.mjs (wasm-bindgen is available; wasm32 target installed). Add declarations to src/wasm/vendor/prism/prism_wasm.d.ts and extend PrismWasmModule + makeSpectralRenderer wiring in src/wasm/prism.ts.
+
+**Architecture**
+native/prism_dsp/src/microtextures.rs (new), native/prism_dsp/src/lib.rs (pub mod), native/prism-wasm/src/lib.rs (export), native/prism-wasm/pkg -> src/wasm/vendor/prism (build script), src/wasm/prism.ts (optional method + call), src/core/spectral.ts (settings types) or a new src/core/microtextures.ts.
+
+**Key decisions**
+- Heavy granular/formant DSP is Rust/WASM (user decision).
+- Formant filter is the MicroTextures tone-shaper, replacing low-pass.
+- Binding is optional so an older WASM build degrades gracefully (as with percussion).
+
+**Alternatives considered**
+- Pure TS granular: rejected by user.
+- Reuse existing spectral formant shift only: rejected — it is an envelope shift, not a resonant filter.
+
+**Open questions**
+- Grain scheduling determinism: fixed PRNG seed (matching export) vs random per render?
+
+**Acceptance criteria**
+- `npm run build:prism-wasm` succeeds and publishes artifacts.
+- render_microtextures produces a non-empty loop with audible retrigger gating.
+- Formant preset changes spectrum shape; absent WASM falls back without crashing.
+
+### FEAT-119 — Phasing: per-channel start offset + playback speed
+- priority: high
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, phasing, audio, session
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Add Channel.phaseOffsetRows (start each channel at a different order/row) and Channel.speed (playback-rate multiplier: half/double-time). Extend the sequence builder to apply the offset when locating a channel's first row and to scale per-channel row advance. Expose both in a Cycles channel editor (an extension of the mixer or a new per-channel page) reachable in <=2 presses. Persist in Project JSON with defaults 0 / 1.
+
+**Architecture**
+src/core/songModel.ts (Channel fields), src/core/project.ts, src/core/sampler.ts (sequenceFromSong/Scheduler), src/tui/components/MixerOverlay.tsx or a new Cycles channel page, src/tui/session.ts.
+
+**Key decisions**
+- Speed is a channel-level multiplier applied in the sequence/timing layer, not a per-voice transpose.
+
+**Alternatives considered**
+- Global tape speed only: rejected — phasing needs per-channel independence.
+
+**Open questions**
+- Should speed changes be musical (multiples) or free ratios?
+
+**Depends on**
+- Per-channel order lengths: LCM timing, scheduler & sequence wrapping
+
+**Acceptance criteria**
+- Two channels with different speeds drift and re-align exactly at the LCM loop point.
+- Phase offset survives save/load.
+- Offline export matches realtime drift.
 
 ### BUG-25 — Hat preset crashed the editor: negative String.repeat in the value bar
 - priority: critical
@@ -4573,6 +4642,55 @@ Direct UX change requested after FEAT-88.
 **Verification**
 - Added `tui-explainer` test: `I` opens the Instruments panel and `d g b h n j m l` leave the cursor cell's note unchanged.
 - `npm run test:all` green: typecheck, 222 tests, eslint, dependency audit, TUI build.
+
+### TASK-2 — MicroTextures: Formant Shift, density modulation, and grain chaos
+- priority: medium
+- tags: microtextures, formant, granular, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User refinement of FEAT-123 MicroTextures:
+1. Formant control should be a Formant Shift (semitones), not a vowel/F1/F2 filter.
+2. Add a Density modulation parameter (glitch speed-ups/slow-downs).
+3. Add a parameter that makes each grain very different in a digital-glitch way.
+
+Done:
+- Replaced `formantVowel/formantF1/formantF2` with `formantShift` (semitones). The Rust formant filter bank now scales its F1/F2 centre frequencies by `2^(shift/12)`; Resonance + Mix retained.
+- Added `densityModRate` + `densityModDepth`: an LFO on the granular density in the Rust engine, so the grain stream speeds up/slows down.
+- Added `grainChaos` (0..1): per-grain digital variation — quantised half-semitone pitch jumps, random reverse, hard pan scatter, gain swings, random grain length and per-grain bit reduction.
+- Updated the WASM binding signature, rebuilt the WASM, updated serde, the MicroTx editor groups, and tests.
+
+Tests: 282 TS pass (incl. real-WASM render); `cargo test` microtextures passes.
+
+### TASK-3 — Grain Chaos scatters the per-grain downsample amount
+- priority: medium
+- tags: microtextures, granular, chaos, lofi
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User request: Grain Chaos should also vary the Downsample amount per grain.
+
+Change: the per-grain sample-and-hold downsample factor is now derived from the Lo-fi `downsample` setting as its base and scattered per grain by `grainChaos` (`base * (1 + rand * chaos * 4)`), instead of a chaos-only range. When chaos is 0 the per-grain crush stays off (the global Lo-fi downsample still applies post-mix as before).
+
+Rebuilt the WASM. Added a Rust test asserting grain chaos changes the rendered texture. cargo test microtextures 3/3; 282 TS tests pass; constraints green.
+
+### TASK-4 — WAV export modal + Cycles track length, p opens Pattern Manager, undo/redo there
+- priority: high
+- tags: export, wav, cycles, patterns, tui, undo
+- created: 2026-09-18
+- updated: 2026-09-18
+
+Three user requests:
+1. WAV export should open a modal with the same options as the original app's WavExportModal (loops / fade in / fade out / peak normalize), plus a Track length control in Cycles Mode (the polymeter loop can be very long).
+2. `p` on the main tracker opens the Pattern Manager.
+3. Ctrl+Z / Ctrl+Y in the Pattern Manager undo/redo.
+
+Done:
+1. `WavExportOptions.lengthSeconds` caps one pass before arrange/envelope; `SessionState.wavExport` stores the options; `wavExportGroups()` renders the modal via ParamEditorOverlay with a `submit` action (key `e` = Export). `/export wav` with no path opens the modal; `/export wav <path>` still exports directly and now honours `--loops/--fade-in/--fade-out/--length/--normalize` falling back to the stored options. Track length row appears only in Cycles Mode. Added OverlayName/App overlay `wav`, reachability doc + OVERLAYS test.
+2. App main key handler: `p` → `setOverlay("patterns")`.
+3. PatternsOverlay useInput handles Ctrl+Z (undo) / Ctrl+Y (redo).
+
+Tests: wavExportGroups track-length gating, `/export wav` opens the overlay, Pattern Manager ctrl+z/y undo-redo, and `p` opens the Pattern Manager (verified via App render). 286 tests pass; constraints green.
 
 ## Archived
 

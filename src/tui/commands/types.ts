@@ -64,6 +64,8 @@ export type OverlayName =
   | "spectral"
   | "percussion"
   | "chord"
+  | "microtextures"
+  | "wav"
   | "fx";
 
 export interface CommandDef {

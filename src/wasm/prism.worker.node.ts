@@ -9,6 +9,7 @@ import {
   render_fused,
   render_fused_loop_lengths,
   render_fused_modulated,
+  render_microtextures,
   render_percussion,
 } from "@/wasm/vendor/prism/prism_wasm.js";
 import { makeSpectralRenderer, type PrismWasmModule } from "./prism";
@@ -29,6 +30,7 @@ const render = makeSpectralRenderer({
   render_fused_modulated,
   render_fused_loop_lengths,
   render_percussion,
+  render_microtextures,
 } as unknown as PrismWasmModule);
 
 port.on("message", (request: WorkerRequest) => {

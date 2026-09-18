@@ -26,6 +26,11 @@ interface Row {
   toggle?: () => void;
   getEnabled?: () => boolean;
   meterIndex?: number;
+  /** Arrow-key adjust step (defaults to 0.05). */
+  step?: number;
+  /** Hide the 0..1 bar and percentage (for non-normalised values). */
+  noBar?: boolean;
+  format?: (value: number) => string;
 }
 
 function bar(value: number, width = 16): string {
@@ -60,6 +65,36 @@ export function MixerOverlay({
       getEnabled: () => !state.channelMuted[channel],
       meterIndex: channel,
     });
+  }
+  if (state.cyclesMode) {
+    for (let channel = 0; channel < 4; channel++) {
+      rows.push({
+        label: `CH${channel + 1} phase`,
+        group: "phase",
+        explain:
+          "Cycles phasing: rows to shift this channel's cycle start. Channels stay un-synced until the LCM loop point.",
+        get: () => session.channelPhaseOffset(channel),
+        set: (value) => {
+          session.setChannelPhaseOffset(channel, value);
+        },
+        step: 1,
+        noBar: true,
+        format: (value) => `${Math.round(value)} rows`,
+      });
+      rows.push({
+        label: `CH${channel + 1} speed`,
+        group: "speed",
+        explain:
+          "Cycles phasing: row-advance multiplier. 0.5 = half-time, 2 = double-time.",
+        get: () => session.channelSpeed(channel),
+        set: (value) => {
+          session.setChannelSpeed(channel, value);
+        },
+        step: 0.25,
+        noBar: true,
+        format: (value) => `${value.toFixed(2)}x`,
+      });
+    }
   }
   rows.push({
     label: "MASTER",
@@ -159,12 +194,12 @@ export function MixerOverlay({
       const row = rows[selected]!;
       if (key.leftArrow) {
         if (row.toggle && !row.getEnabled?.()) row.toggle();
-        else row.set(row.get() - 0.05);
+        else row.set(row.get() - (row.step ?? 0.05));
         return;
       }
       if (key.rightArrow) {
         if (row.toggle && !row.getEnabled?.()) row.toggle();
-        else row.set(row.get() + 0.05);
+        else row.set(row.get() + (row.step ?? 0.05));
         return;
       }
       if (char === "m" && row.toggle) {
@@ -213,9 +248,15 @@ export function MixerOverlay({
             </Text>
             <Text> </Text>
             <Text color={enabled ? "green" : "gray"}>
-              {enabled ? bar(value) : "·".repeat(16)}
+              {row.noBar
+                ? (row.format?.(value) ?? String(value))
+                : enabled
+                  ? bar(value)
+                  : "·".repeat(16)}
             </Text>
-            <Text dimColor> {(value * 100).toFixed(0).padStart(3)}%</Text>
+            {row.noBar ? null : (
+              <Text dimColor> {(value * 100).toFixed(0).padStart(3)}%</Text>
+            )}
             <Text dimColor>
               {" "}
               {row.meterIndex !== undefined

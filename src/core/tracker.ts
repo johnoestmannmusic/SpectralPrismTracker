@@ -457,14 +457,20 @@ export function insertPatternInChannel(
   );
   const nextIndex = Math.min(maxIndex + 1, 0xffff);
   let rows = emptySnapshotRows(patternLength);
+  // A fresh pattern uses the song default; a duplicate must carry the source
+  // pattern's own row count (and name), or it would reset to 64 rows.
+  let rowLength = patternLength;
+  let name: string | undefined;
   if (duplicate) {
     const sourceIndex = channel.orderList[pos];
-    const source = channel.patterns.find(
-      ([index]) => index === sourceIndex,
-    )?.[1];
-    if (source) rows = source.map(cloneCell);
+    const source = channel.patterns.find(([index]) => index === sourceIndex);
+    if (source) {
+      rows = source[1].map(cloneCell);
+      rowLength = source[2] ?? source[1].length ?? patternLength;
+      name = source[3];
+    }
   }
-  channel.patterns.push([nextIndex, rows]);
+  channel.patterns.push([nextIndex, rows, rowLength, name]);
   channel.orderList.splice(
     Math.min(pos + 1, channel.orderList.length),
     0,

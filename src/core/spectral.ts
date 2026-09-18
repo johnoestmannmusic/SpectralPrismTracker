@@ -522,6 +522,60 @@ export function defaultPercussionSettings(): PercussionSettings {
   return { enabled: false, ...PERCUSSION_PRESET_VALUES.kick };
 }
 
+// ---- MicroTextures instrument mode -----------------------------------------
+
+/**
+ * MicroTextures post-fusion stage: granular re-texturing plus a shiftable
+ * formant filter, retrigger/stutter and bit-crush. Baked into the instrument's
+ * rendered loop like Spectral/Percussion.
+ */
+export interface MicroTextureSettings {
+  enabled: boolean;
+  grainSeconds: number;
+  densityHz: number;
+  jitter: number;
+  reverseProbability: number;
+  pitchScatter: number;
+  panScatter: number;
+  volumeVariance: number;
+  /** LFO rate/depth modulating grain density (glitch speed-ups/slow-downs). */
+  densityModRate: number;
+  densityModDepth: number;
+  /** Per-grain digital variation: quantised pitch jumps, hard pan, bit crunch. */
+  grainChaos: number;
+  retriggerHz: number;
+  retriggerAmount: number;
+  bitDepth: number;
+  downsample: number;
+  /** Formant envelope shift in semitones. */
+  formantShift: number;
+  formantResonance: number;
+  formantMix: number;
+}
+
+export function defaultMicroTextureSettings(): MicroTextureSettings {
+  return {
+    enabled: false,
+    grainSeconds: 0.08,
+    densityHz: 12,
+    jitter: 0.25,
+    reverseProbability: 0.2,
+    pitchScatter: 0,
+    panScatter: 0.4,
+    volumeVariance: 0.3,
+    densityModRate: 0.5,
+    densityModDepth: 0,
+    grainChaos: 0,
+    retriggerHz: 8,
+    retriggerAmount: 0,
+    bitDepth: 16,
+    downsample: 1,
+    formantShift: 0,
+    formantResonance: 0.4,
+    formantMix: 0.5,
+  };
+}
+
 export interface SpectralSettings {
   enabled: boolean;
   sourceIndex2: number | null;
@@ -544,6 +598,8 @@ export interface SpectralSettings {
   modulation: SpectralModRoute[];
   /** Percussion post-fusion stage; disabled by default. */
   percussion: PercussionSettings;
+  /** MicroTextures post-fusion stage; disabled by default. */
+  microTextures: MicroTextureSettings;
   /**
    * When true the rendered result is played once (one-shot) instead of looped.
    * Default false so existing Spectral instruments keep looping.
@@ -576,6 +632,7 @@ export function defaultSpectralSettings(): SpectralSettings {
     loopLengthSeconds: DEFAULT_LOOP_SECONDS,
     modulation: [],
     percussion: defaultPercussionSettings(),
+    microTextures: defaultMicroTextureSettings(),
     oneShot: false,
     savedStartSec: 0,
     savedEndSec: 0,
@@ -583,8 +640,20 @@ export function defaultSpectralSettings(): SpectralSettings {
   };
 }
 
-/** True once the prism_dsp WASM module has been initialised. */
-let wasmAvailable = false;
+/**
+ * True when the instrument needs a baked post-fusion render. Each chain stage
+ * (spectral / percussion / microtextures) can be enabled independently — none
+ * requires an earlier stage to be on.
+ */
+export function spectralRenderEnabled(settings: SpectralSettings): boolean {
+  return (
+    settings.enabled ||
+    settings.percussion.enabled ||
+    settings.microTextures.enabled
+  );
+}
+
+/** True once the prism_dsp WASM module has been initialised. */ let wasmAvailable = false;
 export function setSpectralWasmAvailable(available: boolean): void {
   wasmAvailable = available;
 }

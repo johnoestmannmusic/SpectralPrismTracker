@@ -1,5 +1,6 @@
 import type { AudioClip } from "@/core/dsp";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
+import { spectralRenderEnabled } from "@/core/spectral";
 import {
   Scheduler,
   chordVoices,
@@ -174,7 +175,7 @@ export class WebAudioBackend implements AudioBackend {
             this.sampler.fused[i] = null;
             this.sampler.fusedClips[i] = null;
             this.sampler.fusedWaveforms[i] = [];
-            if (s.spectral.enabled && s.sourceIndex !== null)
+            if (spectralRenderEnabled(s.spectral) && s.sourceIndex !== null)
               await this.sampler.renderSpectral(ctx, i);
           }
         }
@@ -489,7 +490,9 @@ export class WebAudioBackend implements AudioBackend {
   /** Replaces the whole per-instrument settings array (after add/delete/import). */
   replaceSettings(settings: SamplerSettings[]): void {
     this.sampler.setSettingsVec(settings);
-    this.sampler.loops = settings.map(() => null);
+    // Renders are indexed by instrument, so the old array is now shifted and
+    // must be discarded; callers re-render enabled instruments afterwards.
+    this.sampler.resetRenders();
   }
 
   error(): string | null {

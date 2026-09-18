@@ -12,7 +12,11 @@ import {
   type SamplerSettings,
   type Sequence,
 } from "@/core/sampler";
-import { spectralRender, spectralWasmAvailable } from "@/core/spectral";
+import {
+  spectralRender,
+  spectralRenderEnabled,
+  spectralWasmAvailable,
+} from "@/core/spectral";
 import type { SamplePlayhead } from "./backend";
 
 export class Voice {
@@ -103,7 +107,7 @@ export class Voice {
       source: this.settings.sourceIndex,
       instrument: this.instrument,
       position: this.position(now),
-      fused: this.settings.spectral.enabled,
+      fused: spectralRenderEnabled(this.settings.spectral),
       level: Math.min(Math.max(this.levelAt(now), 0.15), 1),
     };
   }
@@ -299,6 +303,20 @@ export class SamplerEngine {
     this.settings = settings;
   }
 
+  /**
+   * Drops every baked render. Called when the instrument list changes (add /
+   * delete / duplicate) so renders cannot be read at a shifted index.
+   */
+  resetRenders(): void {
+    this.fused = [];
+    this.fusedClips = [];
+    this.fusedWaveforms = [];
+    this.loops = [];
+    this.rendering = [];
+    this.fusionJustCompleted = [];
+    this.renderGeneration = [];
+  }
+
   updateSettings(index: number, settings: SamplerSettings, now: number): void {
     if (settings.muted || settings.sourceIndex === null) {
       for (const voice of this.voices) {
@@ -349,7 +367,7 @@ export class SamplerEngine {
         for (let i = 0; i < this.settings.length; i++) {
           const s = this.settings[i]!;
           if (
-            s.spectral.enabled &&
+            spectralRenderEnabled(s.spectral) &&
             s.sourceIndex !== null &&
             (!this.spectralNeedsB(i) || s.spectral.sourceIndex2 !== null)
           ) {
@@ -396,7 +414,7 @@ export class SamplerEngine {
     this.fusedClips[instrument] = null;
     this.fusedWaveforms[instrument] = [];
     this.loops[instrument] = null;
-    if (!s.spectral.enabled) return;
+    if (!spectralRenderEnabled(s.spectral)) return;
     this.rendering[instrument] = true;
     try {
       const source = s.sourceIndex;
@@ -439,7 +457,7 @@ export class SamplerEngine {
 
   private spectralActive(instrument: number): boolean {
     const s = this.settings[instrument];
-    return !!s && s.spectral.enabled && spectralWasmAvailable();
+    return !!s && spectralRenderEnabled(s.spectral) && spectralWasmAvailable();
   }
 
   buffer(ctx: AudioContext, instrument: number): AudioBuffer {

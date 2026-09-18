@@ -141,6 +141,40 @@ export function render_fused_modulated(a_flat, a_channels, b_flat, b_channels, s
  * @param {number} fused_channels
  * @param {number} sample_rate
  * @param {number} root_note
+ * @param {number} grain_seconds
+ * @param {number} density_hz
+ * @param {number} jitter
+ * @param {number} reverse_probability
+ * @param {number} pitch_scatter_semitones
+ * @param {number} pan_scatter
+ * @param {number} volume_variance
+ * @param {number} density_mod_rate_hz
+ * @param {number} density_mod_depth
+ * @param {number} grain_chaos
+ * @param {number} retrigger_hz
+ * @param {number} retrigger_amount
+ * @param {number} bit_depth
+ * @param {number} downsample
+ * @param {number} formant_shift_semitones
+ * @param {number} formant_resonance
+ * @param {number} formant_mix
+ * @returns {object}
+ */
+export function render_microtextures(fused_flat, fused_channels, sample_rate, root_note, grain_seconds, density_hz, jitter, reverse_probability, pitch_scatter_semitones, pan_scatter, volume_variance, density_mod_rate_hz, density_mod_depth, grain_chaos, retrigger_hz, retrigger_amount, bit_depth, downsample, formant_shift_semitones, formant_resonance, formant_mix) {
+    const ptr0 = passArrayF32ToWasm0(fused_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.render_microtextures(ptr0, len0, fused_channels, sample_rate, root_note, grain_seconds, density_hz, jitter, reverse_probability, pitch_scatter_semitones, pan_scatter, volume_variance, density_mod_rate_hz, density_mod_depth, grain_chaos, retrigger_hz, retrigger_amount, bit_depth, downsample, formant_shift_semitones, formant_resonance, formant_mix);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {Float32Array} fused_flat
+ * @param {number} fused_channels
+ * @param {number} sample_rate
+ * @param {number} root_note
  * @param {number} noise_amount_pct
  * @param {string} noise_color
  * @param {number} noise_decay_seconds

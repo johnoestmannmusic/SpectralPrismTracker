@@ -1,6 +1,7 @@
 import type { SongMeta, SongModel } from "./songModel";
 import {
   channelOrderStartRow,
+  channelPositionAt,
   channelStepAtGlobal,
   channelSteps,
   songLoopRows,
@@ -58,8 +59,8 @@ export function buildRowTiming(song: SongModel): RowTiming {
     for (let c = 0; c < song.channels.length; c++) {
       const steps = stepsByChannel[c]!;
       if (steps.length === 0) continue;
-      const step = steps[globalRow % steps.length]!;
       const channel = song.channels[c]!;
+      const step = steps[channelPositionAt(channel, globalRow, steps.length)]!;
       const pattern = channel.patterns.get(step.patternIndex);
       const cell = pattern?.rows[step.row];
       if (!cell) continue;

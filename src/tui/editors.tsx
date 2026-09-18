@@ -111,15 +111,17 @@ const sourceValue = (index: number | null): string =>
 const parseSource = (value: string): number | null =>
   value === "none" ? null : Number(value);
 
-export type InstrumentTab = "sampler" | "spectral" | "percussion" | "chord";
+export type InstrumentTab =
+  "sampler" | "spectral" | "percussion" | "chord" | "microtextures";
 
 /**
  * Editor tab that matches an instrument's active mode. Later chain stages win:
- * Chord beats Percussion beats Spectral beats plain Sampler.
+ * MicroTextures beats Chord beats Percussion beats Spectral beats Sampler.
  */
 export function instrumentTabFor(
   settings: SamplerSettings | undefined,
 ): InstrumentTab {
+  if (settings?.spectral.microTextures.enabled) return "microtextures";
   if (settings?.chord.enabled) return "chord";
   if (settings?.spectral.percussion.enabled) return "percussion";
   if (settings?.spectral.enabled) return "spectral";
@@ -821,6 +823,178 @@ export function chordGroups(
         ]
       : []),
   ];
+}
+
+/** MicroTextures instrument-mode editor groups. */
+export function microtexturesGroups(
+  session: Session,
+  index: number,
+  settingsOverride?: SamplerSettings,
+): EditorGroup[] {
+  const s =
+    settingsOverride ??
+    session.samplerSettings(index) ??
+    defaultSamplerSettings();
+  const sp = s.spectral;
+  const micro = sp.microTextures;
+  const set = (patch: Partial<typeof micro>) =>
+    session.updateSamplerSetting(index, {
+      spectral: { ...sp, microTextures: { ...micro, ...patch } },
+    });
+  const fused = micro.enabled ? session.fusionWaveform(index) : [];
+  const waveform =
+    fused.length > 0
+      ? fused
+      : micro.enabled
+        ? session.effectiveWaveform(index)
+        : s.sourceIndex !== null
+          ? session.sampleWaveform(s.sourceIndex)
+          : [];
+  return [
+    {
+      title: `Waveform (${fused.length > 0 ? "microtexture render" : "source / not rendered"})`,
+      graph: (
+        <Text color="green">
+          {waveform.length > 0
+            ? renderWaveform(waveform, 56)
+            : "(no render yet — enable or adjust)"}
+        </Text>
+      ),
+      params: [],
+    },
+    {
+      title: "MicroTextures",
+      params: [
+        bool("Enabled", micro.enabled, (v) => set({ enabled: !!v }), true),
+        num(
+          "Grain size",
+          micro.grainSeconds,
+          (v) => set({ grainSeconds: v as number }),
+          { min: 0.005, max: 0.5, step: 0.005, unit: "s", preview: true },
+        ),
+        num(
+          "Density",
+          micro.densityHz,
+          (v) => set({ densityHz: v as number }),
+          { min: 0.5, max: 60, step: 0.5, unit: "Hz", preview: true },
+        ),
+        unit01("Jitter", micro.jitter, (v) => set({ jitter: v as number })),
+        unit01("Reverse", micro.reverseProbability, (v) =>
+          set({ reverseProbability: v as number }),
+        ),
+        num(
+          "Pitch scatter",
+          micro.pitchScatter,
+          (v) => set({ pitchScatter: v as number }),
+          { min: 0, max: 24, step: 0.5, unit: "st", preview: true },
+        ),
+        unit01("Pan scatter", micro.panScatter, (v) =>
+          set({ panScatter: v as number }),
+        ),
+        unit01("Volume variance", micro.volumeVariance, (v) =>
+          set({ volumeVariance: v as number }),
+        ),
+        num(
+          "Density mod rate",
+          micro.densityModRate,
+          (v) => set({ densityModRate: v as number }),
+          { min: 0.05, max: 10, step: 0.05, unit: "Hz", preview: true },
+        ),
+        unit01("Density mod depth", micro.densityModDepth, (v) =>
+          set({ densityModDepth: v as number }),
+        ),
+        unit01("Grain chaos", micro.grainChaos, (v) =>
+          set({ grainChaos: v as number }),
+        ),
+      ],
+    },
+    {
+      title: "Retrigger",
+      params: [
+        num(
+          "Rate",
+          micro.retriggerHz,
+          (v) => set({ retriggerHz: v as number }),
+          { min: 0.5, max: 30, step: 0.5, unit: "Hz", preview: true },
+        ),
+        unit01("Amount", micro.retriggerAmount, (v) =>
+          set({ retriggerAmount: v as number }),
+        ),
+      ],
+    },
+    {
+      title: "Formant",
+      params: [
+        num(
+          "Shift",
+          micro.formantShift,
+          (v) => set({ formantShift: v as number }),
+          { min: -24, max: 24, step: 1, unit: "st", preview: true },
+        ),
+        unit01("Resonance", micro.formantResonance, (v) =>
+          set({ formantResonance: v as number }),
+        ),
+        unit01("Mix", micro.formantMix, (v) =>
+          set({ formantMix: v as number }),
+        ),
+      ],
+    },
+    {
+      title: "Lo-fi",
+      params: [
+        num(
+          "Bit depth",
+          micro.bitDepth,
+          (v) => set({ bitDepth: v as number }),
+          { min: 2, max: 16, step: 1, integer: true, preview: true },
+        ),
+        num(
+          "Downsample",
+          micro.downsample,
+          (v) => set({ downsample: v as number }),
+          { min: 1, max: 32, step: 1, integer: true, preview: true },
+        ),
+      ],
+    },
+  ];
+}
+
+/** WAV export options groups (the export modal). */
+export function wavExportGroups(session: Session): EditorGroup[] {
+  const w = session.getState().wavExport;
+  const set = (patch: Partial<typeof w>) => session.setWavExport(patch);
+  const params: EditorParam[] = [
+    num("Loops", w.loops, (v) => set({ loops: v as number }), {
+      min: 0,
+      max: 99,
+      step: 1,
+      integer: true,
+    }),
+    num("Fade in", w.fadeInMs, (v) => set({ fadeInMs: v as number }), {
+      min: 0,
+      max: 60_000,
+      step: 10,
+      unit: "ms",
+    }),
+    num("Fade out", w.fadeOutMs, (v) => set({ fadeOutMs: v as number }), {
+      min: 0,
+      max: 60_000,
+      step: 10,
+      unit: "ms",
+    }),
+    bool("Peak normalize", w.normalize, (v) => set({ normalize: !!v })),
+  ];
+  if (session.getState().cyclesMode) {
+    params.push(
+      num(
+        "Track length",
+        w.lengthSeconds,
+        (v) => set({ lengthSeconds: v as number }),
+        { min: 0, max: 3600, step: 1, unit: "s" },
+      ),
+    );
+  }
+  return [{ title: "Export WAV", params }];
 }
 
 /** Editable Song Info groups (title, credits, links, timing) for `/info`. */

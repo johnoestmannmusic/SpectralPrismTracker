@@ -20,9 +20,11 @@ import { createRegistry } from "@/tui/commands";
 import {
   chordGroups,
   masterFxGroups,
+  microtexturesGroups,
   percussionGroups,
   samplerGroups,
   spectralGroups,
+  wavExportGroups,
 } from "@/tui/editors";
 import { Session } from "@/tui/session";
 import { defaultSamplerSettings } from "@/core/sampler";
@@ -50,6 +52,22 @@ describe("TUI overlays", () => {
     expect(frame).toContain("DELAY");
     expect(frame).toContain("REVERB");
     unmount();
+  });
+
+  it("shows per-channel phase/speed rows in Cycles Mode", () => {
+    const previous = session.getState().cyclesMode;
+    session.setCyclesMode(true, false);
+    try {
+      const { lastFrame, unmount } = render(
+        <MixerOverlay session={session} active onClose={() => {}} />,
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("CH1 phase");
+      expect(frame).toContain("CH1 speed");
+      unmount();
+    } finally {
+      session.setCyclesMode(previous, false);
+    }
   });
 
   it("renders the source-sample browser with a waveform and instruments", () => {
@@ -368,6 +386,24 @@ describe("TUI overlays", () => {
       expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before);
       unmount();
     });
+
+    it("undoes and redoes with ctrl+z / ctrl+y", async () => {
+      session.setViewOrder(0);
+      const before = session.patternSlotInfo(0, 0)!.rowLength;
+      const { stdin, unmount } = render(
+        <PatternsOverlay session={session} active onClose={() => {}} />,
+      );
+      session.setPatternRowLength(0, 0, before + 4);
+      expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before + 4);
+      stdin.write("\u001A");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before);
+      stdin.write("\u0019");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before + 4);
+      session.undo();
+      unmount();
+    });
   });
 
   describe("cycles performance view", () => {
@@ -449,6 +485,42 @@ describe("TUI overlays", () => {
       expect(labels).toContain("Inversion");
       expect(labels).toContain("Voices");
       expect(labels).toContain("Strum");
+    });
+  });
+
+  describe("microtextures instrument mode", () => {
+    it("exposes granular, retrigger, formant and lo-fi controls", () => {
+      const settings = defaultSamplerSettings();
+      settings.spectral.microTextures.enabled = true;
+      const groups = microtexturesGroups(session, 0, settings);
+      const labels = groups.flatMap((group) =>
+        group.params.map((p) => p.label),
+      );
+      expect(labels).toContain("Enabled");
+      expect(labels).toContain("Grain size");
+      expect(labels).toContain("Density");
+      expect(labels).toContain("Shift");
+      expect(labels).toContain("Bit depth");
+    });
+  });
+
+  describe("wav export modal", () => {
+    it("adds a track length control only in Cycles Mode", () => {
+      const previous = session.getState().cyclesMode;
+      session.setCyclesMode(false, false);
+      let labels = wavExportGroups(session).flatMap((group) =>
+        group.params.map((param) => param.label),
+      );
+      expect(labels).toContain("Loops");
+      expect(labels).toContain("Peak normalize");
+      expect(labels).not.toContain("Track length");
+
+      session.setCyclesMode(true, false);
+      labels = wavExportGroups(session).flatMap((group) =>
+        group.params.map((param) => param.label),
+      );
+      expect(labels).toContain("Track length");
+      session.setCyclesMode(previous, false);
     });
   });
 

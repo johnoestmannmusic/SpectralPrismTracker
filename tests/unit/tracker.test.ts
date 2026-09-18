@@ -21,7 +21,11 @@ import {
   selectionRect,
   writeValue,
 } from "@/core/tracker";
-import { patternSnapshot, syncPatternSnapshotLengths } from "@/core/songModel";
+import {
+  patternSnapshot,
+  syncPatternSnapshotLengths,
+  applySnapshot,
+} from "@/core/songModel";
 import { fixtureSong } from "./fixtures";
 
 function fixture(): SongModel {
@@ -201,6 +205,28 @@ describe("tracker helpers", () => {
 
     syncPatternSnapshotLengths(snap);
     expect(snap.orderLength).toBe(snap.channels[0]!.orderList.length);
+  });
+
+  it("duplicates a pattern's own row count and name", () => {
+    const song = fixture();
+    const snap = patternSnapshot(song);
+    const channel = snap.channels[0]!;
+    const sourceIndex = channel.orderList[0]!;
+    const source = channel.patterns.find(([index]) => index === sourceIndex)!;
+    source[2] = 8;
+    source[3] = "Phase";
+
+    insertPatternInChannel(channel, 0, song.meta.patternLength, true);
+    const duplicateIndex = channel.orderList[1]!;
+    const duplicate = channel.patterns.find(
+      ([index]) => index === duplicateIndex,
+    )!;
+    expect(duplicate[2]).toBe(8);
+    expect(duplicate[3]).toBe("Phase");
+
+    const song2 = fixture();
+    applySnapshot(song2, snap);
+    expect(song2.channels[0]!.patterns.get(duplicateIndex)!.rowLength).toBe(8);
   });
 });
 

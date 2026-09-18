@@ -32,6 +32,10 @@ export interface Channel {
    * Channels loop independently (Cycles Mode), so lengths may differ.
    */
   orderLength: number;
+  /** Rows to shift this channel's cycle start (Cycles phasing). */
+  phaseOffsetRows: number;
+  /** Row-advance multiplier: 0.5 = half-time, 2 = double-time. */
+  speed: number;
   orderList: number[];
   /** Keyed by pattern index (not guaranteed dense). */
   patterns: Map<number, Pattern>;
@@ -64,6 +68,9 @@ export interface ChannelPatternSnapshot {
   orderLength: number;
   orderList: number[];
   patterns: PatternTuple[];
+  /** Per-channel phase offset and speed (Cycles Mode). */
+  phaseOffsetRows?: number;
+  speed?: number;
 }
 
 /**
@@ -247,6 +254,9 @@ export function buildSongModelFromProject(
       index: ch,
       effectColumns,
       orderLength: orderList.length,
+      phaseOffsetRows:
+        typeof snap?.phaseOffsetRows === "number" ? snap.phaseOffsetRows : 0,
+      speed: typeof snap?.speed === "number" ? snap.speed : 1,
       orderList,
       patterns,
       insTimeline: [],
@@ -342,6 +352,8 @@ export function patternSnapshot(song: SongModel): PatternSnapshot {
         orderLength: channel.orderList.length,
         orderList: channel.orderList.slice(),
         patterns,
+        phaseOffsetRows: channel.phaseOffsetRows,
+        speed: channel.speed,
       };
     }),
   };
@@ -361,6 +373,9 @@ export function applySnapshot(
     const snap = snapshot.channels[i]!;
     channel.orderList = snap.orderList.slice();
     channel.orderLength = channel.orderList.length;
+    channel.phaseOffsetRows =
+      typeof snap.phaseOffsetRows === "number" ? snap.phaseOffsetRows : 0;
+    channel.speed = typeof snap.speed === "number" ? snap.speed : 1;
     channel.patterns = new Map();
     for (const [index, rows, storedLength, storedName] of snap.patterns) {
       const rowLength =

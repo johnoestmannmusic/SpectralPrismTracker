@@ -80,6 +80,14 @@ export function PatternsOverlay({
 
   useInput(
     (char, key) => {
+      if (key.ctrl && char === "z") {
+        session.undo();
+        return;
+      }
+      if (key.ctrl && char === "y") {
+        session.redo();
+        return;
+      }
       if (editing !== null) {
         if (key.escape || char === "x") {
           setEditing(null);

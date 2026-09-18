@@ -18,6 +18,9 @@ use prism_dsp::modulate::{
     render_fused_loop_length_modulated_loop, render_fused_modulated_loop, ModulationParams,
     MOD_TARGET_COUNT,
 };
+use prism_dsp::microtextures::{
+    render_microtextures as render_microtextures_stage, MicroTextureParams,
+};
 use prism_dsp::percussion::{
     render_percussion as render_percussion_stage, NoiseColor, PercussionParams,
 };
@@ -294,6 +297,63 @@ fn parse_noise_color(color: &str) -> NoiseColor {
 /// `render_fused_modulated` (the output of *any* Fusion mode) and
 /// re-synthesizes it as a short one-shot percussive hit. Mirrors
 /// `prism_dsp::percussion::render_percussion`.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn render_microtextures(
+    fused_flat: Vec<f32>,
+    fused_channels: u32,
+    sample_rate: f32,
+    root_note: u32,
+    grain_seconds: f32,
+    density_hz: f32,
+    jitter: f32,
+    reverse_probability: f32,
+    pitch_scatter_semitones: f32,
+    pan_scatter: f32,
+    volume_variance: f32,
+    density_mod_rate_hz: f32,
+    density_mod_depth: f32,
+    grain_chaos: f32,
+    retrigger_hz: f32,
+    retrigger_amount: f32,
+    bit_depth: f32,
+    downsample: f32,
+    formant_shift_semitones: f32,
+    formant_resonance: f32,
+    formant_mix: f32,
+) -> Result<Object, JsValue> {
+    let channels = split(fused_flat, fused_channels as usize)?;
+    if channels.is_empty() {
+        return Err(JsValue::from_str("Fused input is empty"));
+    }
+    let input = LoopBufferData {
+        channels,
+        sample_rate,
+        root_note: root_note as u8,
+    };
+    let params = MicroTextureParams {
+        grain_seconds,
+        density_hz,
+        jitter,
+        reverse_probability,
+        pitch_scatter_semitones,
+        pan_scatter,
+        volume_variance,
+        density_mod_rate_hz,
+        density_mod_depth,
+        grain_chaos,
+        retrigger_hz,
+        retrigger_amount,
+        bit_depth,
+        downsample,
+        formant_shift_semitones,
+        formant_resonance,
+        formant_mix,
+    };
+    let output = render_microtextures_stage(&input, &params);
+    output_object(output)
+}
+
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn render_percussion(

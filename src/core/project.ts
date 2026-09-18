@@ -14,9 +14,11 @@ import {
   SPECTRAL_FUSION_MODES,
   SPECTRAL_MOD_SHAPES,
   SPECTRAL_PARAMS,
+  defaultMicroTextureSettings,
   defaultPercussionSettings,
   defaultSpectralSettings,
   percussionPreset,
+  type MicroTextureSettings,
   type PercussionNoiseColor,
   type PercussionSettings,
   type SpectralModRoute,
@@ -177,6 +179,8 @@ export function snapshotToSerde(
     channels: snapshot.channels.map((channel) => ({
       orderLength: channel.orderLength ?? channel.orderList.length,
       orderList: channel.orderList,
+      phaseOffsetRows: channel.phaseOffsetRows ?? 0,
+      speed: channel.speed ?? 1,
       // Sparse rows: only cells that actually contain something are written,
       // as [rowIndex, cell] pairs. Empty patterns collapse to `[]`.
       // Format: [index, sparse, rowLength?, name?] — trailing optionals keep
@@ -218,6 +222,11 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
       return {
         orderLength: storedLength,
         orderList,
+        phaseOffsetRows:
+          typeof channel.phaseOffsetRows === "number"
+            ? channel.phaseOffsetRows
+            : 0,
+        speed: typeof channel.speed === "number" ? channel.speed : 1,
         patterns: patternsRaw.map((pair) => {
           const tuple = pair as [number, unknown, unknown?, unknown?];
           const [index, second] = tuple;
@@ -327,6 +336,34 @@ export function applyPercussionPreset(
   return { ...percussionPreset(preset), enabled };
 }
 
+function microTexturesFromJson(value: unknown): MicroTextureSettings {
+  const d = defaultMicroTextureSettings();
+  if (!value || typeof value !== "object") return d;
+  const obj = value as Record<string, unknown>;
+  const num = (key: string, fallback: number) =>
+    typeof obj[key] === "number" ? (obj[key] as number) : fallback;
+  return {
+    enabled: typeof obj.enabled === "boolean" ? obj.enabled : d.enabled,
+    grainSeconds: num("grainSeconds", d.grainSeconds),
+    densityHz: num("densityHz", d.densityHz),
+    jitter: num("jitter", d.jitter),
+    reverseProbability: num("reverseProbability", d.reverseProbability),
+    pitchScatter: num("pitchScatter", d.pitchScatter),
+    panScatter: num("panScatter", d.panScatter),
+    volumeVariance: num("volumeVariance", d.volumeVariance),
+    densityModRate: num("densityModRate", d.densityModRate),
+    densityModDepth: num("densityModDepth", d.densityModDepth),
+    grainChaos: num("grainChaos", d.grainChaos),
+    retriggerHz: num("retriggerHz", d.retriggerHz),
+    retriggerAmount: num("retriggerAmount", d.retriggerAmount),
+    bitDepth: num("bitDepth", d.bitDepth),
+    downsample: num("downsample", d.downsample),
+    formantShift: num("formantShift", d.formantShift),
+    formantResonance: num("formantResonance", d.formantResonance),
+    formantMix: num("formantMix", d.formantMix),
+  };
+}
+
 function chordFromJson(value: unknown): ChordSettings {
   const d = defaultChordSettings();
   if (!value || typeof value !== "object") return d;
@@ -393,6 +430,7 @@ function spectralFromJson(value: unknown): SpectralSettings {
     loopLengthSeconds: num("loopLengthSeconds", d.loopLengthSeconds),
     modulation: modRoutesFromJson(obj.modulation),
     percussion: percussionFromJson(obj.percussion),
+    microTextures: microTexturesFromJson(obj.microTextures),
     oneShot: typeof obj.oneShot === "boolean" ? obj.oneShot : d.oneShot,
     savedStartSec: num("savedStartSec", d.savedStartSec),
     savedEndSec: num("savedEndSec", d.savedEndSec),

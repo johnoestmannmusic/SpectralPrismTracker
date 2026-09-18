@@ -669,6 +669,24 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "microtextures",
+    name: "microtextures",
+    aliases: ["micro", "grain"],
+    description:
+      "Edit the MicroTextures granular/formant/stutter mode for an instrument",
+    category: "edit",
+    args: [{ name: "instrument", type: "number" }],
+    run: (args, ctx) => {
+      const index =
+        arg(args, "instrument") !== undefined
+          ? Number(arg(args, "instrument"))
+          : ctx.session.getState().cursor.channel;
+      if (!Number.isFinite(index)) return fail("instrument must be a number");
+      ctx.openOverlay?.("microtextures", index);
+      return ok(`MicroTextures ${index}`);
+    },
+  },
+  {
     id: "query",
     name: "query",
     aliases: ["get"],
@@ -1202,14 +1220,33 @@ export const builtinCommands: CommandDef[] = [
         ? base
         : `${base}.${format === "mid" ? "mid" : format}`;
       if (format === "wav") {
-        const loops =
-          args.flags.loops !== undefined ? Number(args.flags.loops) : 0;
+        const stored = ctx.session.getState().wavExport;
+        const numFlag = (name: string, fallback: number) =>
+          args.flags[name] !== undefined ? Number(args.flags[name]) : fallback;
+        const loops = numFlag("loops", stored.loops);
+        const fadeInMs = numFlag("fade-in", stored.fadeInMs);
         const fadeOutMs =
-          args.flags.fade !== undefined ? Number(args.flags.fade) : 0;
+          args.flags["fade-out"] !== undefined
+            ? Number(args.flags["fade-out"])
+            : args.flags.fade !== undefined
+              ? Number(args.flags.fade)
+              : stored.fadeOutMs;
+        const lengthSeconds = numFlag("length", stored.lengthSeconds);
+        const normalize =
+          args.flags.normalize !== undefined
+            ? !!args.flags.normalize
+            : stored.normalize;
+        // With no path, open the export options modal instead of exporting.
+        if (arg(args, "path") === undefined && ctx.openOverlay) {
+          ctx.openOverlay("wav");
+          return ok("WAV export options");
+        }
         const result = await exportWav(ctx.session, target, {
           loops: Number.isFinite(loops) ? loops : 0,
+          fadeInMs: Number.isFinite(fadeInMs) ? fadeInMs : 0,
           fadeOutMs: Number.isFinite(fadeOutMs) ? fadeOutMs : 0,
-          normalize: !!args.flags.normalize,
+          lengthSeconds: Number.isFinite(lengthSeconds) ? lengthSeconds : 0,
+          normalize,
         });
         return result.ok
           ? ok(result.message, { path: result.path })

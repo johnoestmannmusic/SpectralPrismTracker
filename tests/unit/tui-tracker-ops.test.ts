@@ -230,6 +230,18 @@ describe("tracker block operations", () => {
     }
   });
 
+  it("sets per-channel phase and speed", () => {
+    session.setViewOrder(0);
+    expect(session.setChannelPhaseOffset(0, 3)).toBe(true);
+    expect(session.channelPhaseOffset(0)).toBe(3);
+    expect(session.setChannelSpeed(1, 2)).toBe(true);
+    expect(session.channelSpeed(1)).toBe(2);
+    session.undo();
+    session.undo();
+    expect(session.channelPhaseOffset(0)).toBe(0);
+    expect(session.channelSpeed(1)).toBe(1);
+  });
+
   it("re-expands the sequence when the chord shape changes", () => {
     const engine = session.backend!;
     const spy = vi.spyOn(engine, "updateSequence");
@@ -237,6 +249,31 @@ describe("tracker block operations", () => {
     session.updateSamplerSetting(0, {
       chord: { ...current.chord, enabled: true, preset: "sus2" },
     });
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    session.undo();
+  });
+
+  it("opens the WAV export modal when /export wav has no path", async () => {
+    const opened: string[] = [];
+    const result = await registry.execute("export wav", {
+      session,
+      listCommands: () => registry.all(),
+      openOverlay: (name) => {
+        opened.push(name);
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(opened).toContain("wav");
+  });
+
+  it("re-publishes the sequence after duplicating an instrument", () => {
+    const engine = session.backend!;
+    const spy = vi.spyOn(engine, "updateSequence");
+    const before = session.song!.instruments.length;
+    const index = session.duplicateInstrument(0);
+    expect(index).toBe(1);
+    expect(session.song!.instruments.length).toBe(before + 1);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
     session.undo();

@@ -49,10 +49,12 @@ import {
   chordGroups,
   instrumentTabFor,
   masterFxGroups,
+  microtexturesGroups,
   percussionGroups,
   samplerGroups,
   songInfoGroups,
   spectralGroups,
+  wavExportGroups,
 } from "./editors";
 import { useSession } from "./hooks";
 import type { Session, SessionState } from "./session";
@@ -123,6 +125,8 @@ type Overlay =
   | "spectral"
   | "percussion"
   | "chord"
+  | "microtextures"
+  | "wav"
   | "fx";
 
 interface Props {
@@ -885,6 +889,10 @@ export function App({ session }: Props) {
         session.adjustValue(-1);
         return;
       }
+      if (char === "p") {
+        setOverlay("patterns");
+        return;
+      }
       if (char === "w") {
         session.adjustValue(12);
         return;
@@ -1064,9 +1072,11 @@ export function App({ session }: Props) {
           ? percussionGroups(session, activeInstrument, settingsOverride)
           : activeOverlay === "chord"
             ? chordGroups(session, activeInstrument, settingsOverride)
-            : activeOverlay === "fx"
-              ? masterFxGroups(session, stepTarget?.masterFx)
-              : null;
+            : activeOverlay === "microtextures"
+              ? microtexturesGroups(session, activeInstrument, settingsOverride)
+              : activeOverlay === "fx"
+                ? masterFxGroups(session, stepTarget?.masterFx)
+                : null;
   const editorTitle =
     activeOverlay === "sampler"
       ? `Sampler — ${instrumentLabel}`
@@ -1076,19 +1086,24 @@ export function App({ session }: Props) {
           ? `Percussion — ${instrumentLabel}`
           : activeOverlay === "chord"
             ? `Chord — ${instrumentLabel}`
-            : "Master FX";
+            : activeOverlay === "microtextures"
+              ? `MicroTextures — ${instrumentLabel}`
+              : "Master FX";
   const songGroups =
     activeOverlay === "song" && !stepMode ? songInfoGroups(session) : null;
+  const wavGroups =
+    activeOverlay === "wav" && !stepMode ? wavExportGroups(session) : null;
   const instrumentTabs: InstrumentTab[] = [
     "sampler",
     "spectral",
     "percussion",
     "chord",
+    "microtextures",
   ];
   const editorTabs =
     editorGroups && activeOverlay !== "fx"
       ? {
-          labels: ["Sampler", "Spectral", "Percussion", "Chord"],
+          labels: ["Sampler", "Spectral", "Percussion", "Chord", "MicroTx"],
           active: Math.max(
             instrumentTabs.indexOf(activeOverlay as InstrumentTab),
             0,
@@ -1100,6 +1115,7 @@ export function App({ session }: Props) {
             !!state.settings[activeInstrument]?.spectral.enabled,
             !!state.settings[activeInstrument]?.spectral.percussion.enabled,
             !!state.settings[activeInstrument]?.chord.enabled,
+            !!state.settings[activeInstrument]?.spectral.microTextures.enabled,
           ],
         }
       : undefined;
@@ -1236,6 +1252,27 @@ export function App({ session }: Props) {
               onClose={() => setOverlay("none")}
               onExplain={setMenuExplainer}
               highlight={paramHighlights}
+            />
+          ) : wavGroups ? (
+            <ParamEditorOverlay
+              title="Export WAV"
+              groups={wavGroups}
+              active={!stepMode}
+              height={viewportRows}
+              onClose={() => setOverlay("none")}
+              onExplain={setMenuExplainer}
+              submit={{
+                key: "e",
+                label: "Export",
+                run: () => {
+                  const name = (state.song?.meta.name || "export").replace(
+                    /[^\w.-]+/g,
+                    "_",
+                  );
+                  setOverlay("none");
+                  void runCommand(`export wav ${name}.wav`);
+                },
+              }}
             />
           ) : editorGroups ? (
             <ParamEditorOverlay
