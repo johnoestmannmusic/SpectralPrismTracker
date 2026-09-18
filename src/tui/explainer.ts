@@ -1,7 +1,8 @@
 import type { PatternCell } from "@/core/songTypes";
 import { noteToFreq, noteToName } from "@/core/pitch";
 import { cellAt, type SongModel } from "@/core/songModel";
-import { rowDurationSec } from "@/core/timing";
+import { rowDurationSec, songLoopOrders } from "@/core/timing";
+import { orderStartRow } from "@/core/layout";
 import {
   FX_CATALOG,
   columnLabel,
@@ -46,9 +47,14 @@ function instrumentDescription(song: SongModel, index: number): string {
 }
 
 export function patternsExplain(song: SongModel): ExplainerText {
+  const lengths = song.channels.map(
+    (channel) => channel.orderLength || channel.orderList.length,
+  );
   return {
     title: "Patterns — the actual note data",
-    body: `All four channels at one order position, like the tracker's own view. Each has its own order list (${song.meta.orderLength} positions) of ${song.meta.patternLength}-row patterns.\n\nRow shading follows this song's highlights (${song.meta.highlightA}/${song.meta.highlightB}). OFF = note off; ... / .. / .... = empty note / ins-vol / effect.`,
+    body: `All four channels at one order position, like the tracker's own view. Each channel has its own order list and length (${lengths.join("/")}); they loop independently and repeat every ${songLoopOrders(song)} orders (LCM). Each pattern has its own row count (default ${song.meta.patternLength}).
+
+Row shading follows this song's highlights (${song.meta.highlightA}/${song.meta.highlightB}). OFF = note off; ... / .. / .... = empty note / ins-vol / effect.`,
   };
 }
 
@@ -58,14 +64,14 @@ export function rowExplain(
   row: number,
 ): ExplainerText {
   const rowDur = rowDurationSec(song.meta);
-  const absRow = order * song.meta.patternLength + row;
+  const start = song.rowTimes[orderStartRow(song, order) + row] ?? 0;
   return {
     title: `Row ${hex2(row)} · order ${order}`,
     body: `At ${song.meta.bpm} BPM (${song.meta.highlightA} rows/beat, ${
       song.meta.highlightB
-    } rows/bar), lands ~${(absRow * rowDur).toFixed(
-      2,
-    )}s into the song. Move here to audition the row.`,
+    } rows/bar), lands ~${start.toFixed(2)}s into the song (${rowDur.toFixed(
+      3,
+    )}s/row). Move here to audition the row.`,
   };
 }
 

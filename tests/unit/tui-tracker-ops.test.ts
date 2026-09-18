@@ -94,6 +94,55 @@ describe("tracker block operations", () => {
     expect(session.backend!.songDuration()).toBeCloseTo(beforeDuration, 6);
   });
 
+  it("edits one channel's order length without touching the others", () => {
+    const lengthsBefore = session.channelOrderLengths();
+    const othersBefore = session.song!.channels[0]!.orderList.slice();
+    expect(session.insertChannelOrder(1, 0, false)).toBe(true);
+    expect(session.channelOrderLengths()[1]).toBe(lengthsBefore[1]! + 1);
+    expect(session.song!.channels[0]!.orderList).toEqual(othersBefore);
+    expect(session.song!.meta.orderLength).toBeGreaterThanOrEqual(
+      session.channelOrderLengths()[1]!,
+    );
+    // The engine sequence is rebuilt over the new LCM loop length.
+    expect(session.backend!.songDuration()).toBeCloseTo(
+      session.song!.rowTimes.at(-1)!,
+      6,
+    );
+    expect(session.removeChannelOrder(1, 0)).toBe(true);
+    expect(session.channelOrderLengths()[1]).toBe(lengthsBefore[1]!);
+    session.undo();
+    session.undo();
+  });
+
+  it("sets a channel length explicitly, growing and trimming", () => {
+    const otherBefore = session.song!.channels[2]!.orderList.length;
+    expect(session.setChannelOrderLength(1, 3)).toBe(true);
+    expect(session.channelOrderLengths()[1]).toBe(3);
+    expect(session.song!.channels[2]!.orderList.length).toBe(otherBefore);
+    expect(session.setChannelOrderLength(1, 1)).toBe(true);
+    expect(session.channelOrderLengths()[1]).toBe(1);
+    session.undo();
+    session.undo();
+  });
+
+  it("sets a pattern's row count and name for an order slot", () => {
+    session.setViewOrder(0);
+    const before = session.patternSlotInfo(0, 0)!;
+    expect(session.setPatternRowLength(0, 0, 8)).toBe(true);
+    expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(8);
+    expect(session.orderRows(0)).toBeGreaterThanOrEqual(8);
+    // The engine re-publishes the variable-row sequence after the edit.
+    expect(session.backend!.songDuration()).toBeCloseTo(
+      session.song!.rowTimes.at(-1)!,
+      6,
+    );
+    expect(session.setPatternName(0, 0, "Phase A")).toBe(true);
+    expect(session.patternSlotInfo(0, 0)!.name).toBe("Phase A");
+    session.undo();
+    session.undo();
+    expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before.rowLength);
+  });
+
   it("re-arranges orders with /move", async () => {
     const channel = session.song!.channels[0]!;
     const before = channel.orderList.slice(0, 2);
@@ -148,6 +197,14 @@ describe("tracker block operations", () => {
     expect(pitchSlideRate(1, 0x02, 32, 6)).toBeCloseTo(1 / Math.SQRT2, 5);
     expect(pitchSlideRate(1, 0x09, 5, 6)).toBeUndefined();
     expect(pitchSlideRate(1, 0x01, null, 6)).toBeUndefined();
+  });
+
+  it("toggles Cycles Mode by command", async () => {
+    expect(session.getState().cyclesMode).toBe(false);
+    expect((await run("cycles on")).ok).toBe(true);
+    expect(session.getState().cyclesMode).toBe(true);
+    expect((await run("cycles off")).ok).toBe(true);
+    expect(session.getState().cyclesMode).toBe(false);
   });
 
   it("recalls command history", () => {

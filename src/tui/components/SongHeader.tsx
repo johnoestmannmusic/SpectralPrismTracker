@@ -1,6 +1,8 @@
 import { Box, Text } from "ink";
 import type { Cursor, SessionState } from "../session";
 import { formatClock } from "../format";
+import { songLoopOrders } from "@/core/timing";
+import { orderRowLength } from "@/core/layout";
 
 interface Props {
   state: SessionState;
@@ -25,6 +27,14 @@ export function SongHeader({ state, playhead, context }: Props) {
   const transport = playing ? "▶ PLAY" : "■ STOP";
   const position = `${formatClock(time)} / ${formatClock(duration)}`;
   const row = playhead?.row ?? state.cursor.row;
+  const loopOrders = songLoopOrders(song);
+  const rowsInView = orderRowLength(song, viewOrder);
+  const channelLengths = song.channels.map((channel, index) => {
+    const length = channel.orderLength || channel.orderList.length;
+    // A channel has wrapped when the viewed order is past its own length.
+    const wrapped = length > 0 && viewOrder >= length;
+    return `${index + 1}:${length}${wrapped ? "↻" : ""}`;
+  });
 
   return (
     <Box flexDirection="column">
@@ -41,11 +51,12 @@ export function SongHeader({ state, playhead, context }: Props) {
       </Box>
       <Box>
         <Text dimColor>
-          {song.meta.bpm} BPM · beat {song.meta.highlightA}/bar{" "}
-          {song.meta.highlightB} · {song.meta.patternLength} rows · order{" "}
-          {viewOrder}/{Math.max(song.meta.orderLength - 1, 0)} · row {row} ·{" "}
-          {song.instruments.length} ins
+          {Number(song.meta.bpm.toFixed(2))} BPM · beat {song.meta.highlightA}
+          /bar {song.meta.highlightB} · {rowsInView} rows · order {viewOrder}/
+          {Math.max(loopOrders - 1, 0)} · loop {loopOrders} · row {row} · ch{" "}
+          {channelLengths.join(" ")} · {song.instruments.length} ins
           {state.loopMode === "order" ? ` · LOOP order ${viewOrder}` : ""}
+          {state.cyclesMode ? " · CYCLES" : ""}
         </Text>
       </Box>
       <OrderStrip state={state} playhead={playhead} context={context} />
@@ -66,7 +77,7 @@ function OrderStrip({ state, playhead, context }: Props) {
       </Box>
     );
   }
-  const total = song.meta.orderLength;
+  const total = songLoopOrders(song);
   // Show a window of orders around the viewed one.
   const window = 16;
   const start = Math.max(

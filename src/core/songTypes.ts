@@ -28,6 +28,8 @@ export interface Pattern {
   channel: number;
   index: number;
   name: string;
+  /** Number of rows this pattern plays (per-pattern order length). */
+  rowLength: number;
   rows: PatternCell[];
 }
 

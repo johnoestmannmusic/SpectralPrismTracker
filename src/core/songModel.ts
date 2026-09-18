@@ -1,6 +1,8 @@
 import type { NoteValue, Pattern, PatternCell } from "./songTypes";
 import { emptyPatternCell } from "./songTypes";
 import { buildRowTiming, DEFAULT_BPM } from "./timing";
+import { loopOrderCount } from "./orderLoop";
+import { channelPatternAt, patternRowLength } from "./layout";
 
 export interface SongMeta {
   name: string;
@@ -25,6 +27,11 @@ export interface InstrumentInfo {
 export interface Channel {
   index: number;
   effectColumns: number;
+  /**
+   * This channel's own loop length. Kept in sync with `orderList.length`;
+   * Channels loop independently (Cycles Mode), so lengths may differ.
+   */
+  orderLength: number;
   orderList: number[];
   /** Keyed by pattern index (not guaranteed dense). */
   patterns: Map<number, Pattern>;
@@ -50,9 +57,26 @@ export interface PatternEdit {
 }
 
 export interface ChannelPatternSnapshot {
+  /**
+   * Per-channel loop length. Kept in sync with `orderList.length` — the order
+   * list is the source of truth, and this mirror is serialized for clarity.
+   */
+  orderLength: number;
   orderList: number[];
-  patterns: Array<[number, PatternCell[]]>;
+  patterns: PatternTuple[];
 }
+
+/**
+ * `[patternIndex, rows, rowLength?, name?]`. The optional tail keeps legacy
+ * two-element snapshots valid while carrying the per-pattern row count and
+ * display name added in Cycles Mode.
+ */
+export type PatternTuple = [
+  index: number,
+  rows: PatternCell[],
+  rowLength?: number,
+  name?: string,
+];
 
 export interface PatternSnapshot {
   orderLength: number;
@@ -94,15 +118,29 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
+/** A channel's own loop length, falling back to its order list length. */
+function channelOrderLength(channel: Channel): number {
+  return channel.orderLength || channel.orderList.length;
+}
+
+/** The pattern a channel plays at a (possibly wrapped) global order. */
+function patternIndexAt(channel: Channel, order: number): number | undefined {
+  return channelPatternAt(channel, order);
+}
+
 function buildInstrumentTimeline(
   ch: Channel,
-  patternLength: number,
+  patternFallback: number,
+  orderCount: number,
 ): (number | null)[][] {
   let current: number | null = null;
-  return ch.orderList.map((pIdx) => {
-    const pat = ch.patterns.get(pIdx);
+  const rows: (number | null)[][] = [];
+  for (let order = 0; order < orderCount; order++) {
+    const pIdx = channelPatternAt(ch, order);
+    const pat = pIdx === undefined ? undefined : ch.patterns.get(pIdx);
+    const length = patternRowLength(pat, patternFallback);
     const row: (number | null)[] = [];
-    for (let r = 0; r < patternLength; r++) {
+    for (let r = 0; r < length; r++) {
       const cell = pat?.rows[r];
       if (cell && cell.instrument !== null) {
         // The tracker keeps the channel's instrument across note-offs; only a
@@ -112,27 +150,33 @@ function buildInstrumentTimeline(
       }
       row.push(current);
     }
-    return row;
-  });
+    rows.push(row);
+  }
+  return rows;
 }
 
 function buildNoteTimeline(
   ch: Channel,
-  patternLength: number,
+  patternFallback: number,
+  orderCount: number,
 ): (NoteValue | null)[][] {
   let current: NoteValue | null = null;
-  return ch.orderList.map((pIdx) => {
-    const pat = ch.patterns.get(pIdx);
+  const rows: (NoteValue | null)[][] = [];
+  for (let order = 0; order < orderCount; order++) {
+    const pIdx = channelPatternAt(ch, order);
+    const pat = pIdx === undefined ? undefined : ch.patterns.get(pIdx);
+    const length = patternRowLength(pat, patternFallback);
     const row: (NoteValue | null)[] = [];
-    for (let r = 0; r < patternLength; r++) {
+    for (let r = 0; r < length; r++) {
       const cell = pat?.rows[r];
       if (cell && cell.note) {
         current = cell.note.kind === "off" ? null : cell.note;
       }
       row.push(current);
     }
-    return row;
-  });
+    rows.push(row);
+  }
+  return rows;
 }
 
 export function instrumentColor(index: number): [number, number, number] {
@@ -161,7 +205,6 @@ export function buildSongModelFromProject(
 ): SongModel {
   const snapshot = project.patternSnapshot ?? null;
   const patternLength = 64;
-  const orderLength = snapshot?.orderLength ?? 1;
   const channelCount = Math.max(snapshot?.channels.length ?? 4, 1);
 
   const channels: Channel[] = [];
@@ -170,19 +213,24 @@ export function buildSongModelFromProject(
     const patterns = new Map<number, Pattern>();
     let effectColumns = 1;
     if (snap) {
-      for (const [index, rows] of snap.patterns) {
-        // Project snapshots store only populated rows; pad back to the full
-        // pattern length so every row index is addressable (the parser-built
-        // model was always dense).
+      for (const [index, rows, storedLength, storedName] of snap.patterns) {
+        const rowLength =
+          storedLength && storedLength > 0
+            ? Math.floor(storedLength)
+            : patternLength;
+        // Project snapshots store only populated rows; pad back to the
+        // pattern's own row count so every row index is addressable.
         const dense = rows.map(cloneCell);
-        while (dense.length < patternLength) {
+        while (dense.length < rowLength) {
           dense.push(cloneCell(emptyPatternCell()));
         }
+        if (dense.length > rowLength) dense.length = rowLength;
         patterns.set(index, {
           subsong: 0,
           channel: ch,
           index,
-          name: "",
+          name: storedName ?? "",
+          rowLength,
           rows: dense,
         });
         for (const cell of dense) {
@@ -194,17 +242,34 @@ export function buildSongModelFromProject(
         }
       }
     }
+    const orderList = (snap?.orderList ?? [0]).slice();
     const channel: Channel = {
       index: ch,
       effectColumns,
-      orderList: (snap?.orderList ?? [0]).slice(),
+      orderLength: orderList.length,
+      orderList,
       patterns,
       insTimeline: [],
       noteTimeline: [],
     };
-    channel.insTimeline = buildInstrumentTimeline(channel, patternLength);
-    channel.noteTimeline = buildNoteTimeline(channel, patternLength);
     channels.push(channel);
+  }
+
+  const orderCount = loopOrderCount(
+    channels.map((channel) => channelOrderLength(channel)),
+    1,
+  );
+  for (const channel of channels) {
+    channel.insTimeline = buildInstrumentTimeline(
+      channel,
+      patternLength,
+      orderCount,
+    );
+    channel.noteTimeline = buildNoteTimeline(
+      channel,
+      patternLength,
+      orderCount,
+    );
   }
 
   const instrumentCount = Math.max(project.instruments.length, 1);
@@ -223,7 +288,11 @@ export function buildSongModelFromProject(
       tuningA4: 440,
       bpm: project.bpmOverride ?? DEFAULT_BPM,
       patternLength,
-      orderLength,
+      orderLength: Math.max(
+        1,
+        snapshot?.orderLength ?? 1,
+        ...channels.map((channel) => channel.orderLength),
+      ),
       highlightA: project.highlightAOverride ?? 4,
       highlightB: project.highlightBOverride ?? 16,
       comment: project.comments || "",
@@ -239,19 +308,41 @@ export function buildSongModelFromProject(
   return song;
 }
 
+/**
+ * Recomputes every channel's cached `orderLength` from its order list and the
+ * snapshot's global `orderLength` as the maximum of those lengths. The global
+ * value drives the cursor/UI span; per-channel values drive independent
+ * cycling (FEAT-117).
+ */
+export function syncPatternSnapshotLengths(snapshot: PatternSnapshot): void {
+  let max = 1;
+  for (const channel of snapshot.channels) {
+    channel.orderLength = channel.orderList.length;
+    max = Math.max(max, channel.orderLength);
+  }
+  snapshot.orderLength = max;
+}
+
 export function patternSnapshot(song: SongModel): PatternSnapshot {
   return {
-    orderLength: song.meta.orderLength,
+    orderLength: Math.max(
+      1,
+      ...song.channels.map((channel) => channel.orderList.length),
+    ),
     channels: song.channels.map((channel) => {
-      const patterns: Array<[number, PatternCell[]]> = Array.from(
-        channel.patterns.entries(),
-      )
-        .map(
-          ([index, pattern]) =>
-            [index, pattern.rows.map(cloneCell)] as [number, PatternCell[]],
-        )
+      const patterns: PatternTuple[] = Array.from(channel.patterns.entries())
+        .map(([index, pattern]): PatternTuple => [
+          index,
+          pattern.rows.map(cloneCell),
+          patternRowLength(pattern, song.meta.patternLength),
+          pattern.name || undefined,
+        ])
         .sort((a, b) => a[0] - b[0]);
-      return { orderList: channel.orderList.slice(), patterns };
+      return {
+        orderLength: channel.orderList.length,
+        orderList: channel.orderList.slice(),
+        patterns,
+      };
     }),
   };
 }
@@ -260,7 +351,6 @@ export function applySnapshot(
   song: SongModel,
   snapshot: PatternSnapshot,
 ): void {
-  song.meta.orderLength = snapshot.orderLength;
   const patternLength = song.meta.patternLength;
   for (
     let i = 0;
@@ -270,18 +360,46 @@ export function applySnapshot(
     const channel = song.channels[i]!;
     const snap = snapshot.channels[i]!;
     channel.orderList = snap.orderList.slice();
+    channel.orderLength = channel.orderList.length;
     channel.patterns = new Map();
-    for (const [index, rows] of snap.patterns) {
+    for (const [index, rows, storedLength, storedName] of snap.patterns) {
+      const rowLength =
+        storedLength && storedLength > 0
+          ? Math.floor(storedLength)
+          : patternLength;
+      const dense = rows.map(cloneCell);
+      while (dense.length < rowLength) dense.push(emptyPatternCell());
+      if (dense.length > rowLength) dense.length = rowLength;
       channel.patterns.set(index, {
         subsong: 0,
         channel: channel.index,
         index,
-        name: "",
-        rows: rows.map(cloneCell),
+        name: storedName ?? "",
+        rowLength,
+        rows: dense,
       });
     }
-    channel.insTimeline = buildInstrumentTimeline(channel, patternLength);
-    channel.noteTimeline = buildNoteTimeline(channel, patternLength);
+  }
+  song.meta.orderLength = Math.max(
+    1,
+    snapshot.orderLength,
+    ...song.channels.map((channel) => channel.orderLength),
+  );
+  const orderCount = loopOrderCount(
+    song.channels.map((channel) => channelOrderLength(channel)),
+    Math.max(song.meta.orderLength, 1),
+  );
+  for (const channel of song.channels) {
+    channel.insTimeline = buildInstrumentTimeline(
+      channel,
+      patternLength,
+      orderCount,
+    );
+    channel.noteTimeline = buildNoteTimeline(
+      channel,
+      patternLength,
+      orderCount,
+    );
   }
   retime(song);
 }
@@ -300,7 +418,7 @@ export function cellAt(
 ): PatternCell {
   const ch = song.channels[channel];
   if (!ch) return emptyPatternCell();
-  const patternIndex = ch.orderList[order];
+  const patternIndex = patternIndexAt(ch, order);
   if (patternIndex === undefined) return emptyPatternCell();
   const pattern = ch.patterns.get(patternIndex);
   if (!pattern) return emptyPatternCell();
@@ -313,7 +431,7 @@ export function applyEdit(song: SongModel, edit: PatternEdit): void {
   const patternLength = song.meta.patternLength;
   const channel = song.channels[edit.channel];
   if (!channel) return;
-  const patternIndex = channel.orderList[edit.order];
+  const patternIndex = patternIndexAt(channel, edit.order);
   if (patternIndex === undefined) return;
 
   let pattern = channel.patterns.get(patternIndex);
@@ -323,6 +441,7 @@ export function applyEdit(song: SongModel, edit: PatternEdit): void {
       channel: edit.channel,
       index: patternIndex,
       name: "",
+      rowLength: patternLength,
       rows: Array.from({ length: patternLength }, () => emptyPatternCell()),
     };
     channel.patterns.set(patternIndex, pattern);
@@ -330,7 +449,15 @@ export function applyEdit(song: SongModel, edit: PatternEdit): void {
   while (pattern.rows.length <= edit.row) pattern.rows.push(emptyPatternCell());
   pattern.rows[edit.row] = cloneCell(edit.cell);
 
-  channel.insTimeline = buildInstrumentTimeline(channel, patternLength);
-  channel.noteTimeline = buildNoteTimeline(channel, patternLength);
+  const orderCount = loopOrderCount(
+    song.channels.map((c) => channelOrderLength(c)),
+    Math.max(song.meta.orderLength, 1),
+  );
+  channel.insTimeline = buildInstrumentTimeline(
+    channel,
+    patternLength,
+    orderCount,
+  );
+  channel.noteTimeline = buildNoteTimeline(channel, patternLength, orderCount);
   retime(song);
 }

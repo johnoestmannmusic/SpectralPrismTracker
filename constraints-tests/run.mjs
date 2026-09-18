@@ -20,15 +20,15 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 
 const child = spawn(process.execPath, ["--test", ...process.argv.slice(2)], {
-	cwd: here,
-	stdio: "inherit",
+  cwd: here,
+  stdio: "inherit",
 });
 
 child.on("exit", (code, signal) => {
-	process.exit(signal ? 1 : (code ?? 1));
+  process.exit(signal ? 1 : (code ?? 1));
 });
 
 child.on("error", (error) => {
-	console.error("failed to start the test runner:", error.message);
-	process.exit(1);
+  console.error("failed to start the test runner:", error.message);
+  process.exit(1);
 });

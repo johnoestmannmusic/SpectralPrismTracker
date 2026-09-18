@@ -1,6 +1,11 @@
 import { Box, Text } from "ink";
 import type { PatternCell } from "@/core/songTypes";
 import { cellAt } from "@/core/songModel";
+import {
+  channelPatternAt,
+  orderRowLength,
+  patternRowLength,
+} from "@/core/layout";
 import { flatColumnsForChannel, globalColumnIndex } from "@/core/tracker";
 import {
   formatEffect,
@@ -22,6 +27,8 @@ interface Props {
   state: SessionState;
   viewportRows: number;
   playhead: { order: number; row: number } | null;
+  /** Per-channel playhead positions (true polymeter); index = channel. */
+  playheads?: Array<{ order: number; row: number }> | null;
   selection: SelectionRect | null;
   /** Stepthrough cells to mark (order/channel/row). */
   highlight?: Array<{ channel: number; order: number; row: number }>;
@@ -92,6 +99,7 @@ export function PatternView({
   state,
   viewportRows,
   playhead,
+  playheads,
   selection,
   highlight,
 }: Props) {
@@ -104,7 +112,7 @@ export function PatternView({
     );
   }
 
-  const patternLength = song.meta.patternLength;
+  const patternLength = orderRowLength(song, viewOrder);
   const rows = Math.max(Math.min(viewportRows, patternLength), 1);
   // While following, the viewport scrolls to the playhead row rather than the
   // edit cursor, so editing never drags the view off the playhead.
@@ -143,9 +151,181 @@ export function PatternView({
   const beatA = Math.max(song.meta.highlightA || 4, 1);
   const beatB = Math.max(song.meta.highlightB || 16, 1);
 
+  // ---- Cycles Mode performance view --------------------------------------
+  // Outside Cycles Mode the tracker behaves exactly as before. Inside it, each
+  // channel gets its own row-number gutter and scrolls independently so its
+  // own playhead sits on a fixed centre line.
+  if (state.cyclesMode) {
+    const playing = playheads !== null;
+    const visible = Math.max(viewportRows, 1);
+    const centre = Math.floor(visible / 2);
+    const fallback = Math.max(song.meta.patternLength, 1);
+    const infos = Array.from({ length: channelCount }, (_, channel) => {
+      const ph = playheads?.[channel];
+      // Playing: centre on the channel's own playhead. Stopped: centre every
+      // channel on the edit cursor row at the viewed order.
+      const order = ph?.order ?? state.viewOrder;
+      const row = ph?.row ?? cursor.row;
+      const ch = song.channels[channel];
+      const patternIndex = ch ? channelPatternAt(ch, order) : undefined;
+      const pattern =
+        patternIndex === undefined ? undefined : ch?.patterns.get(patternIndex);
+      return { order, row, rows: patternRowLength(pattern, fallback) };
+    });
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Box>
+          <Text dimColor>Cycles · centred playhead · </Text>
+          <Text bold color="green">
+            {channelCount} channels
+          </Text>
+        </Box>
+        <Box flexDirection="row">
+          {Array.from({ length: channelCount }, (_, channel) => (
+            <Text key={channel}>
+              <Text
+                bold
+                color={CHANNEL_COLORS[channel % CHANNEL_COLORS.length]}
+              >
+                {`CH${channel + 1}`.padEnd(4 + widths[channel]!)}
+              </Text>
+              {channel < channelCount - 1 ? <Text dimColor> │ </Text> : null}
+            </Text>
+          ))}
+        </Box>
+        {Array.from({ length: visible }, (_, offset) => {
+          const isPlayhead = offset === centre;
+          return (
+            <Box key={offset} flexDirection="row">
+              {Array.from({ length: channelCount }, (_, channel) => {
+                const info = infos[channel]!;
+                const row = info.row - centre + offset;
+                const inRange = row >= 0 && row < info.rows;
+                const isBar = inRange && row % beatB === 0;
+                const isBeat = inRange && !isBar && row % beatA === 0;
+                const marker = isBar ? "●" : isBeat ? "·" : " ";
+                const cell = inRange
+                  ? cellAt(song, channel, info.order, row)
+                  : null;
+                const columns = flatColumnsForChannel(song, channel);
+                const heldNote = inRange
+                  ? (song.channels[channel]?.noteTimeline[info.order]?.[row] ??
+                    null)
+                  : null;
+                const heldInstrument = heldNote
+                  ? (song.channels[channel]?.insTimeline[info.order]?.[row] ??
+                    null)
+                  : null;
+                const heldInfo =
+                  heldInstrument !== null
+                    ? song.instruments[heldInstrument]
+                    : undefined;
+                const tint =
+                  state.colorInstruments && heldInfo
+                    ? instrumentTint(heldInfo.colorRgb, isPlayhead)
+                    : undefined;
+                const isCursorHere =
+                  inRange &&
+                  cursor.channel === channel &&
+                  cursor.order === info.order &&
+                  cursor.row === row;
+                const inSelectedRows =
+                  inRange &&
+                  selection !== null &&
+                  selection.order === info.order &&
+                  row >= selection.rowLo &&
+                  row <= selection.rowHi;
+                const beatBackground = isBar && !isPlayhead;
+                return (
+                  <Text key={channel}>
+                    <Text
+                      color={
+                        isPlayhead
+                          ? "green"
+                          : isBar
+                            ? "black"
+                            : isBeat
+                              ? "cyan"
+                              : undefined
+                      }
+                      backgroundColor={
+                        isPlayhead ? undefined : isBar ? "gray" : undefined
+                      }
+                      bold={isPlayhead || isBar}
+                      dimColor={!inRange || (!isPlayhead && !isBar && !isBeat)}
+                    >
+                      {inRange
+                        ? `${marker}${row.toString(16).toUpperCase().padStart(2, "0")} `
+                        : "    "}
+                    </Text>
+                    {cell ? (
+                      segmentsFor(song, channel, cell).map((segment, i) => {
+                        const isCursor =
+                          isCursorHere && segment.column === cursor.column;
+                        const inSelection =
+                          inSelectedRows &&
+                          segment.column >= 0 &&
+                          (() => {
+                            const global = globalColumnIndex(
+                              song,
+                              channel,
+                              columns[segment.column]!,
+                            );
+                            return (
+                              global >= selection!.colLo &&
+                              global <= selection!.colHi
+                            );
+                          })();
+                        return (
+                          <Text
+                            key={i}
+                            color={
+                              isCursor
+                                ? "black"
+                                : segment.column === 0 && cell.note
+                                  ? CHANNEL_COLORS[
+                                      channel % CHANNEL_COLORS.length
+                                    ]
+                                  : undefined
+                            }
+                            backgroundColor={
+                              isCursor
+                                ? "white"
+                                : inSelection
+                                  ? "blue"
+                                  : (tint ??
+                                    (beatBackground ? "gray" : undefined))
+                            }
+                            inverse={
+                              isPlayhead && !isCursor && !inSelection && !tint
+                            }
+                          >
+                            {segment.text}
+                          </Text>
+                        );
+                      })
+                    ) : (
+                      // Pad blank rows to the channel's fixed width so the
+                      // columns never shift as the channel scrolls.
+                      <Text dimColor>{" ".repeat(widths[channel]!)}</Text>
+                    )}
+                    {channel < channelCount - 1 ? (
+                      <Text dimColor> │ </Text>
+                    ) : null}
+                  </Text>
+                );
+              })}
+            </Box>
+          );
+        })}
+      </Box>
+    );
+  }
+
   const body = Array.from({ length: endRow - startRow }, (_, offset) => {
     const row = startRow + offset;
-    const isPlayheadRow = playhead?.order === viewOrder && playhead.row === row;
+    const isGlobalPlayheadRow =
+      playhead?.order === viewOrder && playhead.row === row;
     const isCursorRow = cursor.row === row && cursor.order === viewOrder;
     const isBar = row % beatB === 0;
     const isBeat = !isBar && row % beatA === 0;
@@ -159,7 +339,7 @@ export function PatternView({
       <Box key={row} flexDirection="row">
         <Text
           color={
-            isPlayheadRow
+            isGlobalPlayheadRow
               ? "green"
               : isBar
                 ? "black"
@@ -168,10 +348,10 @@ export function PatternView({
                   : undefined
           }
           backgroundColor={
-            isPlayheadRow ? undefined : isBar ? "gray" : undefined
+            isGlobalPlayheadRow ? undefined : isBar ? "gray" : undefined
           }
-          bold={isPlayheadRow || isBar}
-          dimColor={!isPlayheadRow && !isBar && !isBeat}
+          bold={isGlobalPlayheadRow || isBar}
+          dimColor={!isGlobalPlayheadRow && !isBar && !isBeat}
         >
           {marker}
           {row.toString(16).toUpperCase().padStart(2, "0")}{" "}
@@ -190,6 +370,9 @@ export function PatternView({
             : null;
           const info =
             instrument !== null ? song.instruments[instrument] : undefined;
+          const channelPlayhead = playheads?.[channel] ?? playhead;
+          const isPlayheadRow =
+            channelPlayhead?.order === viewOrder && channelPlayhead.row === row;
           const tint =
             state.colorInstruments && info
               ? instrumentTint(info.colorRgb, isPlayheadRow)

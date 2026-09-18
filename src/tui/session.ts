@@ -1,6 +1,6 @@
 import { WebAudioBackend } from "@/audio/webAudioBackend";
 import type { PatternNote } from "@/audio/backend";
-import type { NoteValue, PatternCell } from "@/core/songTypes";
+import type { NoteValue, Pattern, PatternCell } from "@/core/songTypes";
 import { defaultMasterFx, type MasterFxSettings } from "@/core/masterFx";
 import {
   applyEdit,
@@ -22,7 +22,24 @@ import {
   sequenceFromSong,
   type SamplerSettings,
 } from "@/core/sampler";
-import { clampBpm, rowDuration, rowTime, songPositionAt } from "@/core/timing";
+import {
+  clampBpm,
+  rowDuration,
+  rowTime,
+  songGlobalRowAt,
+  songPositionAt,
+} from "@/core/timing";
+import {
+  channelPatternAt,
+  channelOrderStartRow,
+  channelStepAtGlobal,
+  orderRowLength,
+  orderStartRow,
+  patternRowLength,
+  rowToOrder,
+  songLoopOrders,
+  totalSongRows,
+} from "@/core/layout";
 import { samplerPlaybackRate } from "@/core/pitch";
 import { type BuildStep, type BuildTarget } from "@/core/stepthrough";
 import {
@@ -37,13 +54,16 @@ import {
   flatColumnsForChannel,
   globalColumnIndex,
   insertPatternAfter,
+  insertPatternInChannel as insertPatternInChannelSnapshot,
   interpolateColumn,
   moveOrder as moveOrderSnapshot,
+  moveOrderInChannel as moveOrderInChannelSnapshot,
   pitchSlideRate,
   readValue,
   recordLastValue,
   remapInstrumentsAfterDelete,
   removePatternAt as removePatternAtSnapshot,
+  removePatternInChannel as removePatternInChannelSnapshot,
   selectionRect,
   setOrderPattern,
   writeValue,
@@ -107,6 +127,11 @@ export interface SessionState {
   follow: boolean;
   /** When true, pattern cells are tinted by the instrument of the held note. */
   colorInstruments: boolean;
+  /**
+   * Cycles Mode: true polymeter view. Each channel scrolls its own row clock
+   * around a centred playhead instead of the normal aligned tracker grid.
+   */
+  cyclesMode: boolean;
   /** Row the view scrolls to while following (null when not following). */
   viewRow: number | null;
   dirty: boolean;
@@ -182,6 +207,7 @@ function initialState(): SessionState {
     step: 1,
     follow: true,
     colorInstruments: true,
+    cyclesMode: false,
     viewRow: null,
     dirty: false,
     commandHistory: [],
@@ -409,12 +435,37 @@ export class Session {
     this.patch({ colorInstruments });
   }
 
+  /** Cycles Mode: independent per-channel polymeter view. */
+  setCyclesMode(cyclesMode: boolean): void {
+    this.patch({ cyclesMode });
+  }
+
+  toggleCyclesMode(): boolean {
+    const next = !this.state.cyclesMode;
+    this.patch({ cyclesMode: next });
+    return next;
+  }
+
   /** Current order/row under the playhead, or null when not playing. */
   playheadPosition(): { order: number; row: number } | null {
     const song = this.state.song;
     if (!song || !this.state.playing) return null;
     const position = songPositionAt(song, this.state.time);
     return { order: position.orderPos, row: position.row };
+  }
+
+  /**
+   * Per-channel (order, row) under the playhead. With true polymeter each
+   * channel has its own position, so the tracker can show them out of step.
+   */
+  channelPlayheads(): Array<{ order: number; row: number }> | null {
+    const song = this.state.song;
+    if (!song || !this.state.playing) return null;
+    const globalRow = songGlobalRowAt(song, this.state.time);
+    return song.channels.map((_, channel) => {
+      const step = channelStepAtGlobal(song, channel, globalRow);
+      return { order: step?.order ?? 0, row: step?.row ?? 0 };
+    });
   }
 
   // ---- transport -----------------------------------------------------------
@@ -478,13 +529,26 @@ export class Session {
 
   setViewOrder(order: number): void {
     const song = this.state.song;
-    const max = song ? Math.max(song.meta.orderLength - 1, 0) : 0;
+    const max = song ? Math.max(songLoopOrders(song) - 1, 0) : 0;
     const clamped = Math.min(Math.max(order, 0), max);
     this.patch({
       viewOrder: clamped,
       cursor: { ...this.state.cursor, order: clamped },
     });
     this.syncLoopRange();
+  }
+
+  /** Rows in one order (the longest pattern any channel plays there). */
+  orderRows(order: number): number {
+    const song = this.state.song;
+    if (!song) return 1;
+    return orderRowLength(song, order);
+  }
+
+  /** Number of orders in one full song loop (LCM of channel lengths). */
+  loopOrderCount(): number {
+    const song = this.state.song;
+    return song ? songLoopOrders(song) : 0;
   }
 
   /** Loop the whole song (default) or just the viewed order. */
@@ -510,15 +574,26 @@ export class Session {
       engine.setLoopRange(null);
       return;
     }
-    const patternLength = Math.max(song.meta.patternLength, 1);
     const order = Math.min(
       Math.max(this.state.viewOrder, 0),
-      Math.max(song.meta.orderLength - 1, 0),
+      Math.max(songLoopOrders(song) - 1, 0),
     );
-    engine.setLoopRange({
-      startRow: order * patternLength,
-      endRow: (order + 1) * patternLength,
-    });
+    // Order-loop follows channel 0's own cycle (channels are un-synced).
+    const channel0 = song.channels[0];
+    const fallback = Math.max(song.meta.patternLength, 1);
+    if (!channel0) {
+      engine.setLoopRange(null);
+      return;
+    }
+    const startRow = channelOrderStartRow(channel0, order, fallback);
+    const patternIndex = channelPatternAt(channel0, order);
+    const rows = patternRowLength(
+      patternIndex === undefined
+        ? undefined
+        : channel0.patterns.get(patternIndex),
+      fallback,
+    );
+    engine.setLoopRange({ startRow, endRow: startRow + rows });
   }
 
   /**
@@ -616,25 +691,23 @@ export class Session {
     const selectionAnchor = keepSelection
       ? (this.state.selectionAnchor ?? { ...cursor })
       : null;
-    const patternLength = Math.max(song.meta.patternLength, 1);
-    const orderLength = Math.max(song.meta.orderLength, 1);
-    const totalRows = orderLength * patternLength;
+    const orderLength = Math.max(songLoopOrders(song), 1);
     const channelCount = Math.min(song.channels.length, 4);
 
     if (delta.row !== undefined && delta.row !== 0) {
       if (keepSelection) {
-        cursor.row = Math.min(
-          Math.max(cursor.row + delta.row, 0),
-          patternLength - 1,
-        );
+        const rows = orderRowLength(song, cursor.order);
+        cursor.row = Math.min(Math.max(cursor.row + delta.row, 0), rows - 1);
         this.patch({ cursor, selectionAnchor });
       } else {
-        // Rows wrap across pattern boundaries (moving past the last row goes
-        // to the next order, and before the first row to the previous one).
-        let absolute = cursor.order * patternLength + cursor.row + delta.row;
-        absolute = ((absolute % totalRows) + totalRows) % totalRows;
-        cursor.order = Math.floor(absolute / patternLength);
-        cursor.row = absolute % patternLength;
+        // Rows wrap across order boundaries (orders have variable row counts).
+        const total = totalSongRows(song);
+        let absolute =
+          orderStartRow(song, cursor.order) + cursor.row + delta.row;
+        absolute = ((absolute % total) + total) % total;
+        const position = rowToOrder(song, absolute);
+        cursor.order = position.order;
+        cursor.row = position.row;
         this.patch({ cursor, selectionAnchor, viewOrder: cursor.order });
       }
       return;
@@ -651,6 +724,7 @@ export class Session {
           (((cursor.order + delta.order) % orderLength) + orderLength) %
           orderLength;
       }
+      cursor.row = Math.min(cursor.row, orderRowLength(song, cursor.order) - 1);
       this.patch({ cursor, selectionAnchor, viewOrder: cursor.order });
       return;
     }
@@ -685,13 +759,14 @@ export class Session {
     const cursor = { ...this.state.cursor, ...partial };
     cursor.order = Math.min(
       Math.max(cursor.order, 0),
-      song.meta.orderLength - 1,
+      Math.max(songLoopOrders(song) - 1, 0),
     );
     cursor.channel = Math.min(
       Math.max(cursor.channel, 0),
       Math.min(song.channels.length, 4) - 1,
     );
-    cursor.row = Math.min(Math.max(cursor.row, 0), song.meta.patternLength - 1);
+    const rowsInOrder = orderRowLength(song, cursor.order);
+    cursor.row = Math.min(Math.max(cursor.row, 0), rowsInOrder - 1);
     const columns = flatColumnsForChannel(song, cursor.channel).length;
     cursor.column = Math.min(Math.max(cursor.column, 0), columns - 1);
     this.patch({ cursor, viewOrder: cursor.order });
@@ -861,7 +936,7 @@ export class Session {
     if (!current || flat.length === 0) return;
     const columnIdx = globalColumnIndex(song, current.channel, current.column);
     const rect = this.selection();
-    const patternLength = song.meta.patternLength;
+    const patternLength = orderRowLength(song, cursor.order);
     const wholeColumn =
       rect !== null &&
       rect.rowLo === 0 &&
@@ -1122,8 +1197,8 @@ export class Session {
       flatColumnsForChannel(song, channel)[this.state.cursor.column]!,
     );
     const end = flood
-      ? song.meta.patternLength
-      : Math.min(row + block.cells.length, song.meta.patternLength);
+      ? orderRowLength(song, order)
+      : Math.min(row + block.cells.length, orderRowLength(song, order));
     const entries: HistoryEntry[] = [];
     for (let r = row; r < end; r++) {
       const values = block.cells[(r - row) % block.cells.length]!;
@@ -1328,6 +1403,225 @@ export class Session {
     this.patch({ dirty: true, viewOrder: 0 });
     this.syncAfterSnapshot();
     this.recordMemento("clear all patterns", before);
+    this.markAction();
+    return true;
+  }
+
+  // ---- per-channel order editing (Cycles Mode) -----------------------------
+
+  /** Per-channel order lengths, for the Cycles order UI. */
+  channelOrderLengths(): number[] {
+    const song = this.state.song;
+    if (!song) return [];
+    return song.channels.map(
+      (channel) => channel.orderLength || channel.orderList.length,
+    );
+  }
+
+  /** Inserts a new order into one channel only; `duplicate` clones its pattern. */
+  insertChannelOrder(
+    channel: number,
+    order: number,
+    duplicate = false,
+  ): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const before = this.captureMemento();
+    const pos = Math.min(
+      Math.max(order, 0),
+      Math.max(ch.orderList.length - 1, 0),
+    );
+    const snapshot = patternSnapshot(song);
+    const snapChannel = snapshot.channels[channel];
+    if (!snapChannel) return false;
+    insertPatternInChannelSnapshot(
+      snapChannel,
+      pos,
+      song.meta.patternLength,
+      duplicate,
+    );
+    applySnapshot(song, snapshot);
+    this.patch({ dirty: true, viewOrder: this.clampViewOrder(song) });
+    this.syncAfterSnapshot();
+    this.recordMemento(
+      duplicate ? "duplicate channel order" : "insert channel order",
+      before,
+    );
+    this.markAction();
+    return true;
+  }
+
+  /** Removes one order from one channel only; refuses to empty the channel. */
+  removeChannelOrder(channel: number, order: number): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch || ch.orderList.length <= 1) return false;
+    const pos = Math.min(Math.max(order, 0), ch.orderList.length - 1);
+    const before = this.captureMemento();
+    const snapshot = patternSnapshot(song);
+    const snapChannel = snapshot.channels[channel];
+    if (!snapChannel || !removePatternInChannelSnapshot(snapChannel, pos))
+      return false;
+    applySnapshot(song, snapshot);
+    this.patch({ dirty: true, viewOrder: this.clampViewOrder(song) });
+    this.syncAfterSnapshot();
+    this.recordMemento("remove channel order", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Swaps an order with its neighbour on one channel only. */
+  moveChannelOrder(channel: number, order: number, direction: -1 | 1): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const pos = Math.min(Math.max(order, 0), ch.orderList.length - 1);
+    const before = this.captureMemento();
+    const snapshot = patternSnapshot(song);
+    const snapChannel = snapshot.channels[channel];
+    if (
+      !snapChannel ||
+      !moveOrderInChannelSnapshot(snapChannel, pos, direction)
+    )
+      return false;
+    applySnapshot(song, snapshot);
+    this.patch({ dirty: true, viewOrder: this.clampViewOrder(song) });
+    this.syncAfterSnapshot();
+    this.recordMemento("move channel order", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Sets one channel's order length, growing with empty patterns or trimming. */
+  setChannelOrderLength(channel: number, length: number): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const target = Math.max(1, Math.min(Math.round(length), 256));
+    if (target === ch.orderList.length) return false;
+    const before = this.captureMemento();
+    const snapshot = patternSnapshot(song);
+    const snapChannel = snapshot.channels[channel];
+    if (!snapChannel) return false;
+    while (snapChannel.orderList.length < target) {
+      insertPatternInChannelSnapshot(
+        snapChannel,
+        snapChannel.orderList.length - 1,
+        song.meta.patternLength,
+        false,
+      );
+    }
+    while (snapChannel.orderList.length > target) {
+      if (
+        !removePatternInChannelSnapshot(
+          snapChannel,
+          snapChannel.orderList.length - 1,
+        )
+      )
+        break;
+    }
+    applySnapshot(song, snapshot);
+    this.patch({ dirty: true, viewOrder: this.clampViewOrder(song) });
+    this.syncAfterSnapshot();
+    this.recordMemento("set channel order length", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Re-points one channel's order position at a pattern number. */
+  setChannelOrderPatternNumber(
+    channel: number,
+    order: number,
+    patternIndex: number,
+  ): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const pos = Math.min(Math.max(order, 0), ch.orderList.length - 1);
+    const next = Math.min(Math.max(Math.round(patternIndex), 0), 255);
+    const before = this.captureMemento();
+    const snapshot = patternSnapshot(song);
+    if (!setOrderPattern(snapshot, pos, next, song.meta.patternLength, channel))
+      return false;
+    applySnapshot(song, snapshot);
+    this.patch({ dirty: true, viewOrder: this.clampViewOrder(song) });
+    this.syncAfterSnapshot();
+    this.recordMemento("set channel pattern number", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Keeps the viewed order inside the song after a channel length change. */
+  private clampViewOrder(song: SongModel): number {
+    const max = Math.max(songLoopOrders(song) - 1, 0);
+    return Math.min(Math.max(this.state.viewOrder, 0), max);
+  }
+
+  // ---- pattern settings ----------------------------------------------------
+
+  /** The pattern a channel plays at an order slot. */
+  private patternForSlot(
+    channel: number,
+    order: number,
+  ): { index: number; pattern: Pattern } | null {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return null;
+    const index = channelPatternAt(ch, order);
+    if (index === undefined) return null;
+    const pattern = ch.patterns.get(index);
+    if (!pattern) return null;
+    return { index, pattern };
+  }
+
+  /** Row count / name / number of the pattern at a channel/order slot. */
+  patternSlotInfo(
+    channel: number,
+    order: number,
+  ): { index: number; rowLength: number; name: string } | null {
+    const target = this.patternForSlot(channel, order);
+    if (!target) return null;
+    return {
+      index: target.index,
+      rowLength: target.pattern.rowLength,
+      name: target.pattern.name,
+    };
+  }
+
+  /** Sets the row count of the pattern at a slot (shared by every slot ref). */
+  setPatternRowLength(channel: number, order: number, length: number): boolean {
+    const song = this.state.song;
+    const target = this.patternForSlot(channel, order);
+    if (!song || !target) return false;
+    const rowCount = Math.max(1, Math.min(Math.round(length), 256));
+    if (rowCount === target.pattern.rowLength) return false;
+    const before = this.captureMemento();
+    const snapshot = patternSnapshot(song);
+    const snapChannel = snapshot.channels[channel];
+    if (!snapChannel) return false;
+    const entry = snapChannel.patterns.find(
+      ([index]) => index === target.index,
+    );
+    if (!entry) return false;
+    entry[2] = rowCount;
+    applySnapshot(song, snapshot);
+    this.patch({ dirty: true, viewOrder: this.clampViewOrder(song) });
+    this.syncAfterSnapshot();
+    this.recordMemento("set pattern rows", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Renames the pattern at a channel/order slot. */
+  setPatternName(channel: number, order: number, name: string): boolean {
+    const target = this.patternForSlot(channel, order);
+    if (!target) return false;
+    if (target.pattern.name === name) return false;
+    const before = this.captureMemento();
+    target.pattern.name = name;
+    this.patch({ dirty: true });
+    this.recordMemento("rename pattern", before);
     this.markAction();
     return true;
   }
@@ -1819,7 +2113,7 @@ export class Session {
       const slide = (cell.effects ?? []).find(
         (slot) => slot.effect === 0x01 || slot.effect === 0x02,
       );
-      const absolute = order * song.meta.patternLength + row;
+      const absolute = orderStartRow(song, order) + row;
       const ticks = song.rowTicks[absolute] ?? 6;
       const slideRate = slide
         ? pitchSlideRate(rate, slide.effect, slide.value, ticks)
@@ -1852,7 +2146,7 @@ export class Session {
     );
     if (notes.length === 0) return;
     engine.ensureStarted();
-    const absolute = order * song.meta.patternLength + row;
+    const absolute = orderStartRow(song, order) + row;
     engine.previewPattern(
       channels,
       rowTime(song, order, row),
@@ -1896,8 +2190,7 @@ export class Session {
         action.row,
       );
       if (notes.length > 0) {
-        const absolute =
-          action.order * target.song.meta.patternLength + action.row;
+        const absolute = orderStartRow(target.song, action.order) + action.row;
         engine.previewPattern(
           [action.channel],
           0,

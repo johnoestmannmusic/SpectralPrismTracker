@@ -1,6 +1,10 @@
 import type { NoteValue, PatternCell } from "./songTypes";
 import { cloneCell } from "./songModel";
 import { applyEdit, type PatternSnapshot, type SongModel } from "./songModel";
+import {
+  syncPatternSnapshotLengths,
+  type ChannelPatternSnapshot,
+} from "./songModel";
 
 export type EditColumn =
   | { kind: "note" }
@@ -431,47 +435,92 @@ function cellFrom(
 
 // ---- Pattern Manager snapshot helpers ----
 
+function emptySnapshotRows(patternLength: number): PatternCell[] {
+  return Array.from({ length: patternLength }, () => ({
+    note: null,
+    instrument: null,
+    volume: null,
+    effects: Array.from({ length: 8 }, () => ({ effect: null, value: null })),
+  }));
+}
+
+/** Inserts a new order after `pos` on one channel only, duplicating when asked. */
+export function insertPatternInChannel(
+  channel: ChannelPatternSnapshot,
+  pos: number,
+  patternLength: number,
+  duplicate: boolean,
+): void {
+  const maxIndex = channel.patterns.reduce(
+    (max, [index]) => Math.max(max, index),
+    -1,
+  );
+  const nextIndex = Math.min(maxIndex + 1, 0xffff);
+  let rows = emptySnapshotRows(patternLength);
+  if (duplicate) {
+    const sourceIndex = channel.orderList[pos];
+    const source = channel.patterns.find(
+      ([index]) => index === sourceIndex,
+    )?.[1];
+    if (source) rows = source.map(cloneCell);
+  }
+  channel.patterns.push([nextIndex, rows]);
+  channel.orderList.splice(
+    Math.min(pos + 1, channel.orderList.length),
+    0,
+    nextIndex,
+  );
+  channel.orderLength = channel.orderList.length;
+}
+
+/** Inserts a new order after `pos` on every channel, then re-syncs lengths. */
 export function insertPatternAfter(
   snapshot: PatternSnapshot,
   pos: number,
   patternLength: number,
   duplicate: boolean,
 ): void {
-  snapshot.orderLength += 1;
   for (const channel of snapshot.channels) {
-    const maxIndex = channel.patterns.reduce(
-      (max, [index]) => Math.max(max, index),
-      -1,
-    );
-    const nextIndex = Math.min(maxIndex + 1, 0xffff);
-    let rows: PatternCell[] = Array.from({ length: patternLength }, () => ({
-      note: null,
-      instrument: null,
-      volume: null,
-      effects: Array.from({ length: 8 }, () => ({ effect: null, value: null })),
-    }));
-    if (duplicate) {
-      const sourceIndex = channel.orderList[pos];
-      const source = channel.patterns.find(
-        ([index]) => index === sourceIndex,
-      )?.[1];
-      if (source) rows = source.map(cloneCell);
-    }
-    channel.patterns.push([nextIndex, rows]);
-    channel.orderList.splice(
-      Math.min(pos + 1, channel.orderList.length),
-      0,
-      nextIndex,
-    );
+    insertPatternInChannel(channel, pos, patternLength, duplicate);
   }
+  syncPatternSnapshotLengths(snapshot);
 }
 
+/** Removes `pos` from one channel; refuses to empty its order list. */
+export function removePatternInChannel(
+  channel: ChannelPatternSnapshot,
+  pos: number,
+): boolean {
+  if (channel.orderList.length <= 1) return false;
+  if (pos < 0 || pos >= channel.orderList.length) return false;
+  channel.orderList.splice(pos, 1);
+  channel.orderLength = channel.orderList.length;
+  return true;
+}
+
+/** Removes `pos` from every channel that has it, then re-syncs lengths. */
 export function removePatternAt(snapshot: PatternSnapshot, pos: number): void {
   if (snapshot.orderLength <= 1) return;
-  snapshot.orderLength -= 1;
   for (const channel of snapshot.channels) {
-    if (pos < channel.orderList.length) channel.orderList.splice(pos, 1);
+    if (pos < channel.orderList.length) removePatternInChannel(channel, pos);
   }
+  syncPatternSnapshotLengths(snapshot);
+}
+
+/** Swaps an order position with its neighbour on one channel. */
+export function moveOrderInChannel(
+  channel: ChannelPatternSnapshot,
+  pos: number,
+  direction: -1 | 1,
+): boolean {
+  const target = pos + direction;
+  if (target < 0 || target >= channel.orderList.length) return false;
+  const a = channel.orderList[pos];
+  const b = channel.orderList[target];
+  if (a === undefined || b === undefined) return false;
+  channel.orderList[pos] = b;
+  channel.orderList[target] = a;
+  return true;
 }
 
 /** Swaps an order position with its neighbour across every channel. */
@@ -482,27 +531,25 @@ export function moveOrder(
 ): boolean {
   const target = pos + direction;
   if (target < 0 || target >= snapshot.orderLength) return false;
+  let moved = false;
   for (const channel of snapshot.channels) {
-    const a = channel.orderList[pos];
-    const b = channel.orderList[target];
-    if (a === undefined || b === undefined) continue;
-    channel.orderList[pos] = b;
-    channel.orderList[target] = a;
+    if (moveOrderInChannel(channel, pos, direction)) moved = true;
   }
-  return true;
+  return moved;
 }
 
 /**
- * Re-points an order position at a specific pattern number on channel 0,
- * creating an empty pattern when that number is new (Pattern Manager parity).
+ * Re-points an order position at a specific pattern number on `channelIndex`
+ * (default channel 0), creating an empty pattern when that number is new.
  */
 export function setOrderPattern(
   snapshot: PatternSnapshot,
   pos: number,
   patternIndex: number,
   patternLength: number,
+  channelIndex = 0,
 ): boolean {
-  const channel = snapshot.channels[0];
+  const channel = snapshot.channels[channelIndex];
   if (!channel || pos < 0 || pos >= channel.orderList.length) return false;
   channel.orderList[pos] = patternIndex;
   if (!channel.patterns.some(([index]) => index === patternIndex)) {
@@ -573,19 +620,7 @@ export function clearPatternsSnapshot(
   snapshot.orderLength = 1;
   for (const channel of snapshot.channels) {
     channel.orderList = [0];
-    channel.patterns = [
-      [
-        0,
-        Array.from({ length: patternLength }, () => ({
-          note: null,
-          instrument: null,
-          volume: null,
-          effects: Array.from({ length: 8 }, () => ({
-            effect: null,
-            value: null,
-          })),
-        })),
-      ],
-    ];
+    channel.orderLength = 1;
+    channel.patterns = [[0, emptySnapshotRows(patternLength)]];
   }
 }

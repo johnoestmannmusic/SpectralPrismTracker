@@ -10,6 +10,12 @@ import {
 } from "@/core/songModel";
 import { rowDurationSec, songPositionAt } from "@/core/timing";
 import {
+  orderRowLength,
+  songLoopRows,
+  channelStepAtGlobal,
+  totalSongRows,
+} from "@/core/layout";
+import {
   LOOKAHEAD_SEC,
   setSpectralEnabled,
   Scheduler,
@@ -117,6 +123,147 @@ describe("song model", () => {
     expect(song.channels[0]!.insTimeline[0]![5]).toBe(0);
   });
 
+  it("loops channels independently at the LCM of their order lengths", () => {
+    const cell = (note: number | null) => ({
+      note: note === null ? null : { kind: "note" as const, note },
+      instrument: note === null ? null : 0,
+      volume: note === null ? null : 15,
+      effects: Array.from({ length: 8 }, () => ({
+        effect: null,
+        value: null,
+      })),
+    });
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.patternSnapshot = {
+      orderLength: 3,
+      channels: [
+        {
+          orderLength: 2,
+          orderList: [0, 1],
+          patterns: [
+            [0, [cell(60)]],
+            [1, [cell(62)]],
+          ],
+        },
+        {
+          orderLength: 3,
+          orderList: [0, 1, 2],
+          patterns: [
+            [0, [cell(48)]],
+            [1, [cell(50)]],
+            [2, [cell(52)]],
+          ],
+        },
+        { orderLength: 1, orderList: [0], patterns: [[0, [cell(40)]]] },
+        { orderLength: 1, orderList: [0], patterns: [[0, [cell(36)]]] },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    // UI span is the longest channel; playback loops at the LCM (2·3 = 6).
+    expect(song.meta.orderLength).toBe(3);
+    expect(song.rowTimes.length).toBe(6 * song.meta.patternLength + 1);
+
+    // Channel 0 (length 2) wraps: order 2 reuses pattern 0.
+    expect(song.channels[0]!.insTimeline.length).toBe(6);
+    expect(song.channels[0]!.noteTimeline[0]![0]).toEqual({
+      kind: "note",
+      note: 60,
+    });
+    expect(song.channels[0]!.noteTimeline[1]![0]).toEqual({
+      kind: "note",
+      note: 62,
+    });
+    expect(song.channels[0]!.noteTimeline[2]![0]).toEqual({
+      kind: "note",
+      note: 60,
+    });
+
+    const seq = sequenceFromSong(song);
+    expect(seq.rows.length).toBe(6 * song.meta.patternLength);
+    const wrappedRow = song.meta.patternLength * 2;
+    const wrapped = seq.rows[wrappedRow]!.filter((e) => e.type === "note");
+    expect(wrapped).toHaveLength(4);
+  });
+
+  it("honours per-pattern row lengths in timing and sequence", () => {
+    const cell = (note: number | null) => ({
+      note: note === null ? null : { kind: "note" as const, note },
+      instrument: note === null ? null : 0,
+      volume: note === null ? null : 15,
+      effects: Array.from({ length: 8 }, () => ({
+        effect: null,
+        value: null,
+      })),
+    });
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.patternSnapshot = {
+      orderLength: 2,
+      channels: [
+        {
+          orderLength: 2,
+          orderList: [0, 1],
+          patterns: [
+            [0, [cell(60)], 8],
+            [1, [cell(62)], 3],
+          ],
+        },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    expect(orderRowLength(song, 0)).toBe(8);
+    expect(orderRowLength(song, 1)).toBe(3);
+    expect(totalSongRows(song)).toBe(11);
+    expect(song.rowTimes.length).toBe(12);
+    expect(sequenceFromSong(song).rows.length).toBe(11);
+    // The short order is still addressable and wraps to the next order.
+    const position = songPositionAt(song, song.rowTimes[8]! + 0.0001);
+    expect(position.orderPos).toBe(1);
+    expect(position.row).toBe(0);
+  });
+
+  it("drifts channels independently in true polymeter", () => {
+    const cell = (note: number | null) => ({
+      note: note === null ? null : { kind: "note" as const, note },
+      instrument: note === null ? null : 0,
+      volume: note === null ? null : 15,
+      effects: Array.from({ length: 8 }, () => ({
+        effect: null,
+        value: null,
+      })),
+    });
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.patternSnapshot = {
+      orderLength: 1,
+      channels: [
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [[0, [cell(60)], 4]],
+        },
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [[0, [cell(67)], 6]],
+        },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    expect(songLoopRows(song)).toBe(12); // LCM(4, 6)
+    expect(song.rowTimes.length).toBe(13);
+    expect(sequenceFromSong(song).rows.length).toBe(12);
+
+    // At row 4 the 4-row channel has wrapped to 0 while the 6-row channel is
+    // still at row 4 — the channels are audibly out of step.
+    expect(channelStepAtGlobal(song, 0, 4)).toMatchObject({ order: 0, row: 0 });
+    expect(channelStepAtGlobal(song, 1, 4)).toMatchObject({ order: 0, row: 4 });
+    // They realign at the LCM point.
+    expect(channelStepAtGlobal(song, 0, 12)).toMatchObject({ row: 0 });
+    expect(channelStepAtGlobal(song, 1, 12)).toMatchObject({ row: 0 });
+  });
+
   it("retime recomputes row times from a changed BPM", () => {
     const song = fixture();
     const originalSecondRow = song.rowTimes[1]!;
@@ -161,6 +308,7 @@ describe("song model", () => {
       orderLength: 1,
       channels: [
         {
+          orderLength: 1,
           orderList: [0],
           patterns: [
             [
@@ -315,6 +463,73 @@ describe("project json", () => {
     expect(encoded).not.toContain('"muted"');
     const reparsed = projectFromJson(encoded);
     expect(reparsed).toEqual(project);
+  });
+
+  it("round-trips per-channel order lengths", () => {
+    const empty = () => ({
+      note: null,
+      instrument: null,
+      volume: null,
+      effects: Array.from({ length: 8 }, () => ({
+        effect: null,
+        value: null,
+      })),
+    });
+    const project = defaultProject();
+    project.instruments = [defaultSamplerSettings()];
+    project.patternSnapshot = {
+      orderLength: 3,
+      channels: [
+        {
+          orderLength: 3,
+          orderList: [0, 1, 2],
+          patterns: [
+            [0, [empty()]],
+            [1, [empty()]],
+            [2, [empty()]],
+          ],
+        },
+        { orderLength: 1, orderList: [0], patterns: [[0, [empty()]]] },
+        {
+          orderLength: 2,
+          orderList: [0, 1],
+          patterns: [
+            [0, [empty()]],
+            [1, [empty()]],
+          ],
+        },
+        { orderLength: 1, orderList: [0], patterns: [[0, [empty()]]] },
+      ],
+    };
+    const reread = projectFromJson(projectToJson(project));
+    expect(
+      reread.patternSnapshot!.channels.map((channel) => channel.orderLength),
+    ).toEqual([3, 1, 2, 1]);
+    expect(reread.patternSnapshot!.orderLength).toBe(3);
+    const song = buildSongModelFromProject(reread);
+    expect(song.meta.orderLength).toBe(3);
+    expect(song.channels.map((channel) => channel.orderLength)).toEqual([
+      3, 1, 2, 1,
+    ]);
+  });
+
+  it("defaults per-channel order length to the order list when absent", () => {
+    const project = projectFromJson(
+      JSON.stringify({
+        version: 1,
+        instruments: [{}],
+        patternSnapshot: {
+          orderLength: 2,
+          channels: [
+            { orderList: [0, 1], patterns: [] },
+            { orderList: [0], patterns: [] },
+          ],
+        },
+      }),
+    );
+    expect(
+      project.patternSnapshot!.channels.map((channel) => channel.orderLength),
+    ).toEqual([2, 1]);
   });
 
   it("legacy rootNote converts to transpose", () => {

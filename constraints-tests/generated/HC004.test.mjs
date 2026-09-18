@@ -11,5 +11,5 @@ import { test } from "node:test";
 import { assertCommandExit } from "./_harness.mjs";
 
 test("[HC004] runs `npm run audit:deps -- --offline` and expects exit 0", async () => {
-	await assertCommandExit("npm run audit:deps -- --offline", 0);
+  await assertCommandExit("npm run audit:deps -- --offline", 0);
 });

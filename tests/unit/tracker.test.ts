@@ -10,16 +10,18 @@ import {
   defaultLastValues,
   flatColumnsForChannel,
   insertPatternAfter,
+  insertPatternInChannel,
   interpolateColumn,
   readValue,
   recordLastValue,
   reassignInstrument,
   remapInstrumentsAfterDelete,
   removePatternAt,
+  removePatternInChannel,
   selectionRect,
   writeValue,
 } from "@/core/tracker";
-import { patternSnapshot } from "@/core/songModel";
+import { patternSnapshot, syncPatternSnapshotLengths } from "@/core/songModel";
 import { fixtureSong } from "./fixtures";
 
 function fixture(): SongModel {
@@ -174,6 +176,31 @@ describe("tracker helpers", () => {
     clearPatternsSnapshot(snap, song.meta.patternLength);
     expect(snap.orderLength).toBe(1);
     expect(snap.channels.every((c) => c.orderList.length === 1)).toBe(true);
+  });
+
+  it("edits one channel's order list without touching the others", () => {
+    const song = fixture();
+    const snap = patternSnapshot(song);
+    snap.channels[1]!.orderList = [0];
+    syncPatternSnapshotLengths(snap);
+    const others = snap.channels[0]!.orderList.slice();
+
+    insertPatternInChannel(
+      snap.channels[1]!,
+      0,
+      song.meta.patternLength,
+      false,
+    );
+    expect(snap.channels[1]!.orderLength).toBe(2);
+    expect(snap.channels[0]!.orderList).toEqual(others);
+
+    expect(removePatternInChannel(snap.channels[1]!, 0)).toBe(true);
+    expect(snap.channels[1]!.orderLength).toBe(1);
+    // Refuses to empty a channel's order list.
+    expect(removePatternInChannel(snap.channels[1]!, 0)).toBe(false);
+
+    syncPatternSnapshotLengths(snap);
+    expect(snap.orderLength).toBe(snap.channels[0]!.orderList.length);
   });
 });
 

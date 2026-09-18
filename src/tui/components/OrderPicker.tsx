@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import { songLoopOrders } from "@/core/timing";
 import type { Session } from "../session";
 
 interface Props {
@@ -23,6 +24,11 @@ export function OrderPicker({ session, active, onClose, height }: Props) {
   const [typed, setTyped] = useState("");
 
   const clamped = Math.min(Math.max(selected, 0), Math.max(orderLength - 1, 0));
+  const loopOrders = song ? songLoopOrders(song) : 0;
+  const lengths =
+    song?.channels.map(
+      (channel) => channel.orderLength || channel.orderList.length,
+    ) ?? [];
   const target = typed.length > 0 ? Number(typed) : null;
   const jump = (order: number) => {
     const next = Math.min(Math.max(order, 0), Math.max(orderLength - 1, 0));
@@ -100,7 +106,8 @@ export function OrderPicker({ session, active, onClose, height }: Props) {
       </Text>
       <Text dimColor wrap="truncate-end">
         ↑↓ select · type a number · enter jump · esc close
-        {typed ? ` · target ${typed}` : ""}
+        {typed ? ` · target ${typed}` : ""} · loop {loopOrders} · ch{" "}
+        {lengths.join("/")}
       </Text>
       <Box flexDirection="column">
         {orderLength === 0 ? (

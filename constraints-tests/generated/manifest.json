@@ -59,9 +59,7 @@
       "category": "hard",
       "kind": "auto",
       "file": "generated/HC004.test.mjs",
-      "checks": [
-        "run `npm run audit:deps -- --offline` (must exit 0)"
-      ],
+      "checks": ["run `npm run audit:deps -- --offline` (must exit 0)"],
       "rationale": "Slopsquatting is the main supply-chain risk for an AI-assisted project."
     },
     {

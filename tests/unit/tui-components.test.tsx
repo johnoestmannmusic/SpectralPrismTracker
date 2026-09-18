@@ -4,6 +4,7 @@ import { MixerOverlay } from "@/tui/components/MixerOverlay";
 import { SamplesOverlay } from "@/tui/components/SamplesOverlay";
 import { InstrumentsOverlay } from "@/tui/components/InstrumentsOverlay";
 import { PatternsOverlay } from "@/tui/components/PatternsOverlay";
+import { PatternView } from "@/tui/components/PatternView";
 import { StepPanel, marquee } from "@/tui/components/StepPanel";
 import { buildSteps } from "@/core/stepthrough";
 import { StatusBar } from "@/tui/components/StatusBar";
@@ -315,6 +316,120 @@ describe("TUI overlays", () => {
       session.removePatternAt(1);
       expect(session.getState().song!.meta.orderLength).toBe(before);
       unmount();
+    });
+
+    it("edits a specific channel's own order list", async () => {
+      const lengthsBefore = session.channelOrderLengths();
+      const channel0Before = session
+        .getState()
+        .song!.channels[0]!.orderList.slice();
+      const { stdin, lastFrame, unmount } = render(
+        <PatternsOverlay session={session} active onClose={() => {}} />,
+      );
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("channels");
+      expect(frame).toContain("LCM");
+
+      // Move from channel 1 to channel 2, then add an order there.
+      stdin.write("\u001B[C");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      stdin.write("a");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(session.channelOrderLengths()[1]).toBe(lengthsBefore[1]! + 1);
+      expect(session.getState().song!.channels[0]!.orderList).toEqual(
+        channel0Before,
+      );
+
+      session.removeChannelOrder(1, 1);
+      expect(session.channelOrderLengths()[1]).toBe(lengthsBefore[1]!);
+      unmount();
+    });
+
+    it("opens pattern settings on enter and adjusts the row count", async () => {
+      session.setViewOrder(0);
+      const before = session.patternSlotInfo(0, 0)!.rowLength;
+      const { stdin, lastFrame, unmount } = render(
+        <PatternsOverlay session={session} active onClose={() => {}} />,
+      );
+      stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(lastFrame() ?? "").toContain("Rows:");
+      // Move from Name to Rows and bump it by one.
+      stdin.write("\u001B[B");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      stdin.write("\u001B[C");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before + 1);
+      session.undo();
+      expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before);
+      unmount();
+    });
+  });
+
+  describe("cycles performance view", () => {
+    it("renders independent per-channel row gutters around a centred playhead", () => {
+      session.setCyclesMode(true);
+      const before = session.patternSlotInfo(0, 0)!.rowLength;
+      // Short channel so some visible rows are blank and must not collapse the
+      // column layout as the channel scrolls.
+      session.setPatternRowLength(0, 0, 3);
+      try {
+        const { lastFrame, unmount } = render(
+          <PatternView
+            state={session.getState()}
+            viewportRows={9}
+            playhead={{ order: 0, row: 0 }}
+            playheads={[
+              { order: 0, row: 1 },
+              { order: 0, row: 3 },
+              { order: 0, row: 0 },
+              { order: 0, row: 0 },
+            ]}
+            selection={null}
+          />,
+        );
+        const frame = lastFrame() ?? "";
+        expect(frame).toContain("Cycles");
+        expect(frame).toContain("centred playhead");
+        expect(frame).toContain("CH1");
+        expect(frame).toContain("CH4");
+        // Every header/body line must have the separators at identical columns.
+        const lines = frame.split("\n").slice(1);
+        const positions = lines.map((line) =>
+          [...line]
+            .map((ch, index) => (ch === "│" ? index : -1))
+            .filter((index) => index >= 0)
+            .join(","),
+        );
+        expect(new Set(positions).size).toBe(1);
+        unmount();
+      } finally {
+        session.setPatternRowLength(0, 0, before);
+        session.setCyclesMode(false);
+      }
+    });
+
+    it("stays in the Cycles layout even when stopped", () => {
+      session.setCyclesMode(true);
+      try {
+        const { lastFrame, unmount } = render(
+          <PatternView
+            state={session.getState()}
+            viewportRows={9}
+            playhead={null}
+            playheads={null}
+            selection={null}
+          />,
+        );
+        const frame = lastFrame() ?? "";
+        expect(frame).toContain("Cycles");
+        expect(frame).toContain("CH1");
+        expect(frame).toContain("CH4");
+        unmount();
+      } finally {
+        session.setCyclesMode(false);
+      }
     });
   });
 

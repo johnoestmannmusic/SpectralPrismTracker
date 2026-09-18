@@ -24,13 +24,13 @@ of language or toolchain.
 
 ## Layout
 
-| Path | Managed by | Notes |
-| --- | --- | --- |
-| `run.mjs` | the generator | Portable entry point: `node constraints-tests/run.mjs`. |
-| `generated/` | the generator | Rewritten on every run. **Never edit.** |
-| `generated/_harness.mjs` | the generator | Glob scope helpers and assertion helpers. |
-| `generated/manifest.json` | the generator | Constraint → test mapping, severities, CONSTRAINTS.md hash. |
-| `checks/` | you | Hand-written assertions. The generator never touches this folder. |
+| Path                      | Managed by    | Notes                                                             |
+| ------------------------- | ------------- | ----------------------------------------------------------------- |
+| `run.mjs`                 | the generator | Portable entry point: `node constraints-tests/run.mjs`.           |
+| `generated/`              | the generator | Rewritten on every run. **Never edit.**                           |
+| `generated/_harness.mjs`  | the generator | Glob scope helpers and assertion helpers.                         |
+| `generated/manifest.json` | the generator | Constraint → test mapping, severities, CONSTRAINTS.md hash.       |
+| `checks/`                 | you           | Hand-written assertions. The generator never touches this folder. |
 
 `node --test` discovers `*.test.mjs` recursively, so anything you add under
 `checks/` runs alongside the generated tests automatically. No barrel file to
@@ -58,8 +58,8 @@ import assert from "node:assert/strict";
 import { ROOT, readText, inScope } from "../generated/_harness.mjs";
 
 test("[HC002] album art source buffer is exactly 240x240", async () => {
-	const source = await readText("src/core/pixelBuffer.ts");
-	assert.match(source ?? "", /SOURCE_SIZE\s*=\s*240/);
+  const source = await readText("src/core/pixelBuffer.ts");
+  assert.match(source ?? "", /SOURCE_SIZE\s*=\s*240/);
 });
 ```
 

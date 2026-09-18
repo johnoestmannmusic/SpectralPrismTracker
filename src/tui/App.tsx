@@ -871,6 +871,10 @@ export function App({ session }: Props) {
         session.noteOff();
         return;
       }
+      if (char === "C") {
+        session.toggleCyclesMode();
+        return;
+      }
       if (char === "q") {
         session.adjustValue(1);
         return;
@@ -989,6 +993,7 @@ export function App({ session }: Props) {
     rows - 8 - (paletteOpen ? suggestions.length : 0),
   );
   const playhead = state.playing ? session.playheadPosition() : null;
+  const channelPlayheads = state.playing ? session.channelPlayheads() : null;
 
   const trackerExplainer = useMemo(() => explainCursor(state), [state]);
   const editorHint =
@@ -1301,6 +1306,7 @@ export function App({ session }: Props) {
               state={state}
               viewportRows={viewportRows}
               playhead={stepMode ? null : playhead}
+              playheads={stepMode ? null : channelPlayheads}
               selection={stepMode ? null : session.selection()}
               highlight={cellHighlights}
             />

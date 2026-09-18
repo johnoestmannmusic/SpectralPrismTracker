@@ -105,112 +105,6 @@ src/tui/session.ts (SessionState + setCyclesMode), src/runtime/config.ts (persis
 - Reachability test + docs/REACHABILITY.md include the new toggle and tabs.
 - constraints_validate passes; HC002 test green.
 
-### FEAT-116 — Per-channel order lengths: model, snapshot & project serialization
-- priority: critical
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, songModel, project, patterns
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Make each channel's order length explicit instead of deriving everything from one global meta.orderLength. Add per-channel `orderLength` to the PatternSnapshot channel entry (defaulting to orderList.length) and keep `meta.orderLength` as the maximum for display/cursor. Serialize per-channel lengths in snapshotToSerde/snapshotFromSerde with backward-compat: absent => orderList.length. Update tracker.ts structural ops (insert/remove/move/setOrderPattern/clear) to operate per channel and recompute the max.
-
-**Architecture**
-src/core/songModel.ts (Channel.orderLength, patternSnapshot/applySnapshot), src/core/project.ts (snapshot serde), src/core/tracker.ts (order ops), src/core/songTypes.ts if needed.
-
-**Key decisions**
-- Channel.orderList.length is the source of truth; orderLength is an explicit mirror for O(1) reads.
-
-**Alternatives considered**
-- Derive length only from orderList.length with no field: rejected — snapshot round-trips and UI reads get awkward.
-
-**Acceptance criteria**
-- Round-trip test: a project with channel lengths [3,5,2,1] reloads identically.
-- Legacy projects without per-channel length load with orderList.length.
-- Insert/remove/duplicate update only the target channel; global max recomputed.
-
-### FEAT-117 — Per-channel order lengths: LCM timing, scheduler & sequence wrapping
-- priority: critical
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, timing, scheduler, audio
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Rework the timing/playback core so each channel wraps its own orderList independently and the song loop is the LCM of channel lengths (true phasing). Build the global row clock over LCM(len) * patternLength rows; map global order o to channel pattern via orderList[o % channelLen]. sequenceFromSong must emit rows over the LCM and select per-channel cells with that wrap. Scheduler/loopRange/songPositionAt/midi.ts and Session.syncLoopRange all learn the LCM-derived total. Decide how 09xx/0Axx BPM effects resolve when channels are on different orders (open question).
-
-**Architecture**
-src/core/timing.ts (buildRowTiming, songPositionAt), src/core/sampler.ts (sequenceFromSong, Scheduler, LoopRange), src/core/midi.ts, src/core/songModel.ts timelines (insTimeline/noteTimeline currently indexed by global order), src/tui/session.ts (syncLoopRange, cursor totals).
-
-**Key decisions**
-- Independent cycling, song loop = LCM — chosen by user.
-- Global meta.orderLength stays the cursor/UI span (max length).
-
-**Alternatives considered**
-- Global order governs, shorter channels rest: rejected by user.
-- Order-loop only: rejected by user.
-
-**Open questions**
-- How should BPM-change FX (09/0A) apply when channels are on different wrapped orders in the same global row? Proposal: apply every active cell's FX in channel order at the global row, as today.
-- Should per-channel ordering be forward-only or support per-channel direction?
-
-**Depends on**
-- Per-channel order lengths: model, snapshot & project serialization
-
-**Acceptance criteria**
-- LCM loop test: lengths [2,3] produce a 6-order loop with correct per-channel patterns.
-- Playback, seek, loop-range and MIDI export agree on the LCM duration.
-- No stale-sequence bug (cf. BUG-17) on structural edits.
-
-### FEAT-118 — Per-channel order lengths: tracker UI + order editing
-- priority: high
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, tui, patterns, hc002
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Show each channel's own order length and permit editing it. SongHeader/OrderStrip indicates wrapped channels; the Patterns and OrderPicker overlays edit per-channel lengths (insert/remove/move) and show the LCM loop extent. Cursor navigation clamps to global meta.orderLength, while the playhead reflects per-channel wrapping. Keep every action within 2 presses.
-
-**Architecture**
-src/tui/components/SongHeader.tsx, OrderStrip, PatternsOverlay.tsx, OrderPicker.tsx, src/tui/session.ts structural commands, docs/REACHABILITY.md.
-
-**Key decisions**
-- The tracker view stays a global order window; wrapped patterns are shown in place.
-
-**Open questions**
-- Should the UI visually mark a channel that has wrapped (e.g. a ↻ glyph)?
-
-**Depends on**
-- Per-channel order lengths: model, snapshot & project serialization
-- Per-channel order lengths: LCM timing, scheduler & sequence wrapping
-
-**Acceptance criteria**
-- Editing one channel's length does not change the others.
-- Wrapped channels are visually distinguishable during playback.
-- HC002 reachability unchanged.
-
 ### FEAT-119 — Phasing: per-channel start offset + playback speed
 - priority: high
 - tags: plan-cycles-mode-glitch-ambient-workspace, cycles, phasing, audio, session
@@ -467,35 +361,25 @@ src/core/tracker.ts (FX_CATALOG), src/core/sampler.ts (SamplerEvent fields, expa
 - Probability is deterministic across realtime and export.
 - Ratchet produces N evenly spaced triggers within the row.
 
-### FEAT-126 — Master stutter / beat-repeat FX
+### FEAT-126 — Instrument-level stutter / beat-repeat (inside MicroTextures)
 - priority: medium
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, fx, master, export
+- tags: cycles, fx, microtextures, instrument, rust, wasm
 - created: 2026-09-18
 - updated: 2026-09-18
 - plan: cycles-mode-glitch-ambient-workspace
 - kind: card
 - parent: FEAT-114
 
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+RE-SCOPED by user (2026-09-18): stutter is NOT a master-bus effect. It must happen at the instrument level, and should live inside the MicroTextures stage of the instrument chain (Sampler → Spectral → Percussion → Chord → MicroTextures).
 
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+Revised approach:
+- Add stutter/beat-repeat controls to the MicroTextureSettings block (enable, division/rate, mix, feedback/decay, probability), rendered as a MicroTextures sub-group.
+- Implement it in the Rust/WASM microtexture render (native/prism_dsp) so it is baked per instrument, alongside the granular/formant/bitcrush work — i.e. it becomes part of FEAT-122/FEAT-123 rather than a separate master FX.
+- Expose per-instrument controls in the MicroTextures editor tab; keep reachable <=2 presses.
+- Remove the MasterFxSettings/masterFxGraph approach from the original plan.
+- Offline WAV export uses the rendered microtexture clip (same lifecycle as Spectral/Percussion), so no separate export path is needed.
 
-**Approach**
-Add a master stutter/beat-repeat stage to MasterFxSettings (enable, division, mix, decay) and implement it in masterFxGraph.ts for realtime plus the offline chain. Surface it in the FX editor and masterFx editor groups. Ensure it works identically on desktop and web and is captured in WAV export.
-
-**Architecture**
-src/core/masterFx.ts, src/audio/masterFxGraph.ts, src/tui/editors.tsx (masterFxGroups), src/core/export.ts/offline path, src/core/project.ts serde.
-
-**Key decisions**
-- Master-bus effect, not per-instrument.
-
-**Open questions**
-- Tempo-synced division vs free time?
-
-**Acceptance criteria**
-- Stutter audibly repeats the last slice on the master bus.
-- Setting round-trips and exports correctly.
+Supersedes the original "Master stutter / beat-repeat FX" card content below.
 
 ### FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - priority: medium
@@ -573,6 +457,208 @@ assets/ demo project, tests/unit/*, tests/e2e, constraints-tests/, package.json 
 ## Blocked
 
 ## Implemented
+
+### BUG-19 — Cycles view only appeared while playing; instrument colours vanished in it
+- priority: high
+- tags: cycles, tui, colour, patternview
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (FEAT-131 follow-up):
+1. Cycles Mode should always use the per-channel centred layout, not only while playing.
+2. Instrument colour highlighting disappeared while playing in Cycles Mode.
+
+Fixes:
+1. PatternView Cycles path is now gated only on `state.cyclesMode`. When playing it centres each channel on its own playhead; when stopped it centres every channel on the edit cursor row at the viewed order, so editing still works. (Removed the now-redundant `pos` header line that had leaked into the normal view.)
+2. The Cycles cell renderer now applies the same held-note instrument tint as the normal view (`noteTimeline`/`insTimeline` -> `instrumentTint`), respects `colorInstruments`, and no longer forces `inverse` on the centre line when a tint is present.
+
+Tests: Cycles view stays in layout with `playheads={null}`; existing separator-alignment regression retained. 262 tests pass.
+
+### BUG-18 — Cycles view collapsed channel columns horizontally as rows scrolled
+- priority: high
+- tags: cycles, tui, phasing, patternview
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report (FEAT-131 follow-up): in the Cycles performance view the channels jittered horizontally and appeared to show the wrong part of the pattern.
+
+Cause: out-of-range rows rendered no cell padding, so a channel block collapsed to just its 4-char gutter; the separators and following channels shifted left/right every row, which also made cells look like they were under the wrong header.
+
+Fix: pad blank/out-of-range rows to the channel's fixed cell width (`widths[channel]`), so separators stay in identical columns. Added a regression assertion in tui-components that every Cycles header/body line has separators at the same indices while a short (3-row) channel scrolls with blank rows.
+
+Also verified the per-channel row mapping itself is correct (channelStepAtGlobal -> channelPlayheads -> cellAt at that order/row); the visual mismatch was the collapsed layout, not the engine mapping.
+
+### FEAT-131 — Cycles performance view: per-channel row gutters + centred playhead
+- priority: high
+- tags: cycles, tui, phasing, playhead, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report: in Cycles/polymeter playback, follow mode doesn't know which channel's playhead to follow. Requested UX: rather than a moving playhead, each channel gets its own row-number gutter next to it, each channel scrolls up independently, and a fixed centre line acts as the playhead across all channels.
+
+Scope:
+- Add a minimal `cyclesMode` session flag (toggle via `/cycles on|off` and a key) so the view can be gated. (Persistence + Glitch defaults remain in FEAT-115.)
+- PatternView: when `cyclesMode` and playing (`channelPlayheads()` non-null), render a performance view:
+  - per channel: [marker][row hex] gutter + cells;
+  - each channel scrolls so its own playhead row sits on a fixed centre line;
+  - channel's rows come from its own current (order,row) via channelPlayheads; row numbers restart per order;
+  - centre line is the playhead.
+- When stopped/editing, keep the aligned editor grid so cells line up for editing.
+- SongHeader/App pass cyclesMode + playheads.
+- Tests: render the performance view and assert per-channel gutter rows differ; toggle command test.
+
+Acceptance: editing with Cycles off is unchanged; with Cycles on during playback each channel visibly scrolls independently around the centred playhead; gates green.
+
+Architecture: src/tui/session.ts, src/tui/commands/builtins.ts, src/tui/App.tsx, src/tui/components/PatternView.tsx, docs/REACHABILITY.md.
+
+### FEAT-130 — True polymeter: independent per-channel row clocks + per-channel playhead
+- priority: high
+- tags: cycles, timing, scheduler, phasing, tui
+- created: 2026-09-18
+- updated: 2026-09-18
+
+Follow-up to FEAT-129. Current model: an order lasts the longest pattern and shorter patterns rest. User wants true Polymeter (Oval-style): every channel advances one row per global tick and independently wraps its own cycle = sum of its patterns' rowLengths. Channels drift and only realign at the LCM loop point. Song loop = LCM of channel cycle rows.
+
+Engine:
+- layout.ts: channelCycleRows(channel, fallback); channelSteps(channel, fallback) -> flat [{order,row,patternIndex}] of length cycle; songLoopRows(song) = LCM(channelCycleRows).
+- buildRowTiming: one tick per global row over songLoopRows; BPM FX scan each channel's own step.
+- sequenceFromSong: global row g -> per channel step = steps[c][g % cycle]; timelines indexed [order][row].
+- songPositionAt: return global row; add channelStepAt(song, channel, globalRow).
+- Scheduler/LoopRange: loop the full LCM; order-loop uses channel 0's order window.
+
+UI:
+- session: expose per-channel playhead positions; viewRow follows channel 0 (or cursor channel).
+- PatternView: per-channel playhead marker (each channel shows its own current row); keep editing on the view order.
+- SongHeader: per-channel position/order indicator.
+
+Acceptance: an 18-row pattern against a 64-row pattern audibly repeats every 18 rows and drifts; visual per-channel playhead shows different rows; existing equal-length projects unchanged; constraint gates green.
+
+Architecture: src/core/layout.ts, src/core/timing.ts, src/core/sampler.ts, src/core/midi.ts, src/tui/session.ts, src/tui/components/PatternView.tsx, SongHeader.tsx.
+
+### FEAT-129 — Per-pattern row length + Pattern settings menu
+- priority: high
+- tags: cycles, patterns, timing, tui, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User request (extends CYCLES MODE). Add a per-pattern `rowLength` (rows in an order) plus a Pattern settings menu opened by Enter on a Pattern in the Pattern Manager.
+
+Semantics (confirmed by user): row count is stored on the pattern number; every order slot referencing that pattern shares it. Order duration = max rowLength across the channels playing at that order. Keep a single global order/row cursor; variable rows change order durations, not channel independence (per-channel order lengths already give phasing).
+
+Scope:
+- Model: `Pattern.rowLength`; `.lampjson` serde with default = meta.patternLength.
+- Engine: layout helpers (orderRowLength/orderStartRow/totalSongRows/rowToOrder); buildRowTiming, sequenceFromSong, songPositionAt, rowTime, midi use variable order rows; session cursor/selection/loop-range respect the current order's row count; PatternView + SongHeader render variable rows.
+- UI: `PatternSettingsOverlay` (Name / Rows / Pattern number) reuse the ParamEditor machinery; OverlayName "pattern" + `/pattern` command; Pattern Manager Enter opens it (z still jumps); docs/REACHABILITY.md + OVERLAYS test.
+
+Acceptance: setting an order to e.g. 8 rows changes its duration; enter on a pattern edits rows/name/number; existing 64-row projects unchanged; all constraint gates green.
+
+Architecture: src/core/songTypes.ts, src/core/songModel.ts, src/core/project.ts, src/core/layout.ts (new), src/core/timing.ts, src/core/sampler.ts, src/core/midi.ts, src/tui/session.ts, src/tui/components/PatternView.tsx, SongHeader.tsx, PatternsOverlay.tsx, src/tui/editors.tsx, src/tui/commands/*, src/tui/App.tsx.
+
+### FEAT-118 — Per-channel order lengths: tracker UI + order editing
+- priority: high
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, tui, patterns, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Show each channel's own order length and permit editing it. SongHeader/OrderStrip indicates wrapped channels; the Patterns and OrderPicker overlays edit per-channel lengths (insert/remove/move) and show the LCM loop extent. Cursor navigation clamps to global meta.orderLength, while the playhead reflects per-channel wrapping. Keep every action within 2 presses.
+
+**Architecture**
+src/tui/components/SongHeader.tsx, OrderStrip, PatternsOverlay.tsx, OrderPicker.tsx, src/tui/session.ts structural commands, docs/REACHABILITY.md.
+
+**Key decisions**
+- The tracker view stays a global order window; wrapped patterns are shown in place.
+
+**Open questions**
+- Should the UI visually mark a channel that has wrapped (e.g. a ↻ glyph)?
+
+**Depends on**
+- Per-channel order lengths: model, snapshot & project serialization
+- Per-channel order lengths: LCM timing, scheduler & sequence wrapping
+
+**Acceptance criteria**
+- Editing one channel's length does not change the others.
+- Wrapped channels are visually distinguishable during playback.
+- HC002 reachability unchanged.
+
+### FEAT-117 — Per-channel order lengths: LCM timing, scheduler & sequence wrapping
+- priority: critical
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, timing, scheduler, audio
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Rework the timing/playback core so each channel wraps its own orderList independently and the song loop is the LCM of channel lengths (true phasing). Build the global row clock over LCM(len) * patternLength rows; map global order o to channel pattern via orderList[o % channelLen]. sequenceFromSong must emit rows over the LCM and select per-channel cells with that wrap. Scheduler/loopRange/songPositionAt/midi.ts and Session.syncLoopRange all learn the LCM-derived total. Decide how 09xx/0Axx BPM effects resolve when channels are on different orders (open question).
+
+**Architecture**
+src/core/timing.ts (buildRowTiming, songPositionAt), src/core/sampler.ts (sequenceFromSong, Scheduler, LoopRange), src/core/midi.ts, src/core/songModel.ts timelines (insTimeline/noteTimeline currently indexed by global order), src/tui/session.ts (syncLoopRange, cursor totals).
+
+**Key decisions**
+- Independent cycling, song loop = LCM — chosen by user.
+- Global meta.orderLength stays the cursor/UI span (max length).
+
+**Alternatives considered**
+- Global order governs, shorter channels rest: rejected by user.
+- Order-loop only: rejected by user.
+
+**Open questions**
+- How should BPM-change FX (09/0A) apply when channels are on different wrapped orders in the same global row? Proposal: apply every active cell's FX in channel order at the global row, as today.
+- Should per-channel ordering be forward-only or support per-channel direction?
+
+**Depends on**
+- Per-channel order lengths: model, snapshot & project serialization
+
+**Acceptance criteria**
+- LCM loop test: lengths [2,3] produce a 6-order loop with correct per-channel patterns.
+- Playback, seek, loop-range and MIDI export agree on the LCM duration.
+- No stale-sequence bug (cf. BUG-17) on structural edits.
+
+### FEAT-116 — Per-channel order lengths: model, snapshot & project serialization
+- priority: critical
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, songModel, project, patterns
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Make each channel's order length explicit instead of deriving everything from one global meta.orderLength. Add per-channel `orderLength` to the PatternSnapshot channel entry (defaulting to orderList.length) and keep `meta.orderLength` as the maximum for display/cursor. Serialize per-channel lengths in snapshotToSerde/snapshotFromSerde with backward-compat: absent => orderList.length. Update tracker.ts structural ops (insert/remove/move/setOrderPattern/clear) to operate per channel and recompute the max.
+
+**Architecture**
+src/core/songModel.ts (Channel.orderLength, patternSnapshot/applySnapshot), src/core/project.ts (snapshot serde), src/core/tracker.ts (order ops), src/core/songTypes.ts if needed.
+
+**Key decisions**
+- Channel.orderList.length is the source of truth; orderLength is an explicit mirror for O(1) reads.
+
+**Alternatives considered**
+- Derive length only from orderList.length with no field: rejected — snapshot round-trips and UI reads get awkward.
+
+**Acceptance criteria**
+- Round-trip test: a project with channel lengths [3,5,2,1] reloads identically.
+- Legacy projects without per-channel length load with orderList.length.
+- Insert/remove/duplicate update only the target channel; global max recomputed.
 
 ### BUG-17 — Structural order edits left the audio sequence stale (wrong pattern played)
 - priority: high

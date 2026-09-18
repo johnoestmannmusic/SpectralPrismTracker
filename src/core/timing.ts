@@ -1,4 +1,12 @@
 import type { SongMeta, SongModel } from "./songModel";
+import {
+  channelOrderStartRow,
+  channelStepAtGlobal,
+  channelSteps,
+  songLoopRows,
+} from "./layout";
+
+export { songLoopOrders } from "./layout";
 
 /** Ticks per pattern row. Kept constant so 01/02 pitch-slide maths is stable. */
 export const TICKS_PER_ROW = 6;
@@ -29,25 +37,31 @@ export interface RowTiming {
 /**
  * Build one loop's row clock from a single BPM plus the two timing effects:
  * `09 xx` raises the running BPM by xx, `0A xx` lowers it. An effect applies
- * to its own row and every row after it until the next change.
+ * to its own row and every row after it until the next change. This is true
+ * polymeter: every channel advances one row per tick and wraps its own cycle,
+ * so BPM effects are gathered from every channel's current step.
  */
 export function buildRowTiming(song: SongModel): RowTiming {
-  const rowCount = song.meta.orderLength * song.meta.patternLength;
   const starts: number[] = [];
   const ticks: number[] = [];
   const beatRows = Math.max(song.meta.highlightA, 1);
+  const fallback = Math.max(song.meta.patternLength, 1);
+  const total = songLoopRows(song);
+  const stepsByChannel = song.channels.map((channel) =>
+    channelSteps(channel, fallback),
+  );
   let time = 0;
   let bpm = clampBpm(song.meta.bpm);
 
-  for (let absoluteRow = 0; absoluteRow < rowCount; absoluteRow++) {
+  for (let globalRow = 0; globalRow < total; globalRow++) {
     starts.push(time);
-    const order = Math.floor(absoluteRow / song.meta.patternLength);
-    const row = absoluteRow % song.meta.patternLength;
-    for (const channel of song.channels) {
-      const patternIndex = channel.orderList[order];
-      if (patternIndex === undefined) continue;
-      const pattern = channel.patterns.get(patternIndex);
-      const cell = pattern?.rows[row];
+    for (let c = 0; c < song.channels.length; c++) {
+      const steps = stepsByChannel[c]!;
+      if (steps.length === 0) continue;
+      const step = steps[globalRow % steps.length]!;
+      const channel = song.channels[c]!;
+      const pattern = channel.patterns.get(step.patternIndex);
+      const cell = pattern?.rows[step.row];
       if (!cell) continue;
       const effectCount = channel.effectColumns;
       for (let e = 0; e < effectCount && e < cell.effects.length; e++) {
@@ -89,29 +103,35 @@ function partitionPointRange<T>(
   return lo;
 }
 
-/** Absolute song-time (seconds) -> (order position, row). Clamps negatives. */
-export function songPositionAt(song: SongModel, t: number): SongPosition {
+/** Global polymeter row at a song time (wraps the LCM loop). Clamps negatives. */
+export function songGlobalRowAt(song: SongModel, t: number): number {
   const rows = Math.max(song.rowTimes.length - 1, 1);
   const duration = song.rowTimes[song.rowTimes.length - 1] ?? 0;
   let time = 0;
   if (duration > 0) {
     time = (((t < 0 ? 0 : t) % duration) + duration) % duration;
   }
-  const totalRows = Math.max(
+  return Math.max(
     partitionPointRange(song.rowTimes, rows, (start) => start <= time) - 1,
     0,
   );
-  const patternLength = Math.max(song.meta.patternLength, 1);
-  return {
-    orderPos:
-      Math.floor(totalRows / patternLength) %
-      Math.max(song.meta.orderLength, 1),
-    row: totalRows % patternLength,
-  };
+}
+
+/** Absolute song-time (seconds) -> channel 0's (order, row). Clamps negatives. */
+export function songPositionAt(song: SongModel, t: number): SongPosition {
+  const step = channelStepAtGlobal(song, 0, songGlobalRowAt(song, t));
+  return { orderPos: step?.order ?? 0, row: step?.row ?? 0 };
 }
 
 export function rowTime(song: SongModel, order: number, row: number): number {
-  const index = order * song.meta.patternLength + row;
+  const channel0 = song.channels[0];
+  const index = channel0
+    ? channelOrderStartRow(
+        channel0,
+        order,
+        Math.max(song.meta.patternLength, 1),
+      ) + row
+    : 0;
   return song.rowTimes[index] ?? 0;
 }
 

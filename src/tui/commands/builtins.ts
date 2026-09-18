@@ -221,6 +221,23 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "cycles",
+    name: "cycles",
+    description:
+      "Toggle Cycles Mode: independent per-channel polymeter view with a centred playhead",
+    category: "tracker",
+    args: [{ name: "state", type: "enum", choices: ["on", "off", "toggle"] }],
+    run: (args, ctx) => {
+      const state = arg(args, "state") ?? "toggle";
+      const next =
+        state === "toggle"
+          ? !ctx.session.getState().cyclesMode
+          : state === "on";
+      ctx.session.setCyclesMode(next);
+      return ok(`Cycles Mode ${next ? "on" : "off"}`);
+    },
+  },
+  {
     id: "goto",
     name: "goto",
     aliases: ["order"],

@@ -19,7 +19,9 @@ import { test } from "node:test";
 // To automate it, add a directive (Must contain / Run / ...) to
 // CONSTRAINTS.md and regenerate, or write a real assertion in ../checks/.
 test(
-	"[G001] MANUAL VERIFICATION REQUIRED — Create a TUI 4-channel tracker that makes my entire compositional workflow transparent to the end-user, and speeds up my compositional process.",
-	{ skip: "not machine-checkable — verify manually via constraints_validate before marking a card Implemented" },
-	() => {},
+  "[G001] MANUAL VERIFICATION REQUIRED — Create a TUI 4-channel tracker that makes my entire compositional workflow transparent to the end-user, and speeds up my compositional process.",
+  {
+    skip: "not machine-checkable — verify manually via constraints_validate before marking a card Implemented",
+  },
+  () => {},
 );

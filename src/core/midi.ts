@@ -1,5 +1,6 @@
 import type { NoteValue } from "./songTypes";
 import { cellAt, type SongModel } from "./songModel";
+import { channelStepAtGlobal, songLoopRows } from "./layout";
 
 const TICKS_PER_ROW = 24;
 
@@ -56,7 +57,7 @@ function rowMicrosPerQuarter(seconds: number): number {
 function buildTempoTrack(song: SongModel): number[] {
   const out: number[] = [];
   const lastTick = { value: 0 };
-  const rowCount = song.meta.orderLength * song.meta.patternLength;
+  const rowCount = songLoopRows(song);
   pushMetaText(out, lastTick, 0, 0x03, song.meta.name);
 
   let lastMicros = -1;
@@ -96,17 +97,17 @@ function buildChannelTrack(song: SongModel, channel: number): number[] {
   const out: number[] = [];
   const lastTick = { value: 0 };
   const midiChannel = Math.min(channel, 15);
-  const patternLength = Math.max(song.meta.patternLength, 1);
-  const rowCount = song.meta.orderLength * patternLength;
+  const rowCount = songLoopRows(song);
   pushMetaText(out, lastTick, 0, 0x03, `CH${channel}`);
 
   let sounding: number | null = null;
   let lastNoteOnTick = 0;
-  for (let row = 0; row < rowCount; row++) {
-    const order = Math.floor(row / patternLength);
-    const rowInPattern = row % patternLength;
+  for (let absoluteRow = 0; absoluteRow < rowCount; absoluteRow++) {
+    const step = channelStepAtGlobal(song, channel, absoluteRow);
+    const order = step?.order ?? 0;
+    const rowInPattern = step?.row ?? 0;
     const cell = cellAt(song, channel, order, rowInPattern);
-    const tick = row * TICKS_PER_ROW;
+    const tick = absoluteRow * TICKS_PER_ROW;
     const note = cell.note;
     if (note) {
       if (note.kind === "note") {

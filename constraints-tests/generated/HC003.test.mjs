@@ -11,13 +11,13 @@ import { test } from "node:test";
 import { assertCommandExit, assertMatchingFilesExist } from "./_harness.mjs";
 
 test("[HC003] must exist: src/web/main.tsx", async () => {
-	await assertMatchingFilesExist(["src/web/main.tsx"]);
+  await assertMatchingFilesExist(["src/web/main.tsx"]);
 });
 
 test("[HC003] must exist: src/web/server.tsx", async () => {
-	await assertMatchingFilesExist(["src/web/server.tsx"]);
+  await assertMatchingFilesExist(["src/web/server.tsx"]);
 });
 
 test("[HC003] runs `npm run build:web` and expects exit 0", async () => {
-	await assertCommandExit("npm run build:web", 0);
+  await assertCommandExit("npm run build:web", 0);
 });

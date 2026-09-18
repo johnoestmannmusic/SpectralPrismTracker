@@ -8,28 +8,31 @@
 // Hand-written assertions belong in ../checks/ — never overwritten.
 
 import { test } from "node:test";
-import { assertMatchingFilesExist, assertNoMatchingFiles } from "./_harness.mjs";
+import {
+  assertMatchingFilesExist,
+  assertNoMatchingFiles,
+} from "./_harness.mjs";
 
 test("[SC001] must not exist: src/tui/**/\\*.js", async () => {
-	await assertNoMatchingFiles(["src/tui/**/\\*.js"]);
+  await assertNoMatchingFiles(["src/tui/**/\\*.js"]);
 });
 
 test("[SC001] must not exist: src/core/**/_.js", async () => {
-	await assertNoMatchingFiles(["src/core/**/_.js"]);
+  await assertNoMatchingFiles(["src/core/**/_.js"]);
 });
 
 test("[SC001] must not exist: src/host/\\**/_.js", async () => {
-	await assertNoMatchingFiles(["src/host/\\**/_.js"]);
+  await assertNoMatchingFiles(["src/host/\\**/_.js"]);
 });
 
 test("[SC001] must not exist: src/web/**/\\*.js", async () => {
-	await assertNoMatchingFiles(["src/web/**/\\*.js"]);
+  await assertNoMatchingFiles(["src/web/**/\\*.js"]);
 });
 
 test("[SC001] must not exist: src/runtime/**/*.js", async () => {
-	await assertNoMatchingFiles(["src/runtime/**/*.js"]);
+  await assertNoMatchingFiles(["src/runtime/**/*.js"]);
 });
 
 test("[SC001] must exist: tsconfig.json", async () => {
-	await assertMatchingFilesExist(["tsconfig.json"]);
+  await assertMatchingFilesExist(["tsconfig.json"]);
 });

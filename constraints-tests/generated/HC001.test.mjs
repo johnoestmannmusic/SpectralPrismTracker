@@ -11,9 +11,9 @@ import { test } from "node:test";
 import { assertCommandExit, assertMatchingFilesExist } from "./_harness.mjs";
 
 test("[HC001] must exist: src/tui/App.tsx", async () => {
-	await assertMatchingFilesExist(["src/tui/App.tsx"]);
+  await assertMatchingFilesExist(["src/tui/App.tsx"]);
 });
 
 test("[HC001] runs `npm run build:tui` and expects exit 0", async () => {
-	await assertCommandExit("npm run build:tui", 0);
+  await assertCommandExit("npm run build:tui", 0);
 });

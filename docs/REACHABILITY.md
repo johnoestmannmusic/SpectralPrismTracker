@@ -35,6 +35,7 @@ suggestion = press 2.
 | `param-group:instrument-tabs` | `v` → `Tab` cycles Sampler/Spectral/Percussion | 2       |
 | `param-group:mixer-channels`  | `/` → `Enter` on `mixer`, then arrows          | 2       |
 | `param-group:master-fx`       | `/` → `Enter` on `fx`, then arrows             | 2       |
+| `mode:cycles`                 | `C` or `/` → `Enter` on `cycles`               | 2       |
 
 Everything else (tracker editing, selection, transpose, interpolation) is a
 direct key on the main screen (press 1) and needs no menu.

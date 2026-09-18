@@ -17,7 +17,12 @@ import {
   type SpectralParamId,
   type SpectralSettings,
 } from "./spectral";
-import { retime, type PatternSnapshot, type SongModel } from "./songModel";
+import {
+  retime,
+  type PatternSnapshot,
+  type PatternTuple,
+  type SongModel,
+} from "./songModel";
 import { clampBpm } from "./timing";
 import {
   defaultMasterFx,
@@ -163,15 +168,21 @@ export function snapshotToSerde(
   return {
     orderLength: snapshot.orderLength,
     channels: snapshot.channels.map((channel) => ({
+      orderLength: channel.orderLength ?? channel.orderList.length,
       orderList: channel.orderList,
       // Sparse rows: only cells that actually contain something are written,
       // as [rowIndex, cell] pairs. Empty patterns collapse to `[]`.
-      patterns: channel.patterns.map(([index, rows]) => {
+      // Format: [index, sparse, rowLength?, name?] — trailing optionals keep
+      // legacy two-element entries loadable.
+      patterns: channel.patterns.map(([index, rows, rowLength, name]) => {
         const sparse: unknown[] = [];
         rows.forEach((cell, row) => {
           if (!cellIsEmpty(cell)) sparse.push([row, cellToSerde(cell)]);
         });
-        return [index, sparse];
+        const entry: unknown[] = [index, sparse];
+        if (typeof rowLength === "number") entry.push(rowLength);
+        if (name) entry.push(name);
+        return entry;
       }),
     })),
   };
@@ -188,13 +199,27 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
       const patternsRaw = Array.isArray(channel.patterns)
         ? channel.patterns
         : [];
+      const orderList = Array.isArray(channel.orderList)
+        ? (channel.orderList as number[])
+        : [];
+      // The order list is the source of truth; `orderLength` is read for
+      // forward-compatibility but clamped to the list we actually have.
+      const storedLength =
+        typeof channel.orderLength === "number" && channel.orderLength > 0
+          ? Math.min(channel.orderLength, orderList.length)
+          : orderList.length;
       return {
-        orderList: Array.isArray(channel.orderList)
-          ? (channel.orderList as number[])
-          : [],
+        orderLength: storedLength,
+        orderList,
         patterns: patternsRaw.map((pair) => {
-          const [index, rows] = pair as [number, unknown[]];
-          const list = rows ?? [];
+          const tuple = pair as [number, unknown, unknown?, unknown?];
+          const [index, second] = tuple;
+          const hasLength = typeof tuple[2] === "number";
+          const rows = second;
+          const rowLength = hasLength ? (tuple[2] as number) : undefined;
+          const name =
+            typeof tuple[3] === "string" ? (tuple[3] as string) : undefined;
+          const list = (rows as unknown[]) ?? [];
           const first = list[0];
           const sparse =
             Array.isArray(first) && typeof (first as unknown[])[0] === "number";
@@ -206,9 +231,14 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
             for (let i = 0; i < cells.length; i++) {
               if (!cells[i]) cells[i] = cellFromSerde(null);
             }
-            return [index, cells] as [number, PatternCell[]];
+            return [index, cells, rowLength, name] as PatternTuple;
           }
-          return [index, list.map(cellFromSerde)] as [number, PatternCell[]];
+          return [
+            index,
+            list.map(cellFromSerde),
+            rowLength,
+            name,
+          ] as PatternTuple;
         }),
       };
     }),

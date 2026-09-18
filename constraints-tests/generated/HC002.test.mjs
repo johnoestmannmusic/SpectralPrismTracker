@@ -11,5 +11,5 @@ import { test } from "node:test";
 import { assertCommandExit } from "./_harness.mjs";
 
 test("[HC002] runs `npx vitest run tests/unit/reachability.test.ts` and expects exit 0", async () => {
-	await assertCommandExit("npx vitest run tests/unit/reachability.test.ts", 0);
+  await assertCommandExit("npx vitest run tests/unit/reachability.test.ts", 0);
 });

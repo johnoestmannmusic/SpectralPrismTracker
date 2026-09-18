@@ -3,6 +3,7 @@ import { samplerPlaybackRate } from "./pitch";
 import type { SongModel } from "./songModel";
 import { defaultSpectralSettings, type SpectralSettings } from "./spectral";
 import { rowDuration } from "./timing";
+import { channelSteps, songLoopRows } from "./layout";
 
 export const LOOKAHEAD_SEC = 0.15;
 export const POLL_INTERVAL_MS = 25;
@@ -180,76 +181,79 @@ export function sequenceFromSong(song: SongModel): Sequence {
   const pitchOffsets = [0, 0, 0, 0];
   const slides = [0, 0, 0, 0];
 
-  for (let order = 0; order < song.meta.orderLength; order++) {
-    for (let row = 0; row < song.meta.patternLength; row++) {
-      const events: SamplerEvent[] = [];
-      const absoluteRow = order * song.meta.patternLength + row;
-      const channelCount = Math.min(song.channels.length, 4);
-      for (let channel = 0; channel < channelCount; channel++) {
-        const ch = song.channels[channel]!;
-        const patternIndex = ch.orderList[order];
-        const pattern =
-          patternIndex === undefined
-            ? undefined
-            : ch.patterns.get(patternIndex);
-        const cell = pattern?.rows[row];
-        if (!cell) continue;
+  const fallback = Math.max(song.meta.patternLength, 1);
+  const total = songLoopRows(song);
+  const channelCount = Math.min(song.channels.length, 4);
+  const stepsByChannel = song.channels
+    .slice(0, channelCount)
+    .map((channel) => channelSteps(channel, fallback));
 
-        const note: NoteValue | null = cell.note;
-        if (note) {
-          if (note.kind === "off" || note.kind === "release") {
-            events.push({ type: "off", channel });
-            baseRates[channel] = null;
-          } else if (note.kind === "note" || note.kind === "rawFreq") {
-            const instrument = ch.insTimeline[order]?.[row] ?? null;
-            const rate = samplerPlaybackRate(note, song.meta.tuningA4, 0);
-            if (
-              instrument !== null &&
-              rate !== null &&
-              instrument < song.instruments.length &&
-              Number.isFinite(rate) &&
-              rate > 0
-            ) {
-              events.push({
-                type: "note",
-                channel,
-                instrument,
-                rate,
-                volume: Math.min(cell.volume ?? 15, 15) / 15,
-              });
-              baseRates[channel] = rate;
-              pitchOffsets[channel] = 0;
-            }
-          }
-        }
+  for (let globalRow = 0; globalRow < total; globalRow++) {
+    const events: SamplerEvent[] = [];
+    for (let channel = 0; channel < channelCount; channel++) {
+      const ch = song.channels[channel]!;
+      const steps = stepsByChannel[channel]!;
+      if (steps.length === 0) continue;
+      // True polymeter: each channel wraps its own cycle independently.
+      const step = steps[globalRow % steps.length]!;
+      const pattern = ch.patterns.get(step.patternIndex);
+      const cell = pattern?.rows[step.row];
+      if (!cell) continue;
 
-        const effectCount = Math.min(ch.effectColumns, cell.effects.length);
-        for (let e = 0; e < effectCount; e++) {
-          const effect = cell.effects[e]!;
-          if (effect.effect === 0x01 && effect.value !== null) {
-            slides[channel] = effect.value / 32;
-          } else if (effect.effect === 0x02 && effect.value !== null) {
-            slides[channel] = -effect.value / 32;
-          }
-        }
-
-        if (slides[channel] !== 0) {
-          const baseRate = baseRates[channel];
-          if (baseRate !== null) {
-            const ticks = song.rowTicks[absoluteRow] ?? 6;
-            pitchOffsets[channel] =
-              (pitchOffsets[channel] ?? 0) + (slides[channel] ?? 0) * ticks;
+      const note: NoteValue | null = cell.note;
+      if (note) {
+        if (note.kind === "off" || note.kind === "release") {
+          events.push({ type: "off", channel });
+          baseRates[channel] = null;
+        } else if (note.kind === "note" || note.kind === "rawFreq") {
+          const instrument = ch.insTimeline[step.order]?.[step.row] ?? null;
+          const rate = samplerPlaybackRate(note, song.meta.tuningA4, 0);
+          if (
+            instrument !== null &&
+            rate !== null &&
+            instrument < song.instruments.length &&
+            Number.isFinite(rate) &&
+            rate > 0
+          ) {
             events.push({
-              type: "pitchRamp",
+              type: "note",
               channel,
-              rate: baseRate * Math.pow(2, (pitchOffsets[channel] ?? 0) / 12),
-              duration: rowDuration(song, absoluteRow),
+              instrument,
+              rate,
+              volume: Math.min(cell.volume ?? 15, 15) / 15,
             });
+            baseRates[channel] = rate;
+            pitchOffsets[channel] = 0;
           }
         }
       }
-      rows.push(events);
+
+      const effectCount = Math.min(ch.effectColumns, cell.effects.length);
+      for (let e = 0; e < effectCount; e++) {
+        const effect = cell.effects[e]!;
+        if (effect.effect === 0x01 && effect.value !== null) {
+          slides[channel] = effect.value / 32;
+        } else if (effect.effect === 0x02 && effect.value !== null) {
+          slides[channel] = -effect.value / 32;
+        }
+      }
+
+      if (slides[channel] !== 0) {
+        const baseRate = baseRates[channel];
+        if (baseRate !== null) {
+          const ticks = song.rowTicks[globalRow] ?? 6;
+          pitchOffsets[channel] =
+            (pitchOffsets[channel] ?? 0) + (slides[channel] ?? 0) * ticks;
+          events.push({
+            type: "pitchRamp",
+            channel,
+            rate: baseRate * Math.pow(2, (pitchOffsets[channel] ?? 0) / 12),
+            duration: rowDuration(song, globalRow),
+          });
+        }
+      }
     }
+    rows.push(events);
   }
 
   return { tuning: song.meta.tuningA4, rows, rowTimes: song.rowTimes.slice() };
