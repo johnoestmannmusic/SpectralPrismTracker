@@ -26,7 +26,7 @@ const KEY_SHORTCUTS: Array<[string, string]> = [
   ["T", "Cut the highlighted block"],
   ["R / Shift+R", "Paste / flood-paste to end of pattern"],
   ["v", "Edit the cell's instrument (sampler/spectral/percussion)"],
-  ["Shift+I", "Open the Instruments panel (list of every instrument)"],
+  ["I", "Open the Instruments panel (list of every instrument)"],
   ["O", "Go to order… (jump picker)"],
   ["L", "Loop the viewed order / the whole song"],
   ["Shift+Arrows", "Extend selection (some terminals capture this to scroll)"],

@@ -686,8 +686,8 @@ export function App({ session }: Props) {
         setOverlay(instrumentTabFor(state.settings[index]));
         return;
       }
-      // Shift+I: open the Instruments panel (the full instrument list).
-      if (char === "I") {
+      // i: open the Instruments panel (the full instrument list).
+      if (char === "i" || char === "I") {
         setReturnToList(false);
         setOverlay("instruments");
         return;

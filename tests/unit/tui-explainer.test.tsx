@@ -172,10 +172,10 @@ describe("TUI explainer", () => {
       unmount();
     });
 
-    it("opens the Instruments panel with Shift+I and ignores note-entry keys", async () => {
+    it("opens the Instruments panel with i and ignores note-entry keys", async () => {
       const { stdin, lastFrame, unmount } = render(<App session={session} />);
       const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
-      stdin.write("I");
+      stdin.write("i");
       await tick();
       const frame = lastFrame() ?? "";
       expect(frame).toContain("Instruments");
