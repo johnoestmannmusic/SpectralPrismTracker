@@ -136,6 +136,8 @@ export interface SessionState {
    * around a centred playhead instead of the normal aligned tracker grid.
    */
   cyclesMode: boolean;
+  /** Show dim rows from the previous/next order around the current one. */
+  ghosting: boolean;
   /** WAV export modal options (loops, fades, normalize, cycles length cap). */
   wavExport: {
     loops: number;
@@ -220,6 +222,7 @@ function initialState(): SessionState {
     follow: true,
     colorInstruments: true,
     cyclesMode: false,
+    ghosting: false,
     wavExport: {
       loops: 0,
       fadeInMs: 0,
@@ -490,6 +493,11 @@ export class Session {
     const next = !this.state.cyclesMode;
     this.patch({ cyclesMode: next });
     return next;
+  }
+
+  /** Ghost rows: dim preview of the adjacent orders above/below. */
+  setGhosting(ghosting: boolean): void {
+    this.patch({ ghosting });
   }
 
   setWavExport(patch: Partial<SessionState["wavExport"]>): void {

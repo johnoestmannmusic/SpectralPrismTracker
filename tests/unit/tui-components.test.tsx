@@ -567,6 +567,40 @@ describe("TUI overlays", () => {
     });
   });
 
+  describe("ghost rows", () => {
+    it("shows adjacent-order rows, and hides them with /ghosting off", () => {
+      const previous = session.getState().ghosting;
+      session.setCursor({ channel: 0, order: 1, row: 0, column: 0 });
+      session.setGhosting(true);
+      const on = render(
+        <PatternView
+          state={session.getState()}
+          viewportRows={8}
+          playhead={null}
+          selection={null}
+        />,
+      );
+      const onFrame = on.lastFrame() ?? "";
+      on.unmount();
+      expect(onFrame).toContain("~");
+
+      session.setGhosting(false);
+      const off = render(
+        <PatternView
+          state={session.getState()}
+          viewportRows={8}
+          playhead={null}
+          selection={null}
+        />,
+      );
+      const offFrame = off.lastFrame() ?? "";
+      off.unmount();
+      expect(offFrame).not.toContain("~");
+      expect(onFrame).not.toBe(offFrame);
+      session.setGhosting(previous);
+    });
+  });
+
   describe("status bar", () => {
     it("collapses a multi-line status onto one line", () => {
       const { lastFrame, unmount } = render(

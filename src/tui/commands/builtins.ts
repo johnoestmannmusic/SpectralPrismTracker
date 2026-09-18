@@ -238,6 +238,22 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "ghosting",
+    name: "ghosting",
+    aliases: ["ghost"],
+    description:
+      "Toggle ghost rows: dim preview of the previous/next order around the current one",
+    category: "tracker",
+    args: [{ name: "state", type: "enum", choices: ["on", "off", "toggle"] }],
+    run: (args, ctx) => {
+      const state = arg(args, "state") ?? "toggle";
+      const next =
+        state === "toggle" ? !ctx.session.getState().ghosting : state === "on";
+      ctx.session.setGhosting(next);
+      return ok(`Ghost rows ${next ? "on" : "off"}`);
+    },
+  },
+  {
     id: "goto",
     name: "goto",
     aliases: ["order"],

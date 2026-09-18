@@ -1,0 +1,1227 @@
+{
+  "version": 1,
+  "channelVolume": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "masterVolume": 1,
+  "refPitchEnabled": false,
+  "instruments": [
+    {
+      "sourceIndex": 0,
+      "startSec": 0,
+      "endSec": 0,
+      "transpose": 0,
+      "volume": 1,
+      "loop": true,
+      "pingPong": true,
+      "attack": 0.005,
+      "decay": 0.08,
+      "sustain": 0.7,
+      "release": 0.6,
+      "pan": 0,
+      "panRandomRange": 0,
+      "vibratoSpeed": 6,
+      "vibratoDepth": 0,
+      "polyphonic": false,
+      "voiceCap": 8,
+      "choke": true,
+      "spectral": {
+        "enabled": false,
+        "sourceIndex2": null,
+        "mode": "off",
+        "freezePoint": 50,
+        "freezePointB": 50,
+        "tune": 0,
+        "tuneB": 0,
+        "formantShift": 0,
+        "formantShiftB": 0,
+        "volume": 100,
+        "volumeB": 100,
+        "mixAmount": 50,
+        "crossSynthAmount": 100,
+        "convolveAmount": 100,
+        "ringModAmount": 100,
+        "stereoWidth": 30,
+        "loopLengthSeconds": 4,
+        "modulation": [],
+        "percussion": {
+          "enabled": false,
+          "noiseAmount": 8,
+          "noiseColor": "white",
+          "noiseDecay": 0.04,
+          "transientAmount": 60,
+          "transientDecay": 0.005,
+          "transientFrequency": 2000,
+          "pitchStart": 30,
+          "pitchEnd": -28,
+          "pitchDecay": 0.04,
+          "ampDecay": 0.3,
+          "bodyAmount": 100,
+          "partialCount": 12,
+          "partialDecay": 0.35,
+          "digitalAmount": 0,
+          "driveAmount": 0,
+          "compressAmount": 0,
+          "stereoWidth": 20,
+          "lengthSeconds": 0.6
+        },
+        "microTextures": {
+          "enabled": false,
+          "grainSeconds": 0.08,
+          "densityHz": 12,
+          "jitter": 0.25,
+          "reverseProbability": 0.2,
+          "pitchScatter": 0,
+          "panScatter": 0.4,
+          "volumeVariance": 0.3,
+          "densityModRate": 0.5,
+          "densityModDepth": 0,
+          "grainChaos": 0,
+          "retriggerHz": 8,
+          "retriggerAmount": 0,
+          "bitDepth": 16,
+          "downsample": 1,
+          "formantShift": 0,
+          "formantResonance": 0.4,
+          "formantMix": 0.5
+        },
+        "oneShot": false,
+        "savedStartSec": 0,
+        "savedEndSec": 0,
+        "savedLooping": false
+      },
+      "chord": {
+        "enabled": false,
+        "preset": "major",
+        "intervals": [
+          0,
+          4,
+          7
+        ],
+        "inversion": 0,
+        "octaves": 1,
+        "detuneCents": 0,
+        "strumSec": 0,
+        "panSpread": 0.3,
+        "voiceCap": 12
+      }
+    },
+    {
+      "sourceIndex": 1,
+      "startSec": 0,
+      "endSec": 0,
+      "transpose": 0,
+      "volume": 1,
+      "loop": true,
+      "pingPong": false,
+      "attack": 0.005,
+      "decay": 0.08,
+      "sustain": 0.7,
+      "release": 0.15,
+      "pan": 0,
+      "panRandomRange": 0,
+      "vibratoSpeed": 6,
+      "vibratoDepth": 0,
+      "polyphonic": false,
+      "voiceCap": 8,
+      "choke": true,
+      "spectral": {
+        "enabled": false,
+        "sourceIndex2": null,
+        "mode": "off",
+        "freezePoint": 50,
+        "freezePointB": 50,
+        "tune": 0,
+        "tuneB": 0,
+        "formantShift": 0,
+        "formantShiftB": 0,
+        "volume": 100,
+        "volumeB": 100,
+        "mixAmount": 50,
+        "crossSynthAmount": 100,
+        "convolveAmount": 100,
+        "ringModAmount": 100,
+        "stereoWidth": 30,
+        "loopLengthSeconds": 4,
+        "modulation": [],
+        "percussion": {
+          "enabled": false,
+          "noiseAmount": 8,
+          "noiseColor": "white",
+          "noiseDecay": 0.04,
+          "transientAmount": 60,
+          "transientDecay": 0.005,
+          "transientFrequency": 2000,
+          "pitchStart": 30,
+          "pitchEnd": -28,
+          "pitchDecay": 0.04,
+          "ampDecay": 0.3,
+          "bodyAmount": 100,
+          "partialCount": 12,
+          "partialDecay": 0.35,
+          "digitalAmount": 0,
+          "driveAmount": 0,
+          "compressAmount": 0,
+          "stereoWidth": 20,
+          "lengthSeconds": 0.6
+        },
+        "microTextures": {
+          "enabled": false,
+          "grainSeconds": 0.08,
+          "densityHz": 12,
+          "jitter": 0.25,
+          "reverseProbability": 0.2,
+          "pitchScatter": 0,
+          "panScatter": 0.4,
+          "volumeVariance": 0.3,
+          "densityModRate": 0.5,
+          "densityModDepth": 0,
+          "grainChaos": 0,
+          "retriggerHz": 8,
+          "retriggerAmount": 0,
+          "bitDepth": 16,
+          "downsample": 1,
+          "formantShift": 0,
+          "formantResonance": 0.4,
+          "formantMix": 0.5
+        },
+        "oneShot": false,
+        "savedStartSec": 0,
+        "savedEndSec": 0,
+        "savedLooping": false
+      },
+      "chord": {
+        "enabled": true,
+        "preset": "major7",
+        "intervals": [
+          0,
+          4,
+          7
+        ],
+        "inversion": 0,
+        "octaves": 2,
+        "detuneCents": 0,
+        "strumSec": 0.02,
+        "panSpread": 0.5,
+        "voiceCap": 12
+      }
+    },
+    {
+      "sourceIndex": 2,
+      "startSec": 0,
+      "endSec": 0,
+      "transpose": 0,
+      "volume": 1,
+      "loop": true,
+      "pingPong": false,
+      "attack": 0.005,
+      "decay": 0.08,
+      "sustain": 0.7,
+      "release": 0.15,
+      "pan": 0,
+      "panRandomRange": 0,
+      "vibratoSpeed": 6,
+      "vibratoDepth": 0,
+      "polyphonic": false,
+      "voiceCap": 8,
+      "choke": true,
+      "spectral": {
+        "enabled": true,
+        "sourceIndex2": null,
+        "mode": "off",
+        "freezePoint": 50,
+        "freezePointB": 50,
+        "tune": 0,
+        "tuneB": 0,
+        "formantShift": 0,
+        "formantShiftB": 0,
+        "volume": 100,
+        "volumeB": 100,
+        "mixAmount": 50,
+        "crossSynthAmount": 100,
+        "convolveAmount": 100,
+        "ringModAmount": 100,
+        "stereoWidth": 30,
+        "loopLengthSeconds": 4,
+        "modulation": [],
+        "percussion": {
+          "enabled": false,
+          "noiseAmount": 8,
+          "noiseColor": "white",
+          "noiseDecay": 0.04,
+          "transientAmount": 60,
+          "transientDecay": 0.005,
+          "transientFrequency": 2000,
+          "pitchStart": 30,
+          "pitchEnd": -28,
+          "pitchDecay": 0.04,
+          "ampDecay": 0.3,
+          "bodyAmount": 100,
+          "partialCount": 12,
+          "partialDecay": 0.35,
+          "digitalAmount": 0,
+          "driveAmount": 0,
+          "compressAmount": 0,
+          "stereoWidth": 20,
+          "lengthSeconds": 0.6
+        },
+        "microTextures": {
+          "enabled": true,
+          "grainSeconds": 0.08,
+          "densityHz": 14,
+          "jitter": 0.35,
+          "reverseProbability": 0.2,
+          "pitchScatter": 0,
+          "panScatter": 0.4,
+          "volumeVariance": 0.3,
+          "densityModRate": 0.5,
+          "densityModDepth": 0.4,
+          "grainChaos": 0.6,
+          "retriggerHz": 8,
+          "retriggerAmount": 0,
+          "bitDepth": 16,
+          "downsample": 1,
+          "formantShift": 5,
+          "formantResonance": 0.5,
+          "formantMix": 0.6
+        },
+        "oneShot": false,
+        "savedStartSec": 0,
+        "savedEndSec": 0,
+        "savedLooping": false
+      },
+      "chord": {
+        "enabled": false,
+        "preset": "major",
+        "intervals": [
+          0,
+          4,
+          7
+        ],
+        "inversion": 0,
+        "octaves": 1,
+        "detuneCents": 0,
+        "strumSec": 0,
+        "panSpread": 0.3,
+        "voiceCap": 12
+      }
+    },
+    {
+      "sourceIndex": 3,
+      "startSec": 0,
+      "endSec": 0,
+      "transpose": 0,
+      "volume": 1,
+      "loop": true,
+      "pingPong": false,
+      "attack": 0.005,
+      "decay": 0.08,
+      "sustain": 0.7,
+      "release": 0.15,
+      "pan": 0,
+      "panRandomRange": 0,
+      "vibratoSpeed": 6,
+      "vibratoDepth": 0,
+      "polyphonic": false,
+      "voiceCap": 8,
+      "choke": true,
+      "spectral": {
+        "enabled": false,
+        "sourceIndex2": null,
+        "mode": "off",
+        "freezePoint": 50,
+        "freezePointB": 50,
+        "tune": 0,
+        "tuneB": 0,
+        "formantShift": 0,
+        "formantShiftB": 0,
+        "volume": 100,
+        "volumeB": 100,
+        "mixAmount": 50,
+        "crossSynthAmount": 100,
+        "convolveAmount": 100,
+        "ringModAmount": 100,
+        "stereoWidth": 30,
+        "loopLengthSeconds": 4,
+        "modulation": [],
+        "percussion": {
+          "enabled": false,
+          "noiseAmount": 8,
+          "noiseColor": "white",
+          "noiseDecay": 0.04,
+          "transientAmount": 60,
+          "transientDecay": 0.005,
+          "transientFrequency": 2000,
+          "pitchStart": 30,
+          "pitchEnd": -28,
+          "pitchDecay": 0.04,
+          "ampDecay": 0.3,
+          "bodyAmount": 100,
+          "partialCount": 12,
+          "partialDecay": 0.35,
+          "digitalAmount": 0,
+          "driveAmount": 0,
+          "compressAmount": 0,
+          "stereoWidth": 20,
+          "lengthSeconds": 0.6
+        },
+        "microTextures": {
+          "enabled": false,
+          "grainSeconds": 0.08,
+          "densityHz": 12,
+          "jitter": 0.25,
+          "reverseProbability": 0.2,
+          "pitchScatter": 0,
+          "panScatter": 0.4,
+          "volumeVariance": 0.3,
+          "densityModRate": 0.5,
+          "densityModDepth": 0,
+          "grainChaos": 0,
+          "retriggerHz": 8,
+          "retriggerAmount": 0,
+          "bitDepth": 16,
+          "downsample": 1,
+          "formantShift": 0,
+          "formantResonance": 0.4,
+          "formantMix": 0.5
+        },
+        "oneShot": false,
+        "savedStartSec": 0,
+        "savedEndSec": 0,
+        "savedLooping": false
+      },
+      "chord": {
+        "enabled": false,
+        "preset": "major",
+        "intervals": [
+          0,
+          4,
+          7
+        ],
+        "inversion": 0,
+        "octaves": 1,
+        "detuneCents": 0,
+        "strumSec": 0,
+        "panSpread": 0.3,
+        "voiceCap": 12
+      }
+    }
+  ],
+  "theme": "system",
+  "masterFx": {
+    "delay": {
+      "enabled": false,
+      "timeSec": 0.25,
+      "feedback": 0.45,
+      "toneHz": 2600,
+      "mix": 0.35
+    },
+    "reverb": {
+      "enabled": false,
+      "decaySec": 2,
+      "mix": 0.25
+    }
+  },
+  "instrumentNames": [
+    "Cycles Pad",
+    "Glass Chord",
+    "Micro Texture",
+    "Pulse"
+  ],
+  "sourceSamples": [
+    {
+      "name": "Cycles Pad",
+      "url": null,
+      "comments": ""
+    },
+    {
+      "name": "Glass",
+      "url": null,
+      "comments": ""
+    },
+    {
+      "name": "Texture",
+      "url": null,
+      "comments": ""
+    },
+    {
+      "name": "Pulse",
+      "url": null,
+      "comments": ""
+    },
+    null,
+    null
+  ],
+  "songTitle": "Cycles Demo",
+  "artist": "Lantern",
+  "comments": "Oval-style phasing demo: per-channel order lengths, chord + microtextures, glitch FX.",
+  "patternSnapshot": {
+    "orderLength": 5,
+    "channels": [
+      {
+        "orderLength": 2,
+        "orderList": [
+          0,
+          1
+        ],
+        "phaseOffsetRows": 0,
+        "speed": 1,
+        "detuneDriftCents": 6,
+        "detuneDriftRate": 0.2,
+        "patterns": [
+          [
+            0,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 108
+                  },
+                  "instrument": 0,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": 17,
+                      "value": 2
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            1,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 108
+                  },
+                  "instrument": 0,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ]
+        ]
+      },
+      {
+        "orderLength": 3,
+        "orderList": [
+          0,
+          1,
+          2
+        ],
+        "phaseOffsetRows": 2,
+        "speed": 1,
+        "detuneDriftCents": 0,
+        "detuneDriftRate": 0.2,
+        "patterns": [
+          [
+            0,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 103
+                  },
+                  "instrument": 1,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            1,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 105
+                  },
+                  "instrument": 1,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            2,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 107
+                  },
+                  "instrument": 1,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ]
+        ]
+      },
+      {
+        "orderLength": 4,
+        "orderList": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "phaseOffsetRows": 0,
+        "speed": 1,
+        "detuneDriftCents": 0,
+        "detuneDriftRate": 0.2,
+        "patterns": [
+          [
+            0,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 96
+                  },
+                  "instrument": 2,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": 16,
+                      "value": 220
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            1,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 98
+                  },
+                  "instrument": 2,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            2,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 100
+                  },
+                  "instrument": 2,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            3,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 101
+                  },
+                  "instrument": 2,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ]
+        ]
+      },
+      {
+        "orderLength": 5,
+        "orderList": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "phaseOffsetRows": 0,
+        "speed": 1,
+        "detuneDriftCents": 0,
+        "detuneDriftRate": 0.2,
+        "patterns": [
+          [
+            0,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 72
+                  },
+                  "instrument": 3,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": 18,
+                      "value": 1
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            1,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 74
+                  },
+                  "instrument": 3,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            2,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 75
+                  },
+                  "instrument": 3,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            3,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 77
+                  },
+                  "instrument": 3,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ],
+          [
+            4,
+            [
+              [
+                0,
+                {
+                  "note": {
+                    "Note": 79
+                  },
+                  "instrument": 3,
+                  "volume": 15,
+                  "effects": [
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    },
+                    {
+                      "effect": null,
+                      "value": null
+                    }
+                  ]
+                }
+              ]
+            ],
+            8
+          ]
+        ]
+      }
+    ]
+  },
+  "bpmOverride": 96,
+  "highlightAOverride": 4,
+  "highlightBOverride": 16
+}

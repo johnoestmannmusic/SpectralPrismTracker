@@ -112,23 +112,73 @@ export function PatternView({
     );
   }
 
+  const fallback = Math.max(song.meta.patternLength, 1);
   const patternLength = orderRowLength(song, viewOrder);
-  const rows = Math.max(Math.min(viewportRows, patternLength), 1);
+  const channelCount = Math.min(song.channels.length, 4);
+  const budget = Math.max(viewportRows, 1);
   // While following, the viewport scrolls to the playhead row rather than the
   // edit cursor, so editing never drags the view off the playhead.
   const scrollRow =
     state.follow && playhead !== null && state.viewRow !== null
       ? state.viewRow
       : cursor.row;
-  const startRow = Math.max(
-    0,
-    Math.min(
-      scrollRow - Math.floor(rows / 2),
-      Math.max(patternLength - rows, 0),
-    ),
-  );
-  const endRow = Math.min(startRow + rows, patternLength);
-  const channelCount = Math.min(song.channels.length, 4);
+
+  /** A pattern's row count by the channel's order-list index. */
+  const channelOrderRows = (channel: number, orderIndex: number): number => {
+    const ch = song.channels[channel];
+    if (!ch) return 0;
+    const patternIndex = ch.orderList[orderIndex];
+    return patternRowLength(
+      patternIndex === undefined ? undefined : ch.patterns.get(patternIndex),
+      fallback,
+    );
+  };
+
+  /**
+   * Resolve a channel's cell at stream row `o` (relative to the current order).
+   * Walks the channel's order list in both directions so ghost rows can span
+   * several orders and always fill the window's top/bottom.
+   */
+  const channelStreamCell = (
+    channel: number,
+    o: number,
+  ): { order: number; row: number; ghost: boolean } | null => {
+    const ch = song.channels[channel];
+    const len = ch ? ch.orderLength || ch.orderList.length : 0;
+    if (!ch || len === 0) return null;
+    const current = ((viewOrder % len) + len) % len;
+    const currentLen = channelOrderRows(channel, current);
+    if (o >= 0 && o < currentLen) {
+      return { order: current, row: o, ghost: false };
+    }
+    let index = current;
+    let row = o;
+    if (row >= currentLen) {
+      row -= currentLen;
+      for (let step = 0; step < len + 1; step++) {
+        index = (index + 1) % len;
+        const rows = channelOrderRows(channel, index);
+        if (row < rows) return { order: index, row, ghost: true };
+        row -= rows;
+      }
+    } else {
+      for (let step = 0; step < len + 1; step++) {
+        index = (index - 1 + len) % len;
+        row += channelOrderRows(channel, index);
+        if (row >= 0) return { order: index, row, ghost: true };
+      }
+    }
+    return null;
+  };
+
+  // The viewport is a windowed slice of a continuous stream that walks the
+  // channel's orders in both directions, so ghost rows always fill the rows
+  // above/below the window and scroll with playhead follow.
+  const windowSize = budget;
+  const centered = scrollRow - Math.floor(windowSize / 2);
+  const windowStart = state.ghosting
+    ? centered
+    : Math.max(0, Math.min(centered, Math.max(patternLength - windowSize, 0)));
   const patternIndex = song.channels[cursor.channel]?.orderList[viewOrder] ?? 0;
   const widths = Array.from({ length: channelCount }, (_, channel) =>
     channelWidth(song, channel),
@@ -151,13 +201,39 @@ export function PatternView({
   const beatA = Math.max(song.meta.highlightA || 4, 1);
   const beatB = Math.max(song.meta.highlightB || 16, 1);
 
+  /** A dim, read-only context row built from per-channel (order, row) cells. */
+  const renderGhostRow = (
+    key: string,
+    cells: Array<{ order: number; row: number } | null>,
+  ) => (
+    <Box key={key} flexDirection="row">
+      <Text color="gray">{"  ~ "}</Text>
+      {cells.map((cell, channel) => {
+        const text = cell
+          ? segmentsFor(
+              song,
+              channel,
+              cellAt(song, channel, cell.order, cell.row),
+            )
+              .map((segment) => segment.text)
+              .join("")
+          : "";
+        return (
+          <Text key={channel} color="gray">
+            {text.padEnd(widths[channel]!)}
+            {channel < channelCount - 1 ? " │ " : ""}
+          </Text>
+        );
+      })}
+    </Box>
+  );
+
   // ---- Cycles Mode performance view --------------------------------------
   // Outside Cycles Mode the tracker behaves exactly as before. Inside it, each
   // channel gets its own row-number gutter and scrolls independently so its
   // own playhead sits on a fixed centre line.
   if (state.cyclesMode) {
     const visible = Math.max(viewportRows, 1);
-    const centre = Math.floor(visible / 2);
     const fallback = Math.max(song.meta.patternLength, 1);
     const infos = Array.from({ length: channelCount }, (_, channel) => {
       const ph = playheads?.[channel];
@@ -171,6 +247,40 @@ export function PatternView({
         patternIndex === undefined ? undefined : ch?.patterns.get(patternIndex);
       return { order, row, rows: patternRowLength(pattern, fallback) };
     });
+    const centre = Math.floor(visible / 2);
+    // Resolve a stream row for one channel: offsets beyond the current pattern
+    // become ghost rows from the adjacent orders (so they scroll with the
+    // channel). `null` means no row (e.g. beyond the adjacent pattern).
+    const resolve = (
+      channel: number,
+      info: (typeof infos)[number],
+      o: number,
+    ): { order: number; row: number; ghost: boolean } | null => {
+      const ch = song.channels[channel];
+      const len = ch ? ch.orderLength || ch.orderList.length : 0;
+      if (!ch || len === 0) return null;
+      if (o >= 0 && o < info.rows) {
+        return { order: info.order, row: o, ghost: false };
+      }
+      let index = info.order;
+      let row = o;
+      if (row >= info.rows) {
+        row -= info.rows;
+        for (let step = 0; step < len + 1; step++) {
+          index = (index + 1) % len;
+          const rows = channelOrderRows(channel, index);
+          if (row < rows) return { order: index, row, ghost: true };
+          row -= rows;
+        }
+      } else {
+        for (let step = 0; step < len + 1; step++) {
+          index = (index - 1 + len) % len;
+          row += channelOrderRows(channel, index);
+          if (row >= 0) return { order: index, row, ghost: true };
+        }
+      }
+      return null;
+    };
     return (
       <Box flexDirection="column" flexGrow={1}>
         <Box>
@@ -198,40 +308,48 @@ export function PatternView({
             <Box key={offset} flexDirection="row">
               {Array.from({ length: channelCount }, (_, channel) => {
                 const info = infos[channel]!;
-                const row = info.row - centre + offset;
-                const inRange = row >= 0 && row < info.rows;
-                const isBar = inRange && row % beatB === 0;
-                const isBeat = inRange && !isBar && row % beatA === 0;
-                const marker = isBar ? "●" : isBeat ? "·" : " ";
-                const cell = inRange
-                  ? cellAt(song, channel, info.order, row)
-                  : null;
+                const o = info.row - centre + offset;
+                const resolved = state.ghosting
+                  ? resolve(channel, info, o)
+                  : o >= 0 && o < info.rows
+                    ? { order: info.order, row: o, ghost: false }
+                    : null;
+                const row = resolved?.row ?? 0;
+                const order = resolved?.order ?? info.order;
+                const ghost = resolved?.ghost ?? false;
+                const inRange = resolved !== null;
+                const isBar = !ghost && inRange && row % beatB === 0;
+                const isBeat = !ghost && inRange && !isBar && row % beatA === 0;
+                const marker = ghost ? "~" : isBar ? "●" : isBeat ? "·" : " ";
+                const cell = inRange ? cellAt(song, channel, order, row) : null;
                 const columns = flatColumnsForChannel(song, channel);
-                const heldNote = inRange
-                  ? (song.channels[channel]?.noteTimeline[info.order]?.[row] ??
-                    null)
-                  : null;
+                const heldNote =
+                  !ghost && inRange
+                    ? (song.channels[channel]?.noteTimeline[order]?.[row] ??
+                      null)
+                    : null;
                 const heldInstrument = heldNote
-                  ? (song.channels[channel]?.insTimeline[info.order]?.[row] ??
-                    null)
+                  ? (song.channels[channel]?.insTimeline[order]?.[row] ?? null)
                   : null;
                 const heldInfo =
                   heldInstrument !== null
                     ? song.instruments[heldInstrument]
                     : undefined;
                 const tint =
-                  state.colorInstruments && heldInfo
+                  !ghost && state.colorInstruments && heldInfo
                     ? instrumentTint(heldInfo.colorRgb, isPlayhead)
                     : undefined;
                 const isCursorHere =
+                  !ghost &&
                   inRange &&
                   cursor.channel === channel &&
-                  cursor.order === info.order &&
+                  cursor.order === order &&
                   cursor.row === row;
                 const inSelectedRows =
+                  !ghost &&
                   inRange &&
                   selection !== null &&
-                  selection.order === info.order &&
+                  selection.order === order &&
                   row >= selection.rowLo &&
                   row <= selection.rowHi;
                 const beatBackground = isBar && !isPlayhead;
@@ -239,19 +357,30 @@ export function PatternView({
                   <Text key={channel}>
                     <Text
                       color={
-                        isPlayhead
-                          ? "green"
-                          : isBar
-                            ? "black"
-                            : isBeat
-                              ? "cyan"
-                              : undefined
+                        ghost
+                          ? "gray"
+                          : isPlayhead
+                            ? "green"
+                            : isBar
+                              ? "black"
+                              : isBeat
+                                ? "cyan"
+                                : undefined
                       }
                       backgroundColor={
-                        isPlayhead ? undefined : isBar ? "gray" : undefined
+                        ghost
+                          ? undefined
+                          : isPlayhead
+                            ? undefined
+                            : isBar
+                              ? "gray"
+                              : undefined
                       }
-                      bold={isPlayhead || isBar}
-                      dimColor={!inRange || (!isPlayhead && !isBar && !isBeat)}
+                      bold={!ghost && (isPlayhead || isBar)}
+                      dimColor={
+                        !ghost &&
+                        (!inRange || (!isPlayhead && !isBar && !isBeat))
+                      }
                     >
                       {inRange
                         ? `${marker}${row.toString(16).toUpperCase().padStart(2, "0")} `
@@ -279,24 +408,32 @@ export function PatternView({
                           <Text
                             key={i}
                             color={
-                              isCursor
-                                ? "black"
-                                : segment.column === 0 && cell.note
-                                  ? CHANNEL_COLORS[
-                                      channel % CHANNEL_COLORS.length
-                                    ]
-                                  : undefined
+                              ghost
+                                ? "gray"
+                                : isCursor
+                                  ? "black"
+                                  : segment.column === 0 && cell.note
+                                    ? CHANNEL_COLORS[
+                                        channel % CHANNEL_COLORS.length
+                                      ]
+                                    : undefined
                             }
                             backgroundColor={
-                              isCursor
-                                ? "white"
-                                : inSelection
-                                  ? "blue"
-                                  : (tint ??
-                                    (beatBackground ? "gray" : undefined))
+                              ghost
+                                ? undefined
+                                : isCursor
+                                  ? "white"
+                                  : inSelection
+                                    ? "blue"
+                                    : (tint ??
+                                      (beatBackground ? "gray" : undefined))
                             }
                             inverse={
-                              isPlayhead && !isCursor && !inSelection && !tint
+                              !ghost &&
+                              isPlayhead &&
+                              !isCursor &&
+                              !inSelection &&
+                              !tint
                             }
                           >
                             {segment.text}
@@ -321,8 +458,18 @@ export function PatternView({
     );
   }
 
-  const body = Array.from({ length: endRow - startRow }, (_, offset) => {
-    const row = startRow + offset;
+  const body = Array.from({ length: windowSize }, (_, offset) => {
+    const o = windowStart + offset;
+    if (state.ghosting && (o < 0 || o >= patternLength)) {
+      return renderGhostRow(
+        `ghost-${o}`,
+        Array.from({ length: channelCount }, (_, channel) => {
+          const cell = channelStreamCell(channel, o);
+          return cell ? { order: cell.order, row: cell.row } : null;
+        }),
+      );
+    }
+    const row = o;
     const isGlobalPlayheadRow =
       playhead?.order === viewOrder && playhead.row === row;
     const isCursorRow = cursor.row === row && cursor.order === viewOrder;

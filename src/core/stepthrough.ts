@@ -1,12 +1,18 @@
 import type { PatternCell } from "./songTypes";
 import { defaultMasterFx, type MasterFxSettings } from "./masterFx";
 import type { ProjectFile } from "./project";
-import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
+import {
+  defaultChordSettings,
+  defaultSamplerSettings,
+  type ChordSettings,
+  type SamplerSettings,
+} from "./sampler";
 import { applyEdit, retime, type SongModel } from "./songModel";
 import {
   defaultSpectralSettings,
   spectralModeHasAmount,
   spectralModeNeedsB,
+  type MicroTextureSettings,
 } from "./spectral";
 import { FX_CATALOG } from "./tracker";
 
@@ -27,6 +33,8 @@ export type StepScreen =
   | "sampler"
   | "spectral"
   | "percussion"
+  | "chord"
+  | "microtextures"
   | "mixer"
   | "master-fx"
   | "patterns"
@@ -78,6 +86,29 @@ export type StepAction =
       instrument: number;
       field: string;
       value: number | boolean;
+    }
+  | {
+      kind: "chordParam";
+      instrument: number;
+      field: keyof ChordSettings;
+      value: number | boolean | string;
+    }
+  | {
+      kind: "microtextureParam";
+      instrument: number;
+      field: keyof MicroTextureSettings;
+      value: number | boolean | string;
+    }
+  | {
+      kind: "channelParam";
+      channel: number;
+      field:
+        | "orderLength"
+        | "phaseOffsetRows"
+        | "speed"
+        | "detuneDriftCents"
+        | "detuneDriftRate";
+      value: number;
     }
   | { kind: "channelVolume"; channel: number; value: number }
   | { kind: "channelMute"; channel: number; muted: boolean }
@@ -747,6 +778,183 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
     }
   });
 
+  // ---- 4b. Chord / MicroTextures instrument modes -------------------------
+  target.settings.forEach((setting, instrument) => {
+    const chord = setting.chord;
+    if (chord?.enabled) {
+      push({
+        id: `instrument.${instrument}.chord.enabled`,
+        title: `Ins ${instrument} — Chord on`,
+        detail: `Enable the Chord voice mode (${chord.preset}).`,
+        screen: "chord",
+        instrument,
+        highlights: [{ kind: "param", group: "Chord", label: "Enabled" }],
+        action: {
+          kind: "chordParam",
+          instrument,
+          field: "enabled",
+          value: true,
+        },
+      });
+      push({
+        id: `instrument.${instrument}.chord.preset`,
+        title: `Ins ${instrument} — chord shape`,
+        detail: `Set the chord shape to ${chord.preset}.`,
+        screen: "chord",
+        instrument,
+        highlights: [{ kind: "param", group: "Chord", label: "Shape" }],
+        action: {
+          kind: "chordParam",
+          instrument,
+          field: "preset",
+          value: chord.preset,
+        },
+      });
+      const voicingFields: Array<
+        [keyof ChordSettings, string, number | boolean]
+      > = [
+        ["inversion", "Inversion", chord.inversion],
+        ["octaves", "Octaves", chord.octaves],
+        ["detuneCents", "Detune", chord.detuneCents],
+        ["strumSec", "Strum", chord.strumSec],
+        ["panSpread", "Pan spread", chord.panSpread],
+        ["voiceCap", "Voices", chord.voiceCap],
+      ];
+      const chordDefaults = defaultChordSettings();
+      for (const [field, label, value] of voicingFields) {
+        if (
+          value ===
+          (chordDefaults as unknown as Record<string, number | boolean>)[field]
+        )
+          continue;
+        push({
+          id: `instrument.${instrument}.chord.${field}`,
+          title: `Ins ${instrument} — chord ${label.toLowerCase()}`,
+          detail: `Set chord ${label.toLowerCase()} to ${value}.`,
+          screen: "chord",
+          instrument,
+          highlights: [{ kind: "param", group: "Voicing", label }],
+          action: { kind: "chordParam", instrument, field, value },
+        });
+      }
+    }
+    const micro = setting.spectral.microTextures;
+    if (micro?.enabled) {
+      push({
+        id: `instrument.${instrument}.micro.enabled`,
+        title: `Ins ${instrument} — MicroTextures on`,
+        detail: "Enable the granular MicroTextures stage.",
+        screen: "microtextures",
+        instrument,
+        highlights: [
+          { kind: "param", group: "MicroTextures", label: "Enabled" },
+        ],
+        action: {
+          kind: "microtextureParam",
+          instrument,
+          field: "enabled",
+          value: true,
+        },
+      });
+      const microFields: Array<
+        [keyof MicroTextureSettings, string, string, number | string]
+      > = [
+        ["grainSeconds", "Grain size", "MicroTextures", micro.grainSeconds],
+        ["densityHz", "Density", "MicroTextures", micro.densityHz],
+        ["jitter", "Jitter", "MicroTextures", micro.jitter],
+        [
+          "reverseProbability",
+          "Reverse",
+          "MicroTextures",
+          micro.reverseProbability,
+        ],
+        ["pitchScatter", "Pitch scatter", "MicroTextures", micro.pitchScatter],
+        ["panScatter", "Pan scatter", "MicroTextures", micro.panScatter],
+        [
+          "volumeVariance",
+          "Volume variance",
+          "MicroTextures",
+          micro.volumeVariance,
+        ],
+        [
+          "densityModRate",
+          "Density mod rate",
+          "MicroTextures",
+          micro.densityModRate,
+        ],
+        [
+          "densityModDepth",
+          "Density mod depth",
+          "MicroTextures",
+          micro.densityModDepth,
+        ],
+        ["grainChaos", "Grain chaos", "MicroTextures", micro.grainChaos],
+        ["retriggerHz", "Rate", "Retrigger", micro.retriggerHz],
+        ["retriggerAmount", "Amount", "Retrigger", micro.retriggerAmount],
+        ["formantShift", "Shift", "Formant", micro.formantShift],
+        ["formantResonance", "Resonance", "Formant", micro.formantResonance],
+        ["formantMix", "Mix", "Formant", micro.formantMix],
+        ["bitDepth", "Bit depth", "Lo-fi", micro.bitDepth],
+        ["downsample", "Downsample", "Lo-fi", micro.downsample],
+      ];
+      for (const [field, label, group, value] of microFields) {
+        push({
+          id: `instrument.${instrument}.micro.${field}`,
+          title: `Ins ${instrument} — ${group.toLowerCase()} ${label.toLowerCase()}`,
+          detail: `Set MicroTextures ${label.toLowerCase()} to ${value}.`,
+          screen: "microtextures",
+          instrument,
+          highlights: [{ kind: "param", group, label }],
+          action: { kind: "microtextureParam", instrument, field, value },
+        });
+      }
+    }
+  });
+
+  // ---- 4c. Per-channel cycles layout --------------------------------------
+  song.channels.forEach((channel, index) => {
+    const length = channel.orderLength || channel.orderList.length;
+    if (length !== song.meta.orderLength) {
+      push({
+        id: `channel.${index}.orderLength`,
+        title: `CH${index + 1} — ${length} orders`,
+        detail: `Give channel ${index + 1} its own order length (${length}).`,
+        screen: "patterns",
+        highlights: [{ kind: "channel", channel: index }],
+        action: {
+          kind: "channelParam",
+          channel: index,
+          field: "orderLength",
+          value: length,
+        },
+      });
+    }
+    const channelFields: Array<
+      [
+        "phaseOffsetRows" | "speed" | "detuneDriftCents" | "detuneDriftRate",
+        string,
+        number,
+        number,
+      ]
+    > = [
+      ["phaseOffsetRows", "phase", channel.phaseOffsetRows, 0],
+      ["speed", "speed", channel.speed, 1],
+      ["detuneDriftCents", "drift", channel.detuneDriftCents, 0],
+      ["detuneDriftRate", "drift rate", channel.detuneDriftRate, 0.2],
+    ];
+    for (const [field, label, value, fallback] of channelFields) {
+      if (Math.abs(value - fallback) < 1e-9) continue;
+      push({
+        id: `channel.${index}.${field}`,
+        title: `CH${index + 1} — ${label}`,
+        detail: `Set channel ${index + 1} ${label} to ${value}.`,
+        screen: "mixer",
+        highlights: [{ kind: "channel", channel: index }],
+        action: { kind: "channelParam", channel: index, field, value },
+      });
+    }
+  });
+
   // ---- 5. Mixer ------------------------------------------------------------
   target.channelVolume.forEach((volume, channel) => {
     if (!differs(volume, 1)) return;
@@ -941,6 +1149,39 @@ export function applyBuildStep(target: BuildTarget, step: BuildStep): void {
         (setting.spectral.percussion as unknown as Record<string, unknown>)[
           action.field
         ] = action.value;
+      break;
+    }
+    case "chordParam": {
+      const setting = target.settings[action.instrument];
+      if (setting)
+        (setting.chord as unknown as Record<string, unknown>)[action.field] =
+          action.value;
+      break;
+    }
+    case "microtextureParam": {
+      const setting = target.settings[action.instrument];
+      if (setting)
+        (setting.spectral.microTextures as unknown as Record<string, unknown>)[
+          action.field
+        ] = action.value;
+      break;
+    }
+    case "channelParam": {
+      const channel = target.song.channels[action.channel];
+      if (channel) {
+        if (action.field === "orderLength") {
+          const length = Math.max(Math.round(action.value), 1);
+          while (channel.orderList.length < length) {
+            channel.orderList.push(channel.orderList[0] ?? 0);
+          }
+          channel.orderList.length = length;
+          channel.orderLength = length;
+        } else {
+          (channel as unknown as Record<string, unknown>)[action.field] =
+            action.value;
+        }
+        retime(target.song);
+      }
       break;
     }
     case "channelVolume":

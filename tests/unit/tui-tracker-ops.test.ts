@@ -219,6 +219,14 @@ describe("tracker block operations", () => {
     expect(pitchSlideRate(1, 0x01, null, 6)).toBeUndefined();
   });
 
+  it("toggles ghost rows by command (off by default)", async () => {
+    expect(session.getState().ghosting).toBe(false);
+    expect((await run("ghosting on")).ok).toBe(true);
+    expect(session.getState().ghosting).toBe(true);
+    expect((await run("ghosting off")).ok).toBe(true);
+    expect(session.getState().ghosting).toBe(false);
+  });
+
   it("toggles Cycles Mode by command", async () => {
     expect(session.getState().cyclesMode).toBe(false);
     expect((await run("cycles on")).ok).toBe(true);

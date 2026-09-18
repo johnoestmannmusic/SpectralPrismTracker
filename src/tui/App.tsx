@@ -103,6 +103,10 @@ function stepScreenToOverlay(screen: StepScreen): Overlay {
       return "spectral";
     case "percussion":
       return "percussion";
+    case "chord":
+      return "chord";
+    case "microtextures":
+      return "microtextures";
     case "mixer":
       return "mixer";
     case "master-fx":

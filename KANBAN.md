@@ -9,8 +9,11 @@
 **What it does**
 
 - 4-channel pattern tracker (NOTE / INS / VOL / FX per channel, multiple FX columns) with playback, follow mode, block selection, clipboard, transpose, interpolation and order/pattern management.
+- **Cycles Mode** (`C` / `/cycles`): per-channel order lengths that loop independently (song loop = LCM), per-channel phase offset, playback speed and tape-drift detune, plus a centred per-channel performance view. **Ghost rows** (`/ghosting`, off by default) show the surrounding orders above/below the window.
+- Glitch-event FX include `10xx` trigger chance, `11xx` ratchet, `12xx` reverse, `13xx` sample offset and `14xx` hold/freeze; the tracker's Enter-on-FX menu picks the type.
 - Song timing is a single **BPM** plus beat/bar row highlighting; row duration is `60 / (bpm * beatRows)`. `09xx`/`0Axx` raise/lower the running BPM. `/info` opens an editable Song Info menu (title, credits, links and the BPM/beat/bar controls).
-- Sampler + Spectral + Percussion synthesis per instrument, plus a mixer and master FX (delay/reverb), all edited from tabbed menus.
+- Per-instrument chain **Sampler → Spectral → Percussion → Chord → MicroTextures** (each stage is independent and optional): Spectral fusion, Percussion one-shot post-stage, Chord voicing, and a MicroTextures granular stage (grain/density/chaos, formant shift, retrigger, bit-crush). Per-instrument **Choke** hard-cuts the previous voice.
+- A mixer, master FX (delay/reverb), and a **WAV export modal** (`/export wav`) with loops / fade in / fade out / peak normalize and a Cycles track-length cap.
 - Song info, Source Samples (with waveform previews), cover art, WAV/MIDI/ZIP/PNG export.
 - A Stepthrough tutorial (`/stepthrough`) that rebuilds the bundled project as a navigable recipe, and a live control socket for scripts/agents.
 
@@ -43,6 +46,14 @@
 
 ## Features
 
+## Bugs
+
+## In Progress
+
+## Blocked
+
+## Implemented
+
 ### FEAT-114 — CYCLES MODE — Glitch Ambient workspace
 - priority: critical
 - tags: plan-cycles-mode-glitch-ambient-workspace, epic
@@ -69,39 +80,6 @@ Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundat
 - FEAT-126 — Master stutter / beat-repeat FX
 - FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - FEAT-128 — Cycles demo project + walkthrough + end-to-end & constraint verification
-
-### FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
-- priority: medium
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, docs, stepthrough, hc002
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Extend the Stepthrough tutorial with a Cycles chapter walking through per-channel order lengths, Chord, MicroTextures and the phasing/glitch controls. Update docs/REACHABILITY.md and the OVERLAYS list for every new overlay/param group. Update the KANBAN.md Project overview to describe Cycles Mode and the new instrument chain.
-
-**Architecture**
-src/core/stepthrough.ts, docs/REACHABILITY.md, tests/unit/reachability.test.ts, KANBAN.md Project overview.
-
-**Key decisions**
-- Every new overlay gets a <=2-press documented path.
-
-**Depends on**
-- Per-channel order lengths: tracker UI + order editing
-- MicroTextures: settings model, project serde & editor tab
-- Chord mode: settings model, project serde & editor tab
-
-**Acceptance criteria**
-- Reachability test green with the new overlays.
-- Stepthrough covers each new feature.
-- Overview text matches shipped behaviour.
 
 ### FEAT-128 — Cycles demo project + walkthrough + end-to-end & constraint verification
 - priority: high
@@ -139,13 +117,82 @@ assets/ demo project, tests/unit/*, tests/e2e, constraints-tests/, package.json 
 - constraints_validate and constraints_run_tests pass with no un-reviewed manual rules.
 - npm run test:all green.
 
-## Bugs
+### FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
+- priority: medium
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, docs, stepthrough, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
 
-## In Progress
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
 
-## Blocked
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
 
-## Implemented
+**Approach**
+Extend the Stepthrough tutorial with a Cycles chapter walking through per-channel order lengths, Chord, MicroTextures and the phasing/glitch controls. Update docs/REACHABILITY.md and the OVERLAYS list for every new overlay/param group. Update the KANBAN.md Project overview to describe Cycles Mode and the new instrument chain.
+
+**Architecture**
+src/core/stepthrough.ts, docs/REACHABILITY.md, tests/unit/reachability.test.ts, KANBAN.md Project overview.
+
+**Key decisions**
+- Every new overlay gets a <=2-press documented path.
+
+**Depends on**
+- Per-channel order lengths: tracker UI + order editing
+- MicroTextures: settings model, project serde & editor tab
+- Chord mode: settings model, project serde & editor tab
+
+**Acceptance criteria**
+- Reachability test green with the new overlays.
+- Stepthrough covers each new feature.
+- Overview text matches shipped behaviour.
+
+### FEAT-132 — Tracker context rows: preview adjacent orders above/below the current order
+- priority: medium
+- tags: tracker, tui, patterns, playability
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User request: in the Pattern Editor, transparently show the previous and next ~16 rows of the previous/next orders either side of the current active order, in each channel column, so you can see what is coming before the view scrolls to it.
+
+**Approach**
+- In `PatternView`'s normal (aligned editor) view, render dim "context rows" outside the current order's row range:
+  - Above the current order: the trailing up-to-16 rows of the **previous order's** pattern (per channel).
+  - Below the current order: the leading up-to-16 rows of the **next order's** pattern (per channel).
+- Per channel: adjacent orders must come from each channel's own order list (and wrap its cycle), because order lengths differ (Cycles). Reuse `channelPatternAt`/timeline indexing; the "next" order for channel c is `orderList[(viewOrder + 1) % channelLen]`, "previous" is `(viewOrder - 1 + len) % len`.
+- Rows are read-only context: no cursor, no selection, no editing; render dim/grey (and skip instrument tint, or use a much fainter tint).
+- Only show context rows when the viewport is actually at the top/bottom edge of the current order (i.e. `startRow === 0` / `endRow === patternLength`), otherwise they would be misleading. When present they occupy viewport rows, reducing the number of editable rows shown.
+- Gate behind a toggle (default on?) so it can be turned off; must be reachable within 2 presses (e.g. a key like `y` and/or `/contextrows on|off`, documented in docs/REACHABILITY.md).
+- In Cycles Mode's centred performance view the layout is intentionally fixed-centre, so context rows are not shown there (or are shown only in the aligned editor).
+
+**Architecture**
+- `src/tui/components/PatternView.tsx` — render context rows above/below; new prop `contextRows?: boolean`; compute per-channel adjacent patterns.
+- `src/tui/session.ts` — a `contextRows` boolean setting + setter (and maybe a command).
+- `src/tui/commands/builtins.ts` + `src/tui/commands/types.ts` if exposed as `/contextrows`.
+- `docs/REACHABILITY.md` + `tests/unit/reachability.test.ts` if a new overlay/key is added.
+
+**Decisions**
+- Per-channel adjacent orders (not a single global order), so it stays correct with per-channel order lengths.
+- Read-only dim rows; the edit grid and cursor are unchanged.
+
+**Alternatives considered**
+- Showing all surrounding orders (previous+current+next in full): rejected — too much vertical space and confusing.
+- Following the playhead only: rejected — this is about seeing ahead while editing/stopped.
+
+**Open questions**
+- Should the context row count be configurable (8/16/32), and does it belong at the top of the tracker, bottom, or both?
+- Should the previous/next *order number* be labelled (e.g. a dim "▲ order 04" / "▼ order 06" divider line)?
+- Default on or off?
+
+**Acceptance criteria**
+- With the toggle on, scrolling the viewport to the top of an order shows the previous order's trailing rows (dim) above row 0; at the bottom it shows the next order's leading rows below the last row — per channel.
+- Context rows never receive the cursor/selection and are visually distinct (dim).
+- Toggle reachable within 2 presses and documented.
+- No measurable slowdown in `PatternView` (bounded extra `cellAt` reads).
+- Typecheck/lint/tests/constraints green.
 
 ### FEAT-124 — Tone/space: formant presets, micro-detune drift, bitcrush & freeze/hold
 - priority: medium
@@ -4745,6 +4792,18 @@ Cause: `collectNotes` (used by `auditionRow`) ignored the glitch FX — it emitt
 Fix: `PatternNote` gained `delaySec`; `previewPattern` starts each voice (and its release/pitch ramp) at `when + delaySec`; `collectNotes` now applies 10xx probability (via the shared `rowRoll`) and expands 11xx ratchet into N evenly spaced hits across the row duration, matching `sequenceFromSong`.
 
 Tests: added an audition test asserting a ratcheted row passes ≥4 delayed notes to `previewPattern`. 299 tests pass.
+
+### TASK-8 — Ghost rows: lighter gray, follow-scrolling, and Cycles Mode
+- priority: medium
+- tags: tracker, ghosting, cycles, tui
+- created: 2026-09-18
+- updated: 2026-09-18
+
+FOLLOW-UP 2: ghosts must fill the top/bottom of the window across multiple orders, and one channel wasn't showing them.
+- `channelStreamCell` now WALKS the channel's order list in both directions, so stream rows outside the current pattern resolve to as many previous/next orders as needed to fill the window (no fixed single-adjacent-order band). Works for single-order channels too (wraps to itself).
+- The window is now the full viewport (`windowSize = budget`) centred on the cursor/playhead; when ghosting is off it is clamped to the current order.
+- Cycles `resolve` walks per channel the same way (uses `channelOrderRows`).
+Verified: at order 1/row 0 the window is filled with ghost rows from prior orders; at order 0/row 2 channel 2 now shows its ghost content. 301 tests pass.
 
 ## Archived
 
