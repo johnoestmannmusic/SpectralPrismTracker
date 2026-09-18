@@ -207,6 +207,29 @@ describe("tracker block operations", () => {
     expect(session.getState().cyclesMode).toBe(false);
   });
 
+  it("persists Cycles Mode to the config store", async () => {
+    session.setCyclesMode(true);
+    await session.flushConfigWrites();
+    expect((await session.host.config.read()).cyclesMode).toBe(true);
+    session.setCyclesMode(false);
+    await session.flushConfigWrites();
+    expect((await session.host.config.read()).cyclesMode).toBe(false);
+  });
+
+  it("uses glitch defaults for instruments created in Cycles Mode", () => {
+    session.setCyclesMode(true);
+    try {
+      const index = session.addInstrument();
+      const settings = session.samplerSettings(index)!;
+      expect(settings.looping).toBe(true);
+      expect(settings.pingPong).toBe(true);
+      expect(settings.panRandomRange).toBeGreaterThan(0);
+      session.undo();
+    } finally {
+      session.setCyclesMode(false);
+    }
+  });
+
   it("recalls command history", () => {
     session.recordCommand("preview 5");
     session.recordCommand("info");

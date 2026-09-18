@@ -7,6 +7,7 @@ import {
   configPath,
   readConfig,
   recordLastProject,
+  sanitizeConfig,
   writeConfig,
 } from "@/runtime/config";
 import { backupPath, restoreBackup, saveBackup } from "@/tui/autosave";
@@ -34,6 +35,17 @@ describe("runtime config", () => {
     );
     expect(configDir({ LANTERN_CONFIG: "/tmp/x/custom.json" })).toBe("/tmp/x");
     expect(configDir({ XDG_CONFIG_HOME: "/tmp/xdg" })).toBe("/tmp/xdg/lantern");
+  });
+
+  it("round-trips the Cycles Mode workspace flag", async () => {
+    expect(await writeConfig({ cyclesMode: true }, env)).toBe(true);
+    expect((await readConfig(env)).cyclesMode).toBe(true);
+    expect(await writeConfig({ cyclesMode: false }, env)).toBe(true);
+    expect((await readConfig(env)).cyclesMode).toBe(false);
+    // Malformed values are ignored.
+    expect(sanitizeConfig({ cyclesMode: "yes" })).toEqual({});
+    // Leave the shared config file empty for the next test.
+    await rm(configPath(env), { force: true });
   });
 
   it("round-trips config and records the last project", async () => {

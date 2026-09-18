@@ -19,6 +19,9 @@ import {
   LOOKAHEAD_SEC,
   setSpectralEnabled,
   Scheduler,
+  chordIntervals,
+  chordVoices,
+  defaultChordSettings,
   defaultSamplerSettings,
   envelopeAt,
   loopChannel,
@@ -463,6 +466,77 @@ describe("project json", () => {
     expect(encoded).not.toContain('"muted"');
     const reparsed = projectFromJson(encoded);
     expect(reparsed).toEqual(project);
+  });
+
+  it("expands a chord instrument into grouped voices", () => {
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.chord = {
+      ...defaultChordSettings(),
+      enabled: true,
+      preset: "major",
+    };
+    const project = defaultProject();
+    project.instruments = [settings];
+    project.patternSnapshot = {
+      orderLength: 1,
+      channels: [
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [
+            [
+              0,
+              [
+                {
+                  note: { kind: "note", note: 108 },
+                  instrument: 0,
+                  volume: 15,
+                  effects: [],
+                },
+              ],
+              1,
+            ],
+          ],
+        },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    const sequence = sequenceFromSong(song, [settings]);
+    const notes = sequence.rows[0]!.filter((event) => event.type === "note");
+    expect(notes).toHaveLength(3);
+    // All tones share one group so OFF releases the chord together.
+    expect(new Set(notes.map((event) => event.voiceGroup)).size).toBe(1);
+    const rates = notes.map((event) => event.rate).sort((a, b) => a - b);
+    expect(rates[1]! / rates[0]!).toBeCloseTo(Math.pow(2, 4 / 12), 5);
+    expect(rates[2]! / rates[0]!).toBeCloseTo(Math.pow(2, 7 / 12), 5);
+  });
+
+  it("builds chord intervals and serialises chord settings", () => {
+    const chord = defaultChordSettings();
+    chord.preset = "major";
+    expect(chordIntervals(chord)).toEqual([0, 4, 7]);
+    chord.inversion = 1;
+    expect(chordIntervals(chord)).toEqual([4, 7, 12]);
+    chord.inversion = 0;
+    chord.octaves = 2;
+    expect(chordIntervals(chord)).toEqual([0, 4, 7, 12, 16, 19]);
+
+    chord.octaves = 1;
+    chord.enabled = true;
+    chord.detuneCents = 10;
+    const voices = chordVoices(chord);
+    expect(voices).toHaveLength(3);
+    // Level is split so a dense chord does not clip.
+    expect(voices.reduce((sum, voice) => sum + voice.gain, 0)).toBeCloseTo(
+      Math.sqrt(3),
+      6,
+    );
+
+    const project = defaultProject();
+    project.instruments = [{ ...defaultSamplerSettings(), chord }];
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.instruments[0]!.chord).toEqual(chord);
   });
 
   it("round-trips per-channel order lengths", () => {

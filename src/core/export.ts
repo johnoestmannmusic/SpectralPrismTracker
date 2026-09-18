@@ -296,6 +296,8 @@ interface RenderVoice {
   settings: SamplerSettings;
   clip: AudioClip;
   stolen: boolean;
+  /** Shared id for the voices of one chord. */
+  group?: number;
 }
 
 function clamp(value: number, low: number, high: number): number {
@@ -385,9 +387,20 @@ export function renderSamplerMix(
     const time = sequence.rowTimes[row] ?? 0;
     for (const event of sequence.rows[row] ?? []) {
       if (event.type === "off") {
-        const voice = lastByChannel[event.channel];
-        if (voice)
-          releaseVoice(voice, time, clamp(voice.settings.release, 0, 5), false);
+        // Release every voice on the channel (all chord tones together).
+        for (const voice of voices) {
+          if (
+            voice.channel === event.channel &&
+            voice.end > time &&
+            !voice.stolen
+          )
+            releaseVoice(
+              voice,
+              time,
+              clamp(voice.settings.release, 0, 5),
+              false,
+            );
+        }
         continue;
       }
       if (event.type === "pitchRamp") {
@@ -413,6 +426,7 @@ export function renderSamplerMix(
       if (setting.muted || setting.sourceIndex === null) continue;
       if (!region(setting, clipDuration(clip))) continue;
 
+      const group = event.voiceGroup;
       if (setting.polyphonic) {
         const cap = Math.floor(clamp(setting.voiceCap, 1, 32));
         const active = () =>
@@ -420,22 +434,32 @@ export function renderSamplerMix(
             (v) =>
               v.instrument === event.instrument && v.end > time && !v.stolen,
           );
-        while (active().length >= cap) {
-          const victim = active()[0];
+        const candidates = () =>
+          active().filter((v) => group === undefined || v.group !== group);
+        while (active().length >= cap && candidates().length > 0) {
+          const victim = candidates()[0];
           if (!victim) break;
           releaseVoice(victim, time, 0.008, true);
         }
       } else {
-        const previous = lastByChannel[event.channel];
-        if (previous && previous.end > time && !previous.stolen) {
-          releaseVoice(previous, time, 0.008, true);
+        for (const voice of voices) {
+          if (
+            voice.channel !== event.channel ||
+            voice.end <= time ||
+            voice.stolen
+          )
+            continue;
+          if (group !== undefined && voice.group === group) continue;
+          releaseVoice(voice, time, 0.008, true);
         }
       }
 
       const panCentre = clamp(setting.pan, -1, 1);
       const panWidth = clamp(setting.panRandomRange, 0, 1);
       const pan = clamp(
-        panCentre + ((random() / 0xffffffff) * 2 - 1) * panWidth,
+        panCentre +
+          clamp(event.panOffset ?? 0, -1, 1) +
+          ((random() / 0xffffffff) * 2 - 1) * panWidth,
         -1,
         1,
       );
@@ -444,7 +468,7 @@ export function renderSamplerMix(
       const voice: RenderVoice = {
         instrument: event.instrument,
         channel: event.channel,
-        start: time,
+        start: time + (event.delaySec ?? 0),
         end: duration,
         release: null,
         rate,
@@ -454,6 +478,7 @@ export function renderSamplerMix(
         settings: setting,
         clip,
         stolen: false,
+        group,
       };
       voices.push(voice);
       lastByChannel[event.channel] = voice;

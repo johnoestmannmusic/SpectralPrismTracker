@@ -63,6 +63,7 @@ export type OverlayName =
   | "sampler"
   | "spectral"
   | "percussion"
+  | "chord"
   | "fx";
 
 export interface CommandDef {

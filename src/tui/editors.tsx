@@ -11,7 +11,13 @@ import {
   type PercussionPreset,
 } from "@/core/spectral";
 import type { MasterFxSettings } from "@/core/masterFx";
-import { defaultSamplerSettings, type SamplerSettings } from "@/core/sampler";
+import {
+  CHORD_PRESETS,
+  chordIntervals,
+  defaultSamplerSettings,
+  type ChordPreset,
+  type SamplerSettings,
+} from "@/core/sampler";
 import { renderEnvelope, renderWaveform } from "./format";
 import type { EditorGroup, EditorParam } from "./components/ParamEditorOverlay";
 import type { Session, SongMetaField } from "./session";
@@ -103,15 +109,16 @@ const sourceValue = (index: number | null): string =>
 const parseSource = (value: string): number | null =>
   value === "none" ? null : Number(value);
 
-export type InstrumentTab = "sampler" | "spectral" | "percussion";
+export type InstrumentTab = "sampler" | "spectral" | "percussion" | "chord";
 
 /**
- * Editor tab that matches an instrument's active mode: Percussion beats
- * Spectral beats plain Sampler.
+ * Editor tab that matches an instrument's active mode. Later chain stages win:
+ * Chord beats Percussion beats Spectral beats plain Sampler.
  */
 export function instrumentTabFor(
   settings: SamplerSettings | undefined,
 ): InstrumentTab {
+  if (settings?.chord.enabled) return "chord";
   if (settings?.spectral.percussion.enabled) return "percussion";
   if (settings?.spectral.enabled) return "spectral";
   return "sampler";
@@ -688,6 +695,115 @@ export function percussionGroups(
   }
 
   return groups;
+}
+
+/** Chord instrument-mode editor groups. */
+export function chordGroups(
+  session: Session,
+  index: number,
+  settingsOverride?: SamplerSettings,
+): EditorGroup[] {
+  const s =
+    settingsOverride ??
+    session.samplerSettings(index) ??
+    defaultSamplerSettings();
+  const chord = s.chord;
+  const set = (patch: Partial<typeof chord>) =>
+    session.updateSamplerSetting(index, { chord: { ...chord, ...patch } });
+  const intervals = chordIntervals(chord).join(", ");
+  const customParam: EditorParam = {
+    label: "Custom intervals",
+    kind: "text",
+    value: chord.intervals.join(","),
+    set: (value) =>
+      set({
+        intervals: String(value)
+          .split(",")
+          .map((token) => Number(token.trim()))
+          .filter((n) => Number.isFinite(n))
+          .slice(0, 16),
+      }),
+    explain: "Root-relative semitones, comma-separated (e.g. 0,4,7,11).",
+  };
+  return [
+    {
+      title: "Chord",
+      params: [
+        bool("Enabled", chord.enabled, (v) => set({ enabled: !!v }), true),
+        en(
+          "Shape",
+          chord.preset,
+          [...CHORD_PRESETS],
+          (v) => set({ preset: v as ChordPreset }),
+          true,
+        ),
+      ],
+    },
+    ...(chord.enabled
+      ? [
+          {
+            title: "Voicing",
+            params: [
+              num(
+                "Inversion",
+                chord.inversion,
+                (v) => set({ inversion: v as number }),
+                { min: -2, max: 2, step: 1, integer: true, preview: true },
+              ),
+              num(
+                "Octaves",
+                chord.octaves,
+                (v) => set({ octaves: v as number }),
+                {
+                  min: 1,
+                  max: 3,
+                  step: 1,
+                  integer: true,
+                  preview: true,
+                },
+              ),
+              num(
+                "Detune",
+                chord.detuneCents,
+                (v) => set({ detuneCents: v as number }),
+                { min: 0, max: 50, step: 1, unit: "c", preview: true },
+              ),
+              num(
+                "Strum",
+                chord.strumSec,
+                (v) => set({ strumSec: v as number }),
+                {
+                  min: 0,
+                  max: 0.2,
+                  step: 0.005,
+                  unit: "s",
+                  preview: true,
+                },
+              ),
+              unit01("Pan spread", chord.panSpread, (v) =>
+                set({ panSpread: v as number }),
+              ),
+              num(
+                "Voices",
+                chord.voiceCap,
+                (v) => set({ voiceCap: v as number }),
+                {
+                  min: 1,
+                  max: 16,
+                  step: 1,
+                  integer: true,
+                  preview: true,
+                },
+              ),
+            ],
+          },
+          {
+            title: `Intervals (${intervals})`,
+            params: chord.preset === "custom" ? [customParam] : [],
+          },
+        ]
+      : []),
+  ];
 }
 
 /** Editable Song Info groups (title, credits, links, timing) for `/info`. */

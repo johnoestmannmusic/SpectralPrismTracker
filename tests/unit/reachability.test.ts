@@ -35,6 +35,7 @@ const OVERLAYS = [
   "sampler",
   "spectral",
   "percussion",
+  "chord",
   "fx",
 ] as const;
 

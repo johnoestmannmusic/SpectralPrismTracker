@@ -302,7 +302,7 @@ export async function exportWav(
     engine.effectiveClip(i),
   );
   const base = renderSamplerMix(
-    sequenceFromSong(song),
+    sequenceFromSong(song, settings),
     settings,
     clips,
     channelVolume,

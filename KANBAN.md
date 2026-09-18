@@ -70,41 +70,6 @@ Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundat
 - FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - FEAT-128 — Cycles demo project + walkthrough + end-to-end & constraint verification
 
-### FEAT-115 — Cycles Mode workspace toggle + Glitch defaults + reachability
-- priority: critical
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, session, ux, hc002
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Add a session-level `cyclesMode` boolean that switches the workspace into Cycles defaults. It reveals per-channel order-length editing and the Chord/MicroTextures instrument tabs, and seeds Glitch-friendly defaults (long releases, ping-pong loops, high pan spread, spectral/microtexture layers). Expose `/cycles on|off` in the command registry and a single-key toggle from the main screen so HC002 holds. Persist the flag in the runtime config (~/.config/lantern/config.json) as a workspace preference, not in the project, so old projects open unchanged. Update docs/REACHABILITY.md and the OVERLAYS list in tests/unit/reachability.test.ts.
-
-**Architecture**
-src/tui/session.ts (SessionState + setCyclesMode), src/runtime/config.ts (persist cyclesMode), src/tui/commands/builtins.ts (/cycles), src/tui/App.tsx (key bind + gate UI), docs/REACHABILITY.md.
-
-**Key decisions**
-- Workspace-level, persisted in user config; projects remain portable.
-- Toggle must cost <=1 press from main screen.
-
-**Alternatives considered**
-- Project-level `cyclesMode` field: rejected — would fork the file format for a UI preference.
-
-**Open questions**
-- Should turning Cycles OFF hide Chord/MicroTextures data or just the tabs? (Proposal: hide tabs, keep data.)
-
-**Acceptance criteria**
-- /cycles toggles the workspace and persists across restart.
-- Reachability test + docs/REACHABILITY.md include the new toggle and tabs.
-- constraints_validate passes; HC002 test green.
-
 ### FEAT-119 — Phasing: per-channel start offset + playback speed
 - priority: high
 - tags: plan-cycles-mode-glitch-ambient-workspace, cycles, phasing, audio, session
@@ -141,79 +106,6 @@ src/core/songModel.ts (Channel fields), src/core/project.ts, src/core/sampler.ts
 - Two channels with different speeds drift and re-align exactly at the LCM loop point.
 - Phase offset survives save/load.
 - Offline export matches realtime drift.
-
-### FEAT-120 — Chord mode: settings model, project serde & editor tab
-- priority: high
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, chord, instrument, project
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Add a `ChordSettings` block to SamplerSettings: enabled, chord type preset (major/minor/sus/7th/9th/open/stack), custom interval set (semitones), inversion, octave spread, per-voice detune, strum/roll ms, per-voice pan spread, and max voices. Add a default factory and samplerFromJson/samplerToJson support. Add the Chord tab to editors.tsx after Percussion, extend InstrumentTab and instrumentTabFor precedence (MicroTextures > Chord > Percussion > Spectral > Sampler), and register `overlay:chord` in OVERLAYS + reachability docs + builtins `/chord`.
-
-**Architecture**
-src/core/sampler.ts (ChordSettings/default), src/core/project.ts (serde), src/tui/editors.tsx (chordGroups), src/tui/commands/types.ts (OverlayName), src/tui/commands/builtins.ts, src/tui/App.tsx (tab array), tests/unit/reachability.test.ts, docs/REACHABILITY.md.
-
-**Key decisions**
-- Chord is a per-note decision expressed in TypeScript (user decision).
-- Chain position: after Percussion, before MicroTextures.
-
-**Alternatives considered**
-- Baked chord render in prism_dsp: rejected by user — per-note voicing must stay in TS.
-
-**Open questions**
-- Interval entry UI: fixed presets only, or custom comma-separated semitone list?
-
-**Acceptance criteria**
-- Chord settings round-trip in .lampjson.
-- Chord tab reachable within 2 presses and show in instrument tab bar.
-- instrumentTabFor returns 'chord' only when chord enabled.
-
-### FEAT-121 — Chord mode: TS voicing expansion, voice groups & realtime/offline parity
-- priority: critical
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, chord, audio, export
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Expand chord instruments into one note voice per interval at sequence-build time (shared by realtime and offline). Give each expanded event a `voiceGroup` id so an OFF/release on a channel releases the whole chord together. In webSampler.handleEvent schedule one buildVoice per tone (rate = root rate * 2^(interval/12), gain split across voices, strum offsets), and mirror the same expansion/grouping in export.ts renderSamplerMix. Do not let chord voices trigger each other's chord expansion.
-
-**Architecture**
-src/core/sampler.ts (SamplerEvent gains voiceGroup; sequenceFromSong expansion), src/audio/webSampler.ts (handleEvent, findLastVoice -> group release), src/audio/backend.ts (PatternNote), src/core/export.ts (RenderVoice grouping), src/tui/session previewPattern.
-
-**Key decisions**
-- Expansion lives in sequenceFromSong so all hosts share one truth.
-- Off releases the whole group; pitchRamp applies to the group's root voice only unless per-voice slides are added later.
-
-**Alternatives considered**
-- Expand in each backend separately: rejected — parity bugs.
-
-**Open questions**
-- Should OFF release all tones or only the lowest? Proposal: all.
-
-**Depends on**
-- Chord mode: settings model, project serde & editor tab
-
-**Acceptance criteria**
-- A single note in the pattern sounds a full chord in realtime and in exported WAV.
-- OFF silences the whole chord.
-- Polyphony cap honoured across chord groups.
 
 ### FEAT-122 — MicroTextures DSP: Rust granular + formant filter + WASM binding
 - priority: critical
@@ -457,6 +349,92 @@ assets/ demo project, tests/unit/*, tests/e2e, constraints-tests/, package.json 
 ## Blocked
 
 ## Implemented
+
+### FEAT-121 — Chord mode: TS voicing expansion, voice groups & realtime/offline parity
+- priority: critical
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, chord, audio, export
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Expand chord instruments into one note voice per interval at sequence-build time (shared by realtime and offline). Give each expanded event a `voiceGroup` id so an OFF/release on a channel releases the whole chord together. In webSampler.handleEvent schedule one buildVoice per tone (rate = root rate * 2^(interval/12), gain split across voices, strum offsets), and mirror the same expansion/grouping in export.ts renderSamplerMix. Do not let chord voices trigger each other's chord expansion.
+
+**Architecture**
+src/core/sampler.ts (SamplerEvent gains voiceGroup; sequenceFromSong expansion), src/audio/webSampler.ts (handleEvent, findLastVoice -> group release), src/audio/backend.ts (PatternNote), src/core/export.ts (RenderVoice grouping), src/tui/session previewPattern.
+
+**Key decisions**
+- Expansion lives in sequenceFromSong so all hosts share one truth.
+- Off releases the whole group; pitchRamp applies to the group's root voice only unless per-voice slides are added later.
+
+**Alternatives considered**
+- Expand in each backend separately: rejected — parity bugs.
+
+**Open questions**
+- Should OFF release all tones or only the lowest? Proposal: all.
+
+**Depends on**
+- Chord mode: settings model, project serde & editor tab
+
+**Acceptance criteria**
+- A single note in the pattern sounds a full chord in realtime and in exported WAV.
+- OFF silences the whole chord.
+- Polyphony cap honoured across chord groups.
+
+### FEAT-120 — Chord mode: settings model, project serde & editor tab
+- priority: high
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, chord, instrument, project
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Add a `ChordSettings` block to SamplerSettings: enabled, chord type preset (major/minor/sus/7th/9th/open/stack), custom interval set (semitones), inversion, octave spread, per-voice detune, strum/roll ms, per-voice pan spread, and max voices. Add a default factory and samplerFromJson/samplerToJson support. Add the Chord tab to editors.tsx after Percussion, extend InstrumentTab and instrumentTabFor precedence (MicroTextures > Chord > Percussion > Spectral > Sampler), and register `overlay:chord` in OVERLAYS + reachability docs + builtins `/chord`.
+
+**Architecture**
+src/core/sampler.ts (ChordSettings/default), src/core/project.ts (serde), src/tui/editors.tsx (chordGroups), src/tui/commands/types.ts (OverlayName), src/tui/commands/builtins.ts, src/tui/App.tsx (tab array), tests/unit/reachability.test.ts, docs/REACHABILITY.md.
+
+**Key decisions**
+- Chord is a per-note decision expressed in TypeScript (user decision).
+- Chain position: after Percussion, before MicroTextures.
+
+**Alternatives considered**
+- Baked chord render in prism_dsp: rejected by user — per-note voicing must stay in TS.
+
+**Open questions**
+- Interval entry UI: fixed presets only, or custom comma-separated semitone list?
+
+**Acceptance criteria**
+- Chord settings round-trip in .lampjson.
+- Chord tab reachable within 2 presses and show in instrument tab bar.
+- instrumentTabFor returns 'chord' only when chord enabled.
+
+### FEAT-115 — Cycles Mode workspace toggle + Glitch defaults + reachability
+- priority: critical
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, session, ux, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+DONE (2026-09-18): Cycles workspace toggle implemented in FEAT-131 (`cyclesMode`, `C` key, `/cycles`), now persisted to the host config (`LanternConfig.cyclesMode`, sanitized; loaded in `Session.init`, serialized writes via `persistConfig`/`flushConfigWrites`). Glitch defaults applied to instruments created while Cycles Mode is on (`glitchSamplerDefaults`: ping-pong loop, long release, pan spread, polyphonic). `docs/REACHABILITY.md` documents `mode:cycles`. Tests: config round-trip/sanitize, session persistence, glitch defaults; test process now isolated to a temp config path.
+
+DEFERRED: the reachability rows for the Chord/MicroTextures instrument tabs will be added with FEAT-120/FEAT-123 (documented under FEAT-127), since those tabs do not exist yet.
 
 ### BUG-19 — Cycles view only appeared while playing; instrument colours vanished in it
 - priority: high

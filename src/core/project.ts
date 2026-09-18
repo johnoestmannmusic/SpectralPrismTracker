@@ -1,5 +1,12 @@
 import { A_REF_NOTE } from "./pitch";
-import { defaultSamplerSettings, type SamplerSettings } from "./sampler";
+import {
+  CHORD_PRESETS,
+  defaultChordSettings,
+  defaultSamplerSettings,
+  type ChordPreset,
+  type ChordSettings,
+  type SamplerSettings,
+} from "./sampler";
 import type { NoteValue, PatternCell } from "./songTypes";
 import {
   PERCUSSION_NOISE_COLORS,
@@ -320,6 +327,35 @@ export function applyPercussionPreset(
   return { ...percussionPreset(preset), enabled };
 }
 
+function chordFromJson(value: unknown): ChordSettings {
+  const d = defaultChordSettings();
+  if (!value || typeof value !== "object") return d;
+  const obj = value as Record<string, unknown>;
+  const preset =
+    typeof obj.preset === "string" &&
+    (CHORD_PRESETS as string[]).includes(obj.preset)
+      ? (obj.preset as ChordPreset)
+      : d.preset;
+  const intervals = Array.isArray(obj.intervals)
+    ? obj.intervals
+        .filter((n): n is number => typeof n === "number" && Number.isFinite(n))
+        .slice(0, 16)
+    : d.intervals;
+  const num = (key: string, fallback: number) =>
+    typeof obj[key] === "number" ? (obj[key] as number) : fallback;
+  return {
+    enabled: typeof obj.enabled === "boolean" ? obj.enabled : d.enabled,
+    preset,
+    intervals: intervals.length > 0 ? intervals : d.intervals,
+    inversion: num("inversion", d.inversion),
+    octaves: num("octaves", d.octaves),
+    detuneCents: num("detuneCents", d.detuneCents),
+    strumSec: num("strumSec", d.strumSec),
+    panSpread: num("panSpread", d.panSpread),
+    voiceCap: num("voiceCap", d.voiceCap),
+  };
+}
+
 function spectralFromJson(value: unknown): SpectralSettings {
   const d = defaultSpectralSettings();
   if (!value || typeof value !== "object") return d;
@@ -392,6 +428,7 @@ export function samplerFromJson(value: unknown): SamplerSettings {
     polyphonic: bool("polyphonic", d.polyphonic),
     voiceCap: num("voiceCap", d.voiceCap),
     spectral: spectralFromJson(obj.spectral ?? obj.spectralFusion),
+    chord: chordFromJson(obj.chord),
     muted: false,
   };
 }
@@ -419,6 +456,7 @@ export function samplerToJson(
     polyphonic: settings.polyphonic,
     voiceCap: settings.voiceCap,
     spectral: settings.spectral,
+    chord: settings.chord,
   };
   if (includeMuted) out.muted = settings.muted;
   return out;

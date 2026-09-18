@@ -156,7 +156,6 @@ export function PatternView({
   // channel gets its own row-number gutter and scrolls independently so its
   // own playhead sits on a fixed centre line.
   if (state.cyclesMode) {
-    const playing = playheads !== null;
     const visible = Math.max(viewportRows, 1);
     const centre = Math.floor(visible / 2);
     const fallback = Math.max(song.meta.patternLength, 1);

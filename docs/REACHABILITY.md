@@ -19,6 +19,7 @@ suggestion = press 2.
 | `overlay:sampler`             | `v` (mode-aware instrument editor)             | 1       |
 | `overlay:spectral`            | `v` then tab to Spectral                       | 2       |
 | `overlay:percussion`          | `v` then tab to Percussion                     | 2       |
+| `overlay:chord`               | `v` then tab to Chord                          | 2       |
 | `overlay:fx`                  | `/` → `Enter` on `fx`                          | 2       |
 | `menu:help`                   | `?`                                            | 1       |
 | `menu:song-info`              | `/` → `Enter` on `info`                        | 2       |

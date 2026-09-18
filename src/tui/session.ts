@@ -18,7 +18,9 @@ import {
   type ProjectFile,
 } from "@/core/project";
 import {
+  chordVoices,
   defaultSamplerSettings,
+  glitchSamplerDefaults,
   sequenceFromSong,
   type SamplerSettings,
 } from "@/core/sampler";
@@ -227,6 +229,8 @@ export class Session {
   private state: SessionState = initialState();
   private listeners = new Set<() => void>();
   private engine: WebAudioBackend | null = null;
+  /** Serialised config-write queue (see `persistConfig`). */
+  private configWriteChain: Promise<void> = Promise.resolve();
   private history: HistoryGroup[] = [];
   private redoStack: HistoryGroup[] = [];
   /** >0 while a composite mutation records a single memento for the whole op. */
@@ -312,6 +316,10 @@ export class Session {
     this.host.audio.installGlobals();
     this.patch({ status: "Loading bundled song…" });
     try {
+      const config = await this.host.config.read();
+      if (typeof config.cyclesMode === "boolean") {
+        this.patch({ cyclesMode: config.cyclesMode });
+      }
       const result = await this.host.assets.loadDefaultSong();
       await this.applyLoaded(result);
     } catch (error) {
@@ -359,7 +367,11 @@ export class Session {
       { length: 6 },
       (_, i) => result.samples[i] ?? null,
     );
-    engine.loadSampler(sequenceFromSong(model), settings, sampleBytes);
+    engine.loadSampler(
+      sequenceFromSong(model, settings),
+      settings,
+      sampleBytes,
+    );
     this.engine = engine;
 
     this.history = [];
@@ -435,9 +447,26 @@ export class Session {
     this.patch({ colorInstruments });
   }
 
-  /** Cycles Mode: independent per-channel polymeter view. */
-  setCyclesMode(cyclesMode: boolean): void {
+  /** Cycles Mode: independent per-channel polymeter view. Persists to config. */
+  setCyclesMode(cyclesMode: boolean, persist = true): void {
     this.patch({ cyclesMode });
+    if (persist) this.persistConfig({ cyclesMode });
+  }
+
+  /**
+   * Serialises config writes so a late fire-and-forget write cannot clobber a
+   * newer one, and lets tests await the queue.
+   */
+  private persistConfig(patch: Parameters<Host["config"]["write"]>[0]): void {
+    this.configWriteChain = this.configWriteChain
+      .catch(() => {})
+      .then(() => this.host.config.write(patch))
+      .then(() => undefined);
+  }
+
+  /** Awaits any queued config persistence (used by tests). */
+  async flushConfigWrites(): Promise<void> {
+    await this.configWriteChain;
   }
 
   toggleCyclesMode(): boolean {
@@ -606,7 +635,7 @@ export class Session {
     const song = this.state.song;
     const engine = this.engine;
     if (!song || !engine) return;
-    engine.updateSequence(sequenceFromSong(song));
+    engine.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ duration: engine.songDuration() });
     this.syncLoopRange();
   }
@@ -1004,7 +1033,7 @@ export class Session {
       });
     }
     this.pushHistory({ kind: "cells", entries });
-    this.engine?.updateSequence(sequenceFromSong(song));
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ dirty: true });
     this.markAction();
   }
@@ -1063,7 +1092,7 @@ export class Session {
     const song = this.state.song;
     if (song) {
       this.engine?.replaceSettings(this.state.settings);
-      this.engine?.updateSequence(sequenceFromSong(song));
+      this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
       // replaceSettings drops cached renders; rebuild enabled Spectral layers.
       this.state.settings.forEach((setting, index) => {
         if (setting.spectral.enabled && setting.sourceIndex !== null) {
@@ -1101,7 +1130,7 @@ export class Session {
         cell: entry[which],
       });
     }
-    this.engine?.updateSequence(sequenceFromSong(song));
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ dirty: true });
     this.markAction();
   }
@@ -1304,7 +1333,7 @@ export class Session {
     // interpolateColumn already mutated the model; commit() would re-apply
     // identical values, so record history without re-applying.
     this.pushHistory({ kind: "cells", entries });
-    this.engine?.updateSequence(sequenceFromSong(song));
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ dirty: true });
     this.markAction();
     return true;
@@ -1775,7 +1804,7 @@ export class Session {
     retime(song);
     const engine = this.engine;
     if (engine) {
-      engine.updateSequence(sequenceFromSong(song));
+      engine.updateSequence(sequenceFromSong(song, this.state.settings));
       this.patch({
         project: { ...project, bpmOverride: next },
         dirty: true,
@@ -1802,7 +1831,7 @@ export class Session {
     retime(song);
     const engine = this.engine;
     if (engine) {
-      engine.updateSequence(sequenceFromSong(song));
+      engine.updateSequence(sequenceFromSong(song, this.state.settings));
       this.patch({
         project: {
           ...project,
@@ -1880,7 +1909,11 @@ export class Session {
     const before = this.captureMemento();
     const index = this.state.settings.length;
     const settings = this.state.settings.slice();
-    settings.push(defaultSamplerSettings());
+    settings.push(
+      this.state.cyclesMode
+        ? glitchSamplerDefaults()
+        : defaultSamplerSettings(),
+    );
     song.instruments.push({
       name: `Instrument ${String(index + 1).padStart(2, "0")}`,
       colorRgb: instrumentColor(index),
@@ -1897,7 +1930,7 @@ export class Session {
       nextProject = { ...project, instrumentNames };
     }
     this.engine?.replaceSettings(settings);
-    this.engine?.updateSequence(sequenceFromSong(song));
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ settings, project: nextProject, dirty: true });
     this.recordMemento("add instrument", before);
     this.markAction();
@@ -1933,7 +1966,7 @@ export class Session {
       nextProject = { ...project, instrumentNames };
     }
     this.engine?.replaceSettings(settings);
-    this.engine?.updateSequence(sequenceFromSong(song));
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ settings, project: nextProject, dirty: true });
     this.recordMemento("duplicate instrument", before);
     this.markAction();
@@ -1989,7 +2022,7 @@ export class Session {
       nextProject = { ...project, instrumentNames };
     }
     this.engine?.replaceSettings(settings);
-    this.engine?.updateSequence(sequenceFromSong(song));
+    this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ settings, project: nextProject, dirty: true });
     this.recordMemento("delete instrument", before);
     this.markAction();
@@ -2064,7 +2097,7 @@ export class Session {
   private syncEngineToTarget(target: BuildTarget): void {
     const engine = this.engine;
     if (!engine) return;
-    engine.updateSequence(sequenceFromSong(target.song));
+    engine.updateSequence(sequenceFromSong(target.song, target.settings));
     target.settings.forEach((settings, index) =>
       engine.setSamplerSettings(index, settings),
     );
@@ -2118,13 +2151,20 @@ export class Session {
       const slideRate = slide
         ? pitchSlideRate(rate, slide.effect, slide.value, ticks)
         : undefined;
-      notes.push({
-        channel,
-        instrument,
-        rate,
-        volume: Math.min(cell.volume ?? 15, 15) / 15,
-        slideRate,
-      });
+      const level = Math.min(cell.volume ?? 15, 15) / 15;
+      if (setting.chord.enabled) {
+        for (const voice of chordVoices(setting.chord)) {
+          notes.push({
+            channel,
+            instrument,
+            rate: rate * voice.rateRatio,
+            volume: level * voice.gain,
+            slideRate,
+          });
+        }
+      } else {
+        notes.push({ channel, instrument, rate, volume: level, slideRate });
+      }
     }
     return notes;
   }

@@ -652,6 +652,23 @@ export const builtinCommands: CommandDef[] = [
     },
   },
   {
+    id: "chord",
+    name: "chord",
+    aliases: ["chords"],
+    description: "Edit the Chord voice mode for an instrument",
+    category: "edit",
+    args: [{ name: "instrument", type: "number" }],
+    run: (args, ctx) => {
+      const index =
+        arg(args, "instrument") !== undefined
+          ? Number(arg(args, "instrument"))
+          : ctx.session.getState().cursor.channel;
+      if (!Number.isFinite(index)) return fail("instrument must be a number");
+      ctx.openOverlay?.("chord", index);
+      return ok(`Chord ${index}`);
+    },
+  },
+  {
     id: "query",
     name: "query",
     aliases: ["get"],

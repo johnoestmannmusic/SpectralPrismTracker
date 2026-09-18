@@ -32,6 +32,8 @@ export class Voice {
     public rate: number,
     public lfo: OscillatorNode | null = null,
     public lfoGain: GainNode | null = null,
+    /** Shared id for the voices of one chord; OFF releases the whole group. */
+    public group?: number,
   ) {}
 
   levelAt(when: number): number {
@@ -161,6 +163,8 @@ export function buildVoice(
   volume: number,
   when: number,
   destination: AudioNode,
+  panOffset = 0,
+  group?: number,
 ): Voice {
   const source = ctx.createBufferSource();
   const gain = ctx.createGain();
@@ -197,7 +201,12 @@ export function buildVoice(
   const panCentre = Math.min(Math.max(settings.pan, -1), 1);
   const panWidth = Math.min(Math.max(settings.panRandomRange, 0), 1);
   pan.pan.value = Math.min(
-    Math.max(panCentre + (Math.random() * 2 - 1) * panWidth, -1),
+    Math.max(
+      panCentre +
+        Math.min(Math.max(panOffset, -1), 1) +
+        (Math.random() * 2 - 1) * panWidth,
+      -1,
+    ),
     1,
   );
 
@@ -249,6 +258,7 @@ export function buildVoice(
     rate,
     lfo,
     lfoGain,
+    group,
   );
 }
 
@@ -525,9 +535,15 @@ export class SamplerEngine {
     now: number,
   ): void {
     if (event.type === "off") {
-      const voice = this.findLastVoice(event.channel, when);
-      if (voice)
-        voice.release(when, Math.min(Math.max(voice.settings.release, 0), 5));
+      // Release every voice on the channel, so all chord tones stop together.
+      for (const voice of this.voices) {
+        if (
+          voice.channel === event.channel &&
+          voice.end > when &&
+          !voice.stolen
+        )
+          voice.release(when, Math.min(Math.max(voice.settings.release, 0), 5));
+      }
       return;
     }
     if (event.type === "pitchRamp") {
@@ -546,23 +562,34 @@ export class SamplerEngine {
       return;
     }
 
+    const group = event.voiceGroup;
     if (settings.polyphonic) {
       const cap = Math.min(Math.max(settings.voiceCap, 1), 32);
       const active = () =>
         this.voices.filter(
           (v) => v.instrument === event.instrument && v.end > when && !v.stolen,
         );
-      while (active().length >= cap) {
-        const victim = active()[0];
+      const candidates = () =>
+        active().filter((v) => group === undefined || v.group !== group);
+      while (active().length >= cap && candidates().length > 0) {
+        const victim = candidates()[0];
         if (!victim) break;
         victim.release(when, 0.008);
         victim.stolen = true;
       }
     } else {
-      const victim = this.findLastVoice(event.channel, when);
-      if (victim) {
-        victim.release(when, 0.008);
-        victim.stolen = true;
+      // Release the previous note/chord on this channel, but never the other
+      // tones of the chord currently being scheduled.
+      for (const voice of this.voices) {
+        if (
+          voice.channel !== event.channel ||
+          voice.end <= when ||
+          voice.stolen
+        )
+          continue;
+        if (group !== undefined && voice.group === group) continue;
+        voice.release(when, 0.008);
+        voice.stolen = true;
       }
     }
 
@@ -576,8 +603,10 @@ export class SamplerEngine {
         event.channel,
         event.rate,
         event.volume,
-        when,
+        when + (event.delaySec ?? 0),
         destination,
+        event.panOffset ?? 0,
+        group,
       );
       this.voices.push(voice);
     } catch (e) {

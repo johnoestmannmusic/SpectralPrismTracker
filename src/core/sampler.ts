@@ -8,6 +8,147 @@ import { channelSteps, songLoopRows } from "./layout";
 export const LOOKAHEAD_SEC = 0.15;
 export const POLL_INTERVAL_MS = 25;
 
+// ---- Chord instrument mode --------------------------------------------------
+
+/** Named chord shapes. `custom` uses the editable interval list. */
+export type ChordPreset =
+  | "major"
+  | "minor"
+  | "sus2"
+  | "sus4"
+  | "major7"
+  | "minor7"
+  | "dom7"
+  | "add9"
+  | "power"
+  | "open"
+  | "custom";
+
+export const CHORD_PRESETS: ChordPreset[] = [
+  "major",
+  "minor",
+  "sus2",
+  "sus4",
+  "major7",
+  "minor7",
+  "dom7",
+  "add9",
+  "power",
+  "open",
+  "custom",
+];
+
+/** Root-relative semitone intervals for each built-in shape. */
+export const CHORD_PRESET_INTERVALS: Record<ChordPreset, number[]> = {
+  major: [0, 4, 7],
+  minor: [0, 3, 7],
+  sus2: [0, 2, 7],
+  sus4: [0, 5, 7],
+  major7: [0, 4, 7, 11],
+  minor7: [0, 3, 7, 10],
+  dom7: [0, 4, 7, 10],
+  add9: [0, 4, 7, 14],
+  power: [0, 7],
+  open: [0, 7, 12, 19],
+  custom: [0, 4, 7],
+};
+
+/**
+ * Per-instrument Chord voice settings. A pattern note is the chord root; each
+ * interval becomes one voice (TypeScript schedules the voices — see
+ * `chordVoices`).
+ */
+export interface ChordSettings {
+  enabled: boolean;
+  preset: ChordPreset;
+  /** Custom root-relative intervals (used when `preset` is `custom`). */
+  intervals: number[];
+  /** Chord inversions: move the lowest/highest tone by octaves (-2..2). */
+  inversion: number;
+  /** Extra octave copies of the whole chord (1..3). */
+  octaves: number;
+  /** Per-voice detune in cents (0..50). */
+  detuneCents: number;
+  /** Strum/roll: seconds between successive voices (0..0.2). */
+  strumSec: number;
+  /** Voice stereo spread around the instrument pan (0..1). */
+  panSpread: number;
+  /** Max simultaneous voices in one chord (1..16). */
+  voiceCap: number;
+}
+
+export function defaultChordSettings(): ChordSettings {
+  return {
+    enabled: false,
+    preset: "major",
+    intervals: [0, 4, 7],
+    inversion: 0,
+    octaves: 1,
+    detuneCents: 0,
+    strumSec: 0,
+    panSpread: 0.3,
+    voiceCap: 8,
+  };
+}
+
+/** The root-relative interval list a chord plays, after inversion/octaves. */
+export function chordIntervals(settings: ChordSettings): number[] {
+  const base =
+    settings.preset === "custom"
+      ? settings.intervals
+      : (CHORD_PRESET_INTERVALS[settings.preset] ??
+        CHORD_PRESET_INTERVALS.major);
+  const set = (base.length > 0 ? base : [0]).slice();
+  const inversion = Math.max(-2, Math.min(2, Math.round(settings.inversion)));
+  for (let i = 0; i < inversion; i++) {
+    set.sort((a, b) => a - b);
+    set[0]! += 12;
+  }
+  for (let i = 0; i > inversion; i--) {
+    set.sort((a, b) => a - b);
+    set[set.length - 1]! -= 12;
+  }
+  const octaves = Math.max(1, Math.min(3, Math.round(settings.octaves)));
+  const out: number[] = [];
+  for (let octave = 0; octave < octaves; octave++) {
+    for (const interval of set) out.push(interval + 12 * octave);
+  }
+  out.sort((a, b) => a - b);
+  return out.slice(0, Math.max(1, Math.min(16, Math.round(settings.voiceCap))));
+}
+
+/**
+ * One scheduled chord voice: playback-rate ratio against the root note, gain
+ * multiplier, pan offset in -1..1, and strum delay in seconds.
+ */
+export interface ChordVoice {
+  rateRatio: number;
+  gain: number;
+  pan: number;
+  delaySec: number;
+}
+
+/** Expands a root playback rate into the instrument's chord voices. */
+export function chordVoices(settings: ChordSettings): ChordVoice[] {
+  const intervals = chordIntervals(settings);
+  const count = Math.max(intervals.length, 1);
+  const panSpread = Math.max(0, Math.min(1, settings.panSpread));
+  const detune = Math.max(0, Math.min(50, settings.detuneCents));
+  const strum = Math.max(0, Math.min(0.2, settings.strumSec));
+  return intervals.map((interval, index) => ({
+    rateRatio: Math.pow(
+      2,
+      (interval +
+        (detune === 0 ? 0 : ((index % 2 === 0 ? 1 : -1) * detune) / 100)) /
+        12,
+    ),
+    // Split the level so a dense chord does not clip the channel.
+    gain: 1 / Math.sqrt(count),
+    pan: count <= 1 ? 0 : panSpread * ((index / (count - 1)) * 2 - 1),
+    delaySec: strum * index,
+  }));
+}
+
 export interface SamplerSettings {
   sourceIndex: number | null;
   startSec: number;
@@ -32,6 +173,8 @@ export interface SamplerSettings {
   polyphonic: boolean;
   voiceCap: number;
   spectral: SpectralSettings;
+  /** Chord instrument mode (root note in the pattern). */
+  chord: ChordSettings;
   /** Not persisted (matches the Rust `#[serde(skip)]`). */
   muted: boolean;
 }
@@ -56,8 +199,25 @@ export function defaultSamplerSettings(): SamplerSettings {
     polyphonic: false,
     voiceCap: 8,
     spectral: defaultSpectralSettings(),
+    chord: defaultChordSettings(),
     muted: false,
   };
+}
+
+/**
+ * Glitch-Ambient defaults used for instruments created while Cycles Mode is on:
+ * sustained ping-pong loops with a long release and a wide stereo spread — the
+ * raw material for Oval-style phasing. Safe to use with no source assigned.
+ */
+export function glitchSamplerDefaults(): SamplerSettings {
+  const settings = defaultSamplerSettings();
+  settings.looping = true;
+  settings.pingPong = true;
+  settings.release = 0.6;
+  settings.panRandomRange = 0.35;
+  settings.polyphonic = true;
+  settings.voiceCap = 8;
+  return settings;
 }
 
 export function setSpectralEnabled(
@@ -160,6 +320,12 @@ export type SamplerEvent =
       instrument: number;
       rate: number;
       volume: number;
+      /** Shared id for the voices of one chord (lets OFF release them together). */
+      voiceGroup?: number;
+      /** Stereo pan offset added to the instrument pan (-1..1). */
+      panOffset?: number;
+      /** Strum/roll delay in seconds before this voice starts. */
+      delaySec?: number;
     }
   | { type: "off"; channel: number }
   | { type: "pitchRamp"; channel: number; rate: number; duration: number };
@@ -175,7 +341,10 @@ export function sequenceDuration(sequence: Sequence): number {
   return sequence.rowTimes[sequence.rowTimes.length - 1] ?? 0;
 }
 
-export function sequenceFromSong(song: SongModel): Sequence {
+export function sequenceFromSong(
+  song: SongModel,
+  settings?: Array<SamplerSettings | undefined>,
+): Sequence {
   const rows: SamplerEvent[][] = [];
   const baseRates: (number | null)[] = [null, null, null, null];
   const pitchOffsets = [0, 0, 0, 0];
@@ -222,6 +391,28 @@ export function sequenceFromSong(song: SongModel): Sequence {
               rate,
               volume: Math.min(cell.volume ?? 15, 15) / 15,
             });
+            const chord = settings?.[instrument]?.chord;
+            if (chord?.enabled) {
+              // Expand the root note into its chord voices, sharing one group so
+              // a note-off releases the whole chord together.
+              const group = (globalRow % 65536) * 4 + channel;
+              const level = Math.min(cell.volume ?? 15, 15) / 15;
+              // Replace the single root voice with the chord tones (the root is
+              // interval 0, so the chord already contains it).
+              events.pop();
+              for (const voice of chordVoices(chord)) {
+                events.push({
+                  type: "note",
+                  channel,
+                  instrument,
+                  rate: rate * voice.rateRatio,
+                  volume: level * voice.gain,
+                  voiceGroup: group,
+                  panOffset: voice.pan,
+                  delaySec: voice.delaySec,
+                });
+              }
+            }
             baseRates[channel] = rate;
             pitchOffsets[channel] = 0;
           }

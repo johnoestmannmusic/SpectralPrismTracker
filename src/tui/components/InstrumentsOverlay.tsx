@@ -6,7 +6,7 @@ import type { Session, SessionState } from "../session";
 import { ActionMenu } from "./ActionMenu";
 import { contextActions, type ContextAction } from "../contextActions";
 
-export type InstrumentTab = "sampler" | "spectral" | "percussion";
+export type InstrumentTab = "sampler" | "spectral" | "percussion" | "chord";
 
 interface Props {
   session: Session;

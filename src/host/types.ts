@@ -15,6 +15,8 @@ export interface LanternConfig {
   defaultOpen?: DefaultOpen;
   /** Most-recently used project paths, newest first (max 10). */
   recentProjects?: string[];
+  /** Workspace preference: true polymeter Cycles view. */
+  cyclesMode?: boolean;
 }
 
 export interface SourceSampleAsset {

@@ -46,6 +46,7 @@ import {
   type EditorGroup,
 } from "./components/ParamEditorOverlay";
 import {
+  chordGroups,
   instrumentTabFor,
   masterFxGroups,
   percussionGroups,
@@ -121,6 +122,7 @@ type Overlay =
   | "sampler"
   | "spectral"
   | "percussion"
+  | "chord"
   | "fx";
 
 interface Props {
@@ -1060,9 +1062,11 @@ export function App({ session }: Props) {
         ? spectralGroups(session, activeInstrument, settingsOverride)
         : activeOverlay === "percussion"
           ? percussionGroups(session, activeInstrument, settingsOverride)
-          : activeOverlay === "fx"
-            ? masterFxGroups(session, stepTarget?.masterFx)
-            : null;
+          : activeOverlay === "chord"
+            ? chordGroups(session, activeInstrument, settingsOverride)
+            : activeOverlay === "fx"
+              ? masterFxGroups(session, stepTarget?.masterFx)
+              : null;
   const editorTitle =
     activeOverlay === "sampler"
       ? `Sampler — ${instrumentLabel}`
@@ -1070,14 +1074,21 @@ export function App({ session }: Props) {
         ? `Spectral — ${instrumentLabel}`
         : activeOverlay === "percussion"
           ? `Percussion — ${instrumentLabel}`
-          : "Master FX";
+          : activeOverlay === "chord"
+            ? `Chord — ${instrumentLabel}`
+            : "Master FX";
   const songGroups =
     activeOverlay === "song" && !stepMode ? songInfoGroups(session) : null;
-  const instrumentTabs: InstrumentTab[] = ["sampler", "spectral", "percussion"];
+  const instrumentTabs: InstrumentTab[] = [
+    "sampler",
+    "spectral",
+    "percussion",
+    "chord",
+  ];
   const editorTabs =
     editorGroups && activeOverlay !== "fx"
       ? {
-          labels: ["Sampler", "Spectral", "Percussion"],
+          labels: ["Sampler", "Spectral", "Percussion", "Chord"],
           active: Math.max(
             instrumentTabs.indexOf(activeOverlay as InstrumentTab),
             0,
@@ -1088,6 +1099,7 @@ export function App({ session }: Props) {
             false,
             !!state.settings[activeInstrument]?.spectral.enabled,
             !!state.settings[activeInstrument]?.spectral.percussion.enabled,
+            !!state.settings[activeInstrument]?.chord.enabled,
           ],
         }
       : undefined;

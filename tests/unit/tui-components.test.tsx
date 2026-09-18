@@ -17,12 +17,14 @@ import {
 import { HelpOverlay } from "@/tui/components/HelpOverlay";
 import { createRegistry } from "@/tui/commands";
 import {
+  chordGroups,
   masterFxGroups,
   percussionGroups,
   samplerGroups,
   spectralGroups,
 } from "@/tui/editors";
 import { Session } from "@/tui/session";
+import { defaultSamplerSettings } from "@/core/sampler";
 
 describe("TUI overlays", () => {
   const session = new Session();
@@ -430,6 +432,22 @@ describe("TUI overlays", () => {
       } finally {
         session.setCyclesMode(false);
       }
+    });
+  });
+
+  describe("chord instrument mode", () => {
+    it("exposes shape and voicing controls when enabled", () => {
+      const settings = defaultSamplerSettings();
+      settings.chord.enabled = true;
+      settings.chord.preset = "minor7";
+      const groups = chordGroups(session, 0, settings);
+      const labels = groups.flatMap((group) =>
+        group.params.map((param) => param.label),
+      );
+      expect(labels).toContain("Shape");
+      expect(labels).toContain("Inversion");
+      expect(labels).toContain("Voices");
+      expect(labels).toContain("Strum");
     });
   });
 
