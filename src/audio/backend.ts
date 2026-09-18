@@ -20,6 +20,16 @@ export interface PatternNote {
   volume: number;
   /** Optional target rate for a 01/02 pitch-slide effect. */
   slideRate?: number;
+  /** 12xx reverse. */
+  reverse?: boolean;
+  /** 13xx start position within the region, 0..1. */
+  offsetFraction?: number;
+  /** Per-channel tape-drift detune in cents. */
+  detuneCents?: number;
+  /** 14xx hold/freeze. */
+  hold?: boolean;
+  /** 11xx ratchet: seconds to delay this hit within the row. */
+  delaySec?: number;
 }
 
 export interface AudioBackend {

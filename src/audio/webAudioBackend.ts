@@ -440,24 +440,34 @@ export class WebAudioBackend implements AudioBackend {
       if (!settings || settings.muted || settings.sourceIndex === null)
         continue;
       try {
+        const start = when + (note.delaySec ?? 0);
         const buffer = this.sampler.buffer(ctx, note.instrument);
+        const playBuffer = note.reverse
+          ? this.sampler.reversedBuffer(ctx, note.instrument, buffer)
+          : buffer;
         const voice = buildVoice(
           ctx,
-          buffer,
+          playBuffer,
           settings,
           note.instrument,
           note.channel,
           note.rate,
           note.volume,
-          when,
+          start,
           ctx.destination,
+          0,
+          undefined,
+          note.offsetFraction ?? 0,
+          note.reverse ?? false,
+          note.detuneCents ?? 0,
+          note.hold ?? false,
         );
         voice.release(
-          when + duration,
+          start + duration,
           Math.min(Math.max(settings.release, 0), 5),
         );
         if (note.slideRate !== undefined && note.slideRate > 0)
-          voice.pitchRamp(note.slideRate, when, duration);
+          voice.pitchRamp(note.slideRate, start, duration);
         this.patternSamplerPreview.push(voice);
       } catch {
         // Audition is best-effort: a not-yet-ready sample/fusion render is not

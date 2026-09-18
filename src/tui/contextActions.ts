@@ -1,5 +1,5 @@
 import { cellAt } from "@/core/songModel";
-import { flatColumnsForChannel } from "@/core/tracker";
+import { FX_CATALOG, flatColumnsForChannel } from "@/core/tracker";
 import type { SamplerSettings } from "@/core/sampler";
 import type { SessionState } from "./session";
 
@@ -135,6 +135,19 @@ function trackerActions(
     { id: "transpose-down", label: "Transpose -1", command: "/transpose -1" },
     { id: "goto-order", label: "Go to order…", special: "order-picker" },
   );
+
+  // On an effect column, lead with the FX type picker (Enter on FX).
+  if (column?.kind === "fx") {
+    const fxActions: ContextAction[] = [
+      { id: "fx-clear", label: "Clear effect", special: "clear-fx" },
+      ...FX_CATALOG.map((entry) => ({
+        id: `fx-${entry.code}`,
+        label: `${entry.label} — ${entry.description}`,
+        special: `set-fx:${entry.code}`,
+      })),
+    ];
+    return [...fxActions, ...actions];
+  }
   return actions;
 }
 

@@ -96,6 +96,39 @@ export class Voice {
     this.end = Math.min(this.end, when + fade + 0.02);
   }
 
+  /**
+   * Hard cut (choke): silence the voice immediately, skipping the ADSR
+   * release. A ~3 ms ramp avoids a click but otherwise ends the sound at once.
+   */
+  cut(when: number): void {
+    if (this.end <= when) return;
+    const t = Math.max(when, this.start);
+    const param = this.gain.gain as AudioParam & {
+      cancelAndHoldAtTime?: (cancelTime: number) => void;
+    };
+    if (typeof param.cancelAndHoldAtTime === "function") {
+      param.cancelAndHoldAtTime(t);
+    } else {
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(0, t);
+    }
+    param.linearRampToValueAtTime(0, t + 0.003);
+    try {
+      this.source.stop(t + 0.005);
+    } catch {
+      /* already stopped */
+    }
+    if (this.lfo) {
+      try {
+        this.lfo.stop(t + 0.005);
+      } catch {
+        /* already stopped */
+      }
+    }
+    this.released = { start: t, level: 0, duration: 0.003 };
+    this.end = Math.min(this.end, t + 0.005);
+  }
+
   position(now: number): number {
     return samplePosition(this.settings, now - this.start, this.rate);
   }
@@ -169,6 +202,10 @@ export function buildVoice(
   destination: AudioNode,
   panOffset = 0,
   group?: number,
+  offsetFraction = 0,
+  reverse = false,
+  detuneCents = 0,
+  hold = false,
 ): Voice {
   const source = ctx.createBufferSource();
   const gain = ctx.createGain();
@@ -182,6 +219,7 @@ export function buildVoice(
 
   source.buffer = buffer;
   source.playbackRate.value = rate;
+  if (detuneCents !== 0) source.detune.value = detuneCents;
 
   // Vibrato: a sine LFO offsetting playbackRate via `detune` (cents), so it
   // layers on top of any pitch ramp rather than replacing it.
@@ -219,18 +257,40 @@ export function buildVoice(
   pan.connect(destination);
 
   let end: number;
-  if (settings.looping) {
+  const f = Math.min(Math.max(offsetFraction, 0), 1);
+  const looping = settings.looping || hold;
+  if (looping) {
+    const total = buffer.duration;
+    let loopStart = 0;
+    let loopEnd = total;
+    let startOffset = reverse ? f * total : 0;
+    if (hold && !settings.looping) {
+      // 14xx hold: loop the trimmed region so the note sustains until OFF.
+      const reg = reverse
+        ? ([0, total] as [number, number])
+        : region(settings, total);
+      if (reg) {
+        loopStart = reg[0];
+        loopEnd = reg[0] + reg[1];
+        startOffset = loopStart + f * reg[1];
+      }
+    }
     source.loop = true;
-    source.loopStart = 0;
-    source.loopEnd = buffer.duration;
-    source.start(when);
+    source.loopStart = loopStart;
+    source.loopEnd = loopEnd;
+    source.start(when, startOffset);
     end = Number.POSITIVE_INFINITY;
   } else {
-    const reg = region(settings, buffer.duration);
+    const reg = reverse
+      ? ([0, buffer.duration] as [number, number])
+      : region(settings, buffer.duration);
     if (!reg) throw new Error("Empty trim");
     const [offset, length] = reg;
-    source.start(when, offset, length);
-    const playDuration = length / rate;
+    const startOffset = offset + f * length;
+    const playLength = length - f * length;
+    if (playLength <= 0) throw new Error("Empty trim");
+    source.start(when, startOffset, playLength);
+    const playDuration = playLength / rate;
     end = when + playDuration;
     if (lfo) {
       try {
@@ -294,6 +354,35 @@ export class SamplerEngine {
   rendering: boolean[] = [];
   private fusionJustCompleted: boolean[] = [];
   private renderGeneration: number[] = [];
+  /** Cached reversed copies of effective buffers, keyed by instrument. */
+  private reverseCache = new Map<
+    number,
+    { src: AudioBuffer; rev: AudioBuffer }
+  >();
+
+  /** A cached fully-reversed copy of an instrument's effective buffer. */
+  reversedBuffer(
+    ctx: BaseAudioContext,
+    instrument: number,
+    buffer: AudioBuffer,
+  ): AudioBuffer {
+    const cached = this.reverseCache.get(instrument);
+    if (cached && cached.src === buffer) return cached.rev;
+    const reversed = ctx.createBuffer(
+      buffer.numberOfChannels,
+      buffer.length,
+      buffer.sampleRate,
+    );
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const source = buffer.getChannelData(c);
+      const dest = reversed.getChannelData(c);
+      for (let i = 0; i < source.length; i++) {
+        dest[i] = source[source.length - 1 - i]!;
+      }
+    }
+    this.reverseCache.set(instrument, { src: buffer, rev: reversed });
+    return reversed;
+  }
 
   setSequence(sequence: Sequence): void {
     this.sequence = sequence;
@@ -308,6 +397,7 @@ export class SamplerEngine {
    * delete / duplicate) so renders cannot be read at a shifted index.
    */
   resetRenders(): void {
+    this.reverseCache.clear();
     this.fused = [];
     this.fusedClips = [];
     this.fusedWaveforms = [];
@@ -554,13 +644,20 @@ export class SamplerEngine {
   ): void {
     if (event.type === "off") {
       // Release every voice on the channel, so all chord tones stop together.
+      // `choke` instruments skip the release and cut immediately.
       for (const voice of this.voices) {
         if (
           voice.channel === event.channel &&
           voice.end > when &&
           !voice.stolen
-        )
-          voice.release(when, Math.min(Math.max(voice.settings.release, 0), 5));
+        ) {
+          if (voice.settings.choke) voice.cut(when);
+          else
+            voice.release(
+              when,
+              Math.min(Math.max(voice.settings.release, 0), 5),
+            );
+        }
       }
       return;
     }
@@ -606,16 +703,20 @@ export class SamplerEngine {
         )
           continue;
         if (group !== undefined && voice.group === group) continue;
-        voice.release(when, 0.008);
+        if (voice.settings.choke) voice.cut(when);
+        else voice.release(when, 0.008);
         voice.stolen = true;
       }
     }
 
     const destination = channelGains[event.channel] ?? ctx.destination;
+    const playBuffer = event.reverse
+      ? this.reversedBuffer(ctx, event.instrument, buffer)
+      : buffer;
     try {
       const voice = buildVoice(
         ctx,
-        buffer,
+        playBuffer,
         settings,
         event.instrument,
         event.channel,
@@ -625,6 +726,10 @@ export class SamplerEngine {
         destination,
         event.panOffset ?? 0,
         group,
+        event.offsetFraction ?? 0,
+        event.reverse ?? false,
+        event.detuneCents ?? 0,
+        event.hold ?? false,
       );
       this.voices.push(voice);
     } catch (e) {

@@ -274,4 +274,87 @@ describe("offline sampler mixdown", () => {
     const peak = Math.max(...Array.from(mix.channels[0]!, (v) => Math.abs(v)));
     expect(peak).toBeGreaterThan(0);
   });
+
+  it("renders reverse notes offline, differing from forward playback", () => {
+    const clip = makeClip([[0, 1, 2, 3, 4, 5, 6, 7]], 8);
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.startSec = 0;
+    settings.endSec = 1;
+    const make = (reverse: boolean) =>
+      renderSamplerMix(
+        {
+          tuning: 440,
+          rowTimes: [0, 0.5],
+          rows: [
+            [
+              {
+                type: "note",
+                channel: 0,
+                instrument: 0,
+                rate: 1,
+                volume: 1,
+                reverse,
+              },
+            ],
+            [],
+          ],
+        },
+        [settings],
+        [clip],
+        [1, 1, 1, 1],
+        [false, false, false, false],
+        1,
+      );
+    const forward = Array.from(make(false).channels[0]!);
+    const reversed = Array.from(make(true).channels[0]!);
+    expect(reversed.some((value) => value !== 0)).toBe(true);
+    expect(reversed).not.toEqual(forward);
+  });
+
+  it("hard-cuts a choked note when the next note starts", () => {
+    const clip = makeClip([[1, 1, 1, 1, 1, 1, 1, 1]], 8);
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.startSec = 0;
+    settings.endSec = 1;
+    settings.looping = true;
+    const sequence = {
+      tuning: 440,
+      rowTimes: [0, 0.5, 1],
+      rows: [
+        [
+          {
+            type: "note" as const,
+            channel: 0,
+            instrument: 0,
+            rate: 1,
+            volume: 1,
+          },
+        ],
+        [
+          {
+            type: "note" as const,
+            channel: 0,
+            instrument: 0,
+            rate: 1,
+            volume: 1,
+          },
+        ],
+        [],
+      ],
+    };
+    const render = (choke: boolean) =>
+      renderSamplerMix(
+        sequence,
+        [{ ...settings, choke }],
+        [clip],
+        [1, 1, 1, 1],
+        [false, false, false, false],
+        1,
+      );
+    const choked = Array.from(render(true).channels[0]!);
+    const released = Array.from(render(false).channels[0]!);
+    expect(choked).not.toEqual(released);
+  });
 });

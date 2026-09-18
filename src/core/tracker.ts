@@ -42,6 +42,31 @@ export const FX_CATALOG: Array<{
     label: "0Axx",
     description: "Tempo down — lower the running BPM by xx",
   },
+  {
+    code: 0x10,
+    label: "10xx",
+    description: "Trigger chance — 00 never plays, FF always plays",
+  },
+  {
+    code: 0x11,
+    label: "11xx",
+    description: "Ratchet — retrigger the note xx times in the row (01-10)",
+  },
+  {
+    code: 0x12,
+    label: "12xx",
+    description: "Reverse — non-zero plays the note backwards",
+  },
+  {
+    code: 0x13,
+    label: "13xx",
+    description: "Sample offset — start xx/255 into the trimmed region",
+  },
+  {
+    code: 0x14,
+    label: "14xx",
+    description: "Hold/freeze — sustain the note until the next note or OFF",
+  },
 ];
 
 export const CLIPBOARD_TAG = "LANTERN-PATTERN-CLIP:";

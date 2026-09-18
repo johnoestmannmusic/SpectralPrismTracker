@@ -70,78 +70,6 @@ Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundat
 - FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - FEAT-128 — Cycles demo project + walkthrough + end-to-end & constraint verification
 
-### FEAT-124 — Tone/space: formant presets, micro-detune drift, bitcrush & freeze/hold
-- priority: medium
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, tone, fx, audio
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Wire the approved tone/space ideas: expose formant vowel presets (from the Rust filter) in the editor; add per-channel micro-detune/tape-drift (slow random cents offset applied at voice build time, mirrored offline); add a bitcrush/downsample effect (reuse the Rust microtexture bitcrush or a TS FX code); add a freeze/hold note action that captures the current Spectral freeze and sustains it. Keep each reachable within 2 presses.
-
-**Architecture**
-src/core/sampler.ts (detuneDrift), src/audio/webSampler.ts + src/core/export.ts (drift parity), src/core/spectral.ts (freeze/hold), src/tui/editors.tsx, src/tui/session.ts, docs/REACHABILITY.md.
-
-**Key decisions**
-- Bitcrush lives in the Rust microtexture path; detune drift is cheap TS per-voice.
-
-**Open questions**
-- Is freeze/hold a held key, an FX column command, or a dedicated transport toggle?
-
-**Depends on**
-- MicroTextures DSP: Rust granular + formant filter + WASM binding
-
-**Acceptance criteria**
-- Formant presets change timbre predictably.
-- Detune drift is subtle and identical in realtime and export.
-- Freeze/hold is reachable and releases cleanly.
-
-### FEAT-125 — Glitch events: probability, ratchet, reverse & sample-offset FX
-- priority: high
-- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, glitch, tracker, fx
-- created: 2026-09-18
-- updated: 2026-09-18
-- plan: cycles-mode-glitch-ambient-workspace
-- kind: card
-- parent: FEAT-114
-
-**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
-
-**Plan summary**
-Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
-
-**Approach**
-Add new FX codes in the tracker catalog (extending FX_CATALOG): probability/trigger chance, ratchet (N retriggers within the row), reverse sample playback, and sample start-offset. Implement in sequenceFromSong (probability via a seeded PRNG so realtime and export agree; ratchet expands to sub-row events; reverse/offset carried on the note event) and consume in webSampler + renderSamplerMix. Show them in the tracker FX help and explainer.
-
-**Architecture**
-src/core/tracker.ts (FX_CATALOG), src/core/sampler.ts (SamplerEvent fields, expansion), src/audio/webSampler.ts, src/core/export.ts, src/tui/explainer.ts, src/tui/format.ts (FX display).
-
-**Key decisions**
-- Probability uses a fixed PRNG seed so WAV export matches playback.
-- New behaviours are FX codes, not new pattern columns, to preserve the file format and the 2-press budget.
-
-**Alternatives considered**
-- Dedicated probability/ratchet columns: rejected — schema + width churn.
-
-**Open questions**
-- FX code allocation: pick unused hex codes; confirm no collision with 01/02/09/0A.
-
-**Depends on**
-- Chord mode: TS voicing expansion, voice groups & realtime/offline parity
-
-**Acceptance criteria**
-- FX help lists the new codes with descriptions.
-- Probability is deterministic across realtime and export.
-- Ratchet produces N evenly spaced triggers within the row.
-
 ### FEAT-127 — Stepthrough, docs/REACHABILITY & KANBAN overview update
 - priority: medium
 - tags: plan-cycles-mode-glitch-ambient-workspace, cycles, docs, stepthrough, hc002
@@ -218,6 +146,90 @@ assets/ demo project, tests/unit/*, tests/e2e, constraints-tests/, package.json 
 ## Blocked
 
 ## Implemented
+
+### FEAT-124 — Tone/space: formant presets, micro-detune drift, bitcrush & freeze/hold
+- priority: medium
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, tone, fx, audio
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Wire the approved tone/space ideas: expose formant vowel presets (from the Rust filter) in the editor; add per-channel micro-detune/tape-drift (slow random cents offset applied at voice build time, mirrored offline); add a bitcrush/downsample effect (reuse the Rust microtexture bitcrush or a TS FX code); add a freeze/hold note action that captures the current Spectral freeze and sustains it. Keep each reachable within 2 presses.
+
+**Architecture**
+src/core/sampler.ts (detuneDrift), src/audio/webSampler.ts + src/core/export.ts (drift parity), src/core/spectral.ts (freeze/hold), src/tui/editors.tsx, src/tui/session.ts, docs/REACHABILITY.md.
+
+**Key decisions**
+- Bitcrush lives in the Rust microtexture path; detune drift is cheap TS per-voice.
+
+**Open questions**
+- Is freeze/hold a held key, an FX column command, or a dedicated transport toggle?
+
+**Depends on**
+- MicroTextures DSP: Rust granular + formant filter + WASM binding
+
+**Acceptance criteria**
+- Formant presets change timbre predictably.
+- Detune drift is subtle and identical in realtime and export.
+- Freeze/hold is reachable and releases cleanly.
+
+### BUG-30 — Pattern Manager selection needed a channel switch before arrows worked
+- priority: high
+- tags: patterns, tui, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report: after opening the Pattern Manager with `p`, the up/down selector did nothing until switching channels back and forth.
+
+Cause: the manager now opens on the tracker's cursor channel, but `selected` initialised from the global `viewOrder`, which can exceed that (shorter) channel's order length. The raw selection was out of range, so ↑ was a no-op (clamped display hid it); switching channels reset `selected` to 0.
+
+Fix: clamp the raw selection whenever the channel's `listLength` changes (including on open) via an effect, and make ↑/↓ move relative to the clamped value. 297 tests pass (added a test that opens on a 2-order channel at viewOrder 4 and moves up immediately).
+
+### FEAT-125 — Glitch events: probability, ratchet, reverse & sample-offset FX
+- priority: high
+- tags: plan-cycles-mode-glitch-ambient-workspace, cycles, glitch, tracker, fx
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: cycles-mode-glitch-ambient-workspace
+- kind: card
+- parent: FEAT-114
+
+**Plan:** CYCLES MODE — Glitch Ambient workspace _(#plan-cycles-mode-glitch-ambient-workspace)_
+
+**Plan summary**
+Add a "Cycles" workspace geared to Oval "Do While"-style Glitch Ambient. Foundation is per-channel order lengths with independent channel cycling (song loop = LCM). On top: Chord and MicroTextures instrument modes, a Formant filter replacing low-pass tone shaping, plus a full phasing / glitch-event / tone-space feature set the user approved ("Everything"). Architecture split agreed with the user: TypeScript owns per-note decisions (chord intervals, voicing, trigger scheduling), Rust/WASM prism_dsp owns the fast DSP (granular microtexture render, formant filter, bitcrush). All features must stay reachable within 2 presses (HC002), ship on desktop + web (HC003), add no unvetted deps (HC004), and keep .lampjson backward compatible.
+
+**Approach**
+Add new FX codes in the tracker catalog (extending FX_CATALOG): probability/trigger chance, ratchet (N retriggers within the row), reverse sample playback, and sample start-offset. Implement in sequenceFromSong (probability via a seeded PRNG so realtime and export agree; ratchet expands to sub-row events; reverse/offset carried on the note event) and consume in webSampler + renderSamplerMix. Show them in the tracker FX help and explainer.
+
+**Architecture**
+src/core/tracker.ts (FX_CATALOG), src/core/sampler.ts (SamplerEvent fields, expansion), src/audio/webSampler.ts, src/core/export.ts, src/tui/explainer.ts, src/tui/format.ts (FX display).
+
+**Key decisions**
+- Probability uses a fixed PRNG seed so WAV export matches playback.
+- New behaviours are FX codes, not new pattern columns, to preserve the file format and the 2-press budget.
+
+**Alternatives considered**
+- Dedicated probability/ratchet columns: rejected — schema + width churn.
+
+**Open questions**
+- FX code allocation: pick unused hex codes; confirm no collision with 01/02/09/0A.
+
+**Depends on**
+- Chord mode: TS voicing expansion, voice groups & realtime/offline parity
+
+**Acceptance criteria**
+- FX help lists the new codes with descriptions.
+- Probability is deterministic across realtime and export.
+- Ratchet produces N evenly spaced triggers within the row.
 
 ### BUG-29 — Duplicate preview used a shifted render index; percussion stopped when spectral was off
 - priority: critical
@@ -4691,6 +4703,48 @@ Done:
 3. PatternsOverlay useInput handles Ctrl+Z (undo) / Ctrl+Y (redo).
 
 Tests: wavExportGroups track-length gating, `/export wav` opens the overlay, Pattern Manager ctrl+z/y undo-redo, and `p` opens the Pattern Manager (verified via App render). 286 tests pass; constraints green.
+
+### TASK-5 — Choke setting + Pattern Manager opens on the cursor channel
+- priority: high
+- tags: choke, instrument, patterns, glitch, fx
+- created: 2026-09-18
+- updated: 2026-09-18
+
+Two user requests:
+1. A per-instrument "Choke" setting (default on) that hard-cuts a channel's sound when another note or an OFF plays there, skipping the release tail.
+2. Entering the Pattern Manager should default to the channel currently selected in the Pattern Editor.
+
+Done:
+1. `SamplerSettings.choke` (default true) + serde. `Voice.cut()` in the realtime engine does a ~3 ms hard cut; `handleEvent` uses it on note-steal and OFF when the previous voice's instrument has choke on. Offline `cutVoice()` mirrors it. Toggle added to the Sampler editor's Polyphony group. Row audition also respects reverse/offset FX now.
+2. PatternsOverlay seeds its channel from `state.cursor.channel` (clamped).
+
+Tests: choke default + serde round-trip, choked vs released offline render differs, Pattern Manager opens on "Ch 3" when the cursor is on channel 3, plus glitch-FX tests (probability/ratchet/reverse/offset) and reverse offline render. 294 tests pass.
+
+### TASK-6 — Enter on an FX column opens the FX-type picker
+- priority: high
+- tags: tracker, fx, tui, glitch
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User request: pressing Enter on an FX column should let you select the FX type.
+
+Done: the tracker's Enter context menu now leads with an FX-type list when the cursor is on an effect column — every FX_CATALOG entry (01 pitch up, 02 pitch down, 09 tempo up, 0A tempo down, 10 chance, 11 ratchet, 12 reverse, 13 offset) plus "Clear effect". Added `Session.setEffectCode()` (keeps the slot's value) and App handling for the `set-fx:<code>` / `clear-fx` specials. The FX value is still adjustable with q/a afterwards.
+
+Tests: `setEffectCode` writes the cell effect; contextActions on an FX column includes the FX entries. 297 tests pass.
+
+### TASK-7 — Ratchet (and probability) now preview in the Pattern Editor
+- priority: medium
+- tags: preview, ratchet, glitch, tracker
+- created: 2026-09-18
+- updated: 2026-09-18
+
+User report: ratchet didn't preview correctly in the Pattern Editor (row audition).
+
+Cause: `collectNotes` (used by `auditionRow`) ignored the glitch FX — it emitted only one voice per note and no delay, so ratchet (and probability) had no effect in the audition.
+
+Fix: `PatternNote` gained `delaySec`; `previewPattern` starts each voice (and its release/pitch ramp) at `when + delaySec`; `collectNotes` now applies 10xx probability (via the shared `rowRoll`) and expands 11xx ratchet into N evenly spaced hits across the row duration, matching `sequenceFromSong`.
+
+Tests: added an audition test asserting a ratcheted row passes ≥4 delayed notes to `previewPattern`. 299 tests pass.
 
 ## Archived
 

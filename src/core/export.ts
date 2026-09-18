@@ -298,6 +298,14 @@ interface RenderVoice {
   stolen: boolean;
   /** Shared id for the voices of one chord. */
   group?: number;
+  /** Start position within the region, 0..1 (13xx sample offset). */
+  offsetFraction: number;
+  /** Play the region backwards (12xx reverse). */
+  reverse: boolean;
+  /** Slow tape-drift detune in cents. */
+  detuneCents: number;
+  /** 14xx hold/freeze: loop the region until the next note/off. */
+  hold: boolean;
 }
 
 function clamp(value: number, low: number, high: number): number {
@@ -322,15 +330,19 @@ function rateAt(voice: RenderVoice, time: number): number {
   return current;
 }
 
-/** Base playback rate plus this voice's optional vibrato modulation. */
+/** Base playback rate plus this voice's optional drift/vibrato modulation. */
 function modulatedRate(voice: RenderVoice, time: number, base: number): number {
+  let rate = base;
+  if (voice.detuneCents !== 0) {
+    rate *= Math.pow(2, voice.detuneCents / 1200);
+  }
   const depth = voice.settings.vibratoDepth;
   const speed = voice.settings.vibratoSpeed;
   if (depth > 0 && speed > 0) {
     const phase = 2 * Math.PI * speed * (time - voice.start);
-    return base * Math.pow(2, (depth * Math.sin(phase)) / 12);
+    rate *= Math.pow(2, (depth * Math.sin(phase)) / 12);
   }
-  return base;
+  return rate;
 }
 
 function voiceEnvelope(voice: RenderVoice, time: number): number {
@@ -352,6 +364,14 @@ function releaseVoice(
   voice.release = { start: time, level, duration };
   voice.end = Math.min(voice.end, time + duration + 0.02);
   voice.stolen = voice.stolen || stolen;
+}
+
+/** Hard cut (choke): end the voice immediately, skipping the release tail. */
+function cutVoice(voice: RenderVoice, time: number): void {
+  if (voice.end <= time) return;
+  voice.release = { start: time, level: 0, duration: 0 };
+  voice.end = Math.min(voice.end, time);
+  voice.stolen = true;
 }
 
 function makePrng(seed: bigint): () => number {
@@ -387,19 +407,23 @@ export function renderSamplerMix(
     const time = sequence.rowTimes[row] ?? 0;
     for (const event of sequence.rows[row] ?? []) {
       if (event.type === "off") {
-        // Release every voice on the channel (all chord tones together).
+        // Release every voice on the channel (all chord tones together);
+        // `choke` instruments cut immediately instead.
         for (const voice of voices) {
           if (
             voice.channel === event.channel &&
             voice.end > time &&
             !voice.stolen
-          )
-            releaseVoice(
-              voice,
-              time,
-              clamp(voice.settings.release, 0, 5),
-              false,
-            );
+          ) {
+            if (voice.settings.choke) cutVoice(voice, time);
+            else
+              releaseVoice(
+                voice,
+                time,
+                clamp(voice.settings.release, 0, 5),
+                false,
+              );
+          }
         }
         continue;
       }
@@ -450,7 +474,8 @@ export function renderSamplerMix(
           )
             continue;
           if (group !== undefined && voice.group === group) continue;
-          releaseVoice(voice, time, 0.008, true);
+          if (voice.settings.choke) cutVoice(voice, time);
+          else releaseVoice(voice, time, 0.008, true);
         }
       }
 
@@ -479,6 +504,10 @@ export function renderSamplerMix(
         clip,
         stolen: false,
         group,
+        offsetFraction: event.offsetFraction ?? 0,
+        reverse: event.reverse ?? false,
+        detuneCents: event.detuneCents ?? 0,
+        hold: event.hold ?? false,
       };
       voices.push(voice);
       lastByChannel[event.channel] = voice;
@@ -492,7 +521,13 @@ export function renderSamplerMix(
   for (const voice of voices) {
     const reg = region(voice.settings, clipDuration(voice.clip));
     if (!reg) continue;
-    const [regionStart, regionLen] = reg;
+    let [regionStart, regionLen] = reg;
+    // Reverse plays the whole clip backwards (matching realtime), ignoring trim.
+    if (voice.reverse) {
+      regionStart = 0;
+      regionLen = clipDuration(voice.clip);
+    }
+    const offset = clamp(voice.offsetFraction, 0, 1) * regionLen;
     const startFrame = Math.floor(voice.start * OUTPUT_RATE);
     const endFrame = Math.min(
       Math.ceil(Math.min(voice.end, duration) * OUTPUT_RATE),
@@ -521,19 +556,23 @@ export function renderSamplerMix(
       previousTime = t;
       previousRate = rate;
 
+      const travel = offset + traveled;
+      const loops = voice.settings.looping || voice.hold;
       let rel: number;
-      if (voice.settings.looping && voice.settings.pingPong) {
-        const phase = mod(traveled, 2 * regionLen);
+      if (loops && voice.settings.pingPong) {
+        const phase = mod(travel, 2 * regionLen);
         rel = phase <= regionLen ? phase : 2 * regionLen - phase;
-      } else if (voice.settings.looping) {
-        rel = mod(traveled, regionLen);
-      } else if (traveled < regionLen) {
-        rel = traveled;
+      } else if (loops) {
+        rel = mod(travel, regionLen);
+      } else if (travel < regionLen) {
+        rel = travel;
       } else {
         break;
       }
+      // 12xx: read the region backwards.
+      const readRel = voice.reverse ? regionLen - rel : rel;
 
-      const sourceFrame = (regionStart + rel) * voice.clip.sampleRate;
+      const sourceFrame = (regionStart + readRel) * voice.clip.sampleRate;
       const i0 = Math.floor(sourceFrame);
       const frac = sourceFrame - i0;
       const sample = (ch: number): number => {

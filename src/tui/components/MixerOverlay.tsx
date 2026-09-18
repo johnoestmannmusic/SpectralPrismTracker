@@ -94,6 +94,31 @@ export function MixerOverlay({
         noBar: true,
         format: (value) => `${value.toFixed(2)}x`,
       });
+      rows.push({
+        label: `CH${channel + 1} drift`,
+        group: "drift",
+        explain:
+          "Per-channel tape drift: slow detune depth in cents for a warbling, unsteady pitch.",
+        get: () => session.channelDetuneDrift(channel),
+        set: (value) => {
+          session.setChannelDetuneDrift(channel, value);
+        },
+        step: 1,
+        noBar: true,
+        format: (value) => `${Math.round(value)}c`,
+      });
+      rows.push({
+        label: `CH${channel + 1} drift hz`,
+        group: "drift",
+        explain: "Tape-drift LFO rate in Hz.",
+        get: () => session.channelDetuneRate(channel),
+        set: (value) => {
+          session.setChannelDetuneRate(channel, value);
+        },
+        step: 0.05,
+        noBar: true,
+        format: (value) => `${value.toFixed(2)}Hz`,
+      });
     }
   }
   rows.push({

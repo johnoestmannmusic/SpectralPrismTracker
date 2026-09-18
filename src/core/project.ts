@@ -181,6 +181,8 @@ export function snapshotToSerde(
       orderList: channel.orderList,
       phaseOffsetRows: channel.phaseOffsetRows ?? 0,
       speed: channel.speed ?? 1,
+      detuneDriftCents: channel.detuneDriftCents ?? 0,
+      detuneDriftRate: channel.detuneDriftRate ?? 0.2,
       // Sparse rows: only cells that actually contain something are written,
       // as [rowIndex, cell] pairs. Empty patterns collapse to `[]`.
       // Format: [index, sparse, rowLength?, name?] — trailing optionals keep
@@ -227,6 +229,14 @@ export function snapshotFromSerde(value: unknown): PatternSnapshot | null {
             ? channel.phaseOffsetRows
             : 0,
         speed: typeof channel.speed === "number" ? channel.speed : 1,
+        detuneDriftCents:
+          typeof channel.detuneDriftCents === "number"
+            ? channel.detuneDriftCents
+            : 0,
+        detuneDriftRate:
+          typeof channel.detuneDriftRate === "number"
+            ? channel.detuneDriftRate
+            : 0.2,
         patterns: patternsRaw.map((pair) => {
           const tuple = pair as [number, unknown, unknown?, unknown?];
           const [index, second] = tuple;
@@ -465,6 +475,7 @@ export function samplerFromJson(value: unknown): SamplerSettings {
     vibratoDepth: num("vibratoDepth", d.vibratoDepth),
     polyphonic: bool("polyphonic", d.polyphonic),
     voiceCap: num("voiceCap", d.voiceCap),
+    choke: bool("choke", d.choke),
     spectral: spectralFromJson(obj.spectral ?? obj.spectralFusion),
     chord: chordFromJson(obj.chord),
     muted: false,
@@ -493,6 +504,7 @@ export function samplerToJson(
     vibratoDepth: settings.vibratoDepth,
     polyphonic: settings.polyphonic,
     voiceCap: settings.voiceCap,
+    choke: settings.choke,
     spectral: settings.spectral,
     chord: settings.chord,
   };

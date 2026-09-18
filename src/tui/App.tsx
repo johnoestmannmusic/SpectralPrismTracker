@@ -334,9 +334,17 @@ export function App({ session }: Props) {
         setOrderPickerOpen(true);
         return;
       }
+      if (action.special === "clear-fx") {
+        session.setEffectCode(null);
+        return;
+      }
+      if (action.special?.startsWith("set-fx:")) {
+        session.setEffectCode(Number(action.special.slice("set-fx:".length)));
+        return;
+      }
       if (action.command) void runCommand(action.command);
     },
-    [runCommand],
+    [runCommand, session],
   );
 
   const menuActions = useMemo(

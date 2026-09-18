@@ -21,6 +21,7 @@ import {
   chordVoices,
   defaultSamplerSettings,
   glitchSamplerDefaults,
+  rowRoll,
   sequenceFromSong,
   type SamplerSettings,
 } from "@/core/sampler";
@@ -880,6 +881,31 @@ export class Session {
     if (step > 0) this.moveCursor({ row: step });
   }
 
+  /**
+   * Sets the effect code for the cursor's FX column (keeping its value). Used
+   * by the Enter-on-FX type picker.
+   */
+  setEffectCode(effect: number | null): boolean {
+    const song = this.state.song;
+    if (!song) return false;
+    const { channel, order, row, column } = this.state.cursor;
+    const columnDef = flatColumnsForChannel(song, channel)[column];
+    if (!columnDef || columnDef.kind !== "fx") return false;
+    const before = cellAt(song, channel, order, row);
+    const slot = before.effects[columnDef.index] ?? {
+      effect: null,
+      value: null,
+    };
+    const value = effect === null ? null : (slot.value ?? 0);
+    const after = writeValue(before, columnDef, {
+      kind: "fx",
+      value: { effect, value },
+    });
+    if (after === before) return false;
+    this.commit([{ channel, order, row, before, after }]);
+    return true;
+  }
+
   /** q/a: bump the value under the cursor (note semitone, ins/vol/fx digit). */
   adjustValue(delta: number): void {
     const song = this.state.song;
@@ -1503,6 +1529,44 @@ export class Session {
     retime(song);
     this.engine?.updateSequence(sequenceFromSong(song, this.state.settings));
     this.patch({ dirty: true });
+  }
+
+  /** Per-channel tape-drift detune depth in cents. */
+  channelDetuneDrift(channel: number): number {
+    return this.state.song?.channels[channel]?.detuneDriftCents ?? 0;
+  }
+
+  setChannelDetuneDrift(channel: number, cents: number): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const next = Math.min(Math.max(cents, 0), 100);
+    if (Math.abs(next - ch.detuneDriftCents) < 1e-9) return false;
+    const before = this.captureMemento();
+    ch.detuneDriftCents = next;
+    this.retimeAndRepublish(song);
+    this.recordMemento("set channel detune drift", before);
+    this.markAction();
+    return true;
+  }
+
+  /** Per-channel tape-drift LFO rate in Hz. */
+  channelDetuneRate(channel: number): number {
+    return this.state.song?.channels[channel]?.detuneDriftRate ?? 0.2;
+  }
+
+  setChannelDetuneRate(channel: number, hz: number): boolean {
+    const song = this.state.song;
+    const ch = song?.channels[channel];
+    if (!song || !ch) return false;
+    const next = Math.min(Math.max(hz, 0.01), 20);
+    if (Math.abs(next - ch.detuneDriftRate) < 1e-9) return false;
+    const before = this.captureMemento();
+    ch.detuneDriftRate = next;
+    this.retimeAndRepublish(song);
+    this.recordMemento("set channel detune rate", before);
+    this.markAction();
+    return true;
   }
 
   /** Inserts a new order into one channel only; `duplicate` clones its pattern. */
@@ -2245,18 +2309,87 @@ export class Session {
         ? pitchSlideRate(rate, slide.effect, slide.value, ticks)
         : undefined;
       const level = Math.min(cell.volume ?? 15, 15) / 15;
+      const effects = cell.effects ?? [];
+      const reverse = effects.some(
+        (slot) => slot.effect === 0x12 && (slot.value ?? 0) !== 0,
+      );
+      const offsetSlot = effects.find(
+        (slot) => slot.effect === 0x13 && slot.value !== null,
+      );
+      const offsetFraction = offsetSlot
+        ? Math.min(Math.max(offsetSlot.value ?? 0, 0), 255) / 255
+        : 0;
+      const hold = effects.some(
+        (slot) => slot.effect === 0x14 && (slot.value ?? 0) !== 0,
+      );
+      const channelDrift = song.channels[channel]?.detuneDriftCents ?? 0;
+      const driftRate = song.channels[channel]?.detuneDriftRate ?? 0.2;
+      const detuneCents =
+        channelDrift === 0
+          ? 0
+          : channelDrift *
+            Math.sin(
+              2 * Math.PI * driftRate * (rowTime(song, order, row) || 0) +
+                (channel + 1) * 1.7,
+            );
+      const absoluteRow = orderStartRow(song, order) + row;
+      // 10xx trigger chance (matches playback).
+      const probabilitySlot = effects.find(
+        (slot) => slot.effect === 0x10 && slot.value !== null,
+      );
+      const probability = probabilitySlot
+        ? Math.min(Math.max(probabilitySlot.value ?? 0, 0), 255) / 255
+        : 1;
+      if (probability < 1 && rowRoll(absoluteRow, channel) >= probability) {
+        continue;
+      }
+      const ratchetSlot = effects.find(
+        (slot) => slot.effect === 0x11 && slot.value !== null,
+      );
+      const ratchet = ratchetSlot
+        ? Math.min(Math.max(Math.round(ratchetSlot.value ?? 1), 1), 16)
+        : 1;
+      const base: PatternNote[] = [];
       if (setting.chord.enabled) {
         for (const voice of chordVoices(setting.chord)) {
-          notes.push({
+          base.push({
             channel,
             instrument,
             rate: rate * voice.rateRatio,
             volume: level * voice.gain,
             slideRate,
+            reverse,
+            offsetFraction,
+            detuneCents,
+            hold,
           });
         }
       } else {
-        notes.push({ channel, instrument, rate, volume: level, slideRate });
+        base.push({
+          channel,
+          instrument,
+          rate,
+          volume: level,
+          slideRate,
+          reverse,
+          offsetFraction,
+          detuneCents,
+          hold,
+        });
+      }
+      // 11xx ratchet: emit the row's note(s) N times across the row duration.
+      if (ratchet > 1) {
+        const rowDur = rowDuration(song, absoluteRow);
+        for (let hit = 0; hit < ratchet; hit++) {
+          for (const entry of base) {
+            notes.push({
+              ...entry,
+              delaySec: (entry.delaySec ?? 0) + (hit * rowDur) / ratchet,
+            });
+          }
+        }
+      } else {
+        for (const entry of base) notes.push(entry);
       }
     }
     return notes;

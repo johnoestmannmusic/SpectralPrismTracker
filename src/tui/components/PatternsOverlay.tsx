@@ -39,7 +39,12 @@ export function PatternsOverlay({
   const state = stateOverride ?? live;
   const song = state.song;
   const channelCount = song?.channels.length ?? 0;
-  const [channel, setChannel] = useState(0);
+  const [channel, setChannel] = useState(() =>
+    Math.min(
+      Math.max(state.cursor.channel, 0),
+      Math.max((song?.channels.length ?? 1) - 1, 0),
+    ),
+  );
   const [selected, setSelected] = useState(state.viewOrder);
   const [editing, setEditing] = useState<string | null>(null);
   const [editingMode, setEditingMode] = useState<
@@ -63,6 +68,13 @@ export function PatternsOverlay({
 
   // Keep the selection in range as orders are added/removed or channel changes.
   const clamped = Math.min(Math.max(selected, 0), Math.max(listLength - 1, 0));
+  // The tracker's viewOrder can exceed a shorter channel's order list, so clamp
+  // the raw selection once the channel's length is known (on open, too).
+  useEffect(() => {
+    setSelected((value) =>
+      Math.max(0, Math.min(value, Math.max(listLength - 1, 0))),
+    );
+  }, [listLength]);
   const slotInfo =
     song && selectedChannel ? session.patternSlotInfo(channel, clamped) : null;
 
@@ -195,7 +207,7 @@ export function PatternsOverlay({
             setSelected(Math.max(clamped - 1, 0));
           return;
         }
-        setSelected((value) => Math.max(0, value - 1));
+        setSelected(Math.max(0, clamped - 1));
         return;
       }
       if (key.downArrow) {
@@ -204,11 +216,7 @@ export function PatternsOverlay({
             setSelected(Math.min(clamped + 1, listLength - 1));
           return;
         }
-        setSelected((value) =>
-          listLength === 0
-            ? 0
-            : Math.max(0, Math.min(listLength - 1, value + 1)),
-        );
+        setSelected(Math.min(Math.max(listLength - 1, 0), clamped + 1));
         return;
       }
       if (char === "K") {

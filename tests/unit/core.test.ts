@@ -605,6 +605,120 @@ describe("project json", () => {
     expect(percussionPresetName(custom)).toBe("custom");
   });
 
+  it("round-trips the choke setting", () => {
+    const settings = defaultSamplerSettings();
+    expect(settings.choke).toBe(true);
+    settings.choke = false;
+    const project = defaultProject();
+    project.instruments = [settings];
+    const reread = projectFromJson(projectToJson(project));
+    expect(reread.instruments[0]!.choke).toBe(false);
+  });
+
+  it("applies glitch-event FX (probability, ratchet, reverse, offset)", () => {
+    const slot = (effect: number | null, value: number | null) => ({
+      effect,
+      value,
+    });
+    const build = (
+      effects: Array<{ effect: number | null; value: number | null }>,
+    ) => {
+      const settings = defaultSamplerSettings();
+      settings.sourceIndex = 0;
+      const project = defaultProject();
+      project.instruments = [settings];
+      project.patternSnapshot = {
+        orderLength: 1,
+        channels: [
+          {
+            orderLength: 1,
+            orderList: [0],
+            patterns: [
+              [
+                0,
+                [
+                  {
+                    note: { kind: "note", note: 108 },
+                    instrument: 0,
+                    volume: 15,
+                    effects: [
+                      ...effects,
+                      ...Array.from({ length: 8 - effects.length }, () =>
+                        slot(null, null),
+                      ),
+                    ],
+                  },
+                ],
+                1,
+              ],
+            ],
+          },
+        ],
+      };
+      const song = buildSongModelFromProject(project);
+      return sequenceFromSong(song, [settings]).rows[0]!.filter(
+        (event) => event.type === "note",
+      ) as Array<{
+        delaySec?: number;
+        reverse?: boolean;
+        offsetFraction?: number;
+        hold?: boolean;
+        detuneCents?: number;
+      }>;
+    };
+
+    // 10xx trigger chance: 00 never, FF always.
+    expect(build([slot(0x10, 0)])).toHaveLength(0);
+    expect(build([slot(0x10, 255)])).toHaveLength(1);
+    // 11xx ratchet: N evenly spaced hits.
+    const ratchet = build([slot(0x11, 4)]);
+    expect(ratchet).toHaveLength(4);
+    expect(ratchet[3]!.delaySec!).toBeGreaterThan(ratchet[0]!.delaySec ?? 0);
+    // 12xx reverse + 13xx sample offset.
+    const fx = build([slot(0x12, 1), slot(0x13, 128)]);
+    expect(fx[0]!.reverse).toBe(true);
+    expect(fx[0]!.offsetFraction).toBeCloseTo(128 / 255, 5);
+    // 14xx hold/freeze flag.
+    expect(build([slot(0x14, 1)])[0]!.hold).toBe(true);
+  });
+
+  it("applies per-channel tape-drift detune to notes", () => {
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    const project = defaultProject();
+    project.instruments = [settings];
+    project.patternSnapshot = {
+      orderLength: 1,
+      channels: [
+        {
+          orderLength: 1,
+          orderList: [0],
+          patterns: [
+            [
+              0,
+              [
+                {
+                  note: { kind: "note", note: 108 },
+                  instrument: 0,
+                  volume: 15,
+                  effects: [],
+                },
+              ],
+              1,
+            ],
+          ],
+          detuneDriftCents: 20,
+          detuneDriftRate: 0.5,
+        },
+      ],
+    };
+    const song = buildSongModelFromProject(project);
+    const notes = sequenceFromSong(song, [settings]).rows[0]!.filter(
+      (event) => event.type === "note",
+    ) as Array<{ detuneCents?: number }>;
+    expect(notes[0]!.detuneCents).not.toBe(0);
+  });
+
   it("builds chord intervals and serialises chord settings", () => {
     const chord = defaultChordSettings();
     chord.preset = "major";
@@ -698,6 +812,8 @@ describe("project json", () => {
           patterns: [],
           phaseOffsetRows: 5,
           speed: 0.5,
+          detuneDriftCents: 12,
+          detuneDriftRate: 1.5,
         },
         { orderLength: 1, orderList: [0], patterns: [], speed: 2 },
       ],
@@ -707,10 +823,12 @@ describe("project json", () => {
       reread.patternSnapshot!.channels.map((channel) => [
         channel.phaseOffsetRows,
         channel.speed,
+        channel.detuneDriftCents,
+        channel.detuneDriftRate,
       ]),
     ).toEqual([
-      [5, 0.5],
-      [0, 2],
+      [5, 0.5, 12, 1.5],
+      [0, 2, 0, 0.2],
     ]);
   });
 

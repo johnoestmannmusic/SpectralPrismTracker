@@ -6,6 +6,7 @@ import { createRegistry } from "@/tui/commands";
 import type { CommandContext } from "@/tui/commands/types";
 import { Session } from "@/tui/session";
 import { pitchSlideRate } from "@/core/tracker";
+import { contextActions } from "@/tui/contextActions";
 import { cellAt } from "@/core/songModel";
 
 const registry = createRegistry();
@@ -183,6 +184,25 @@ describe("tracker block operations", () => {
     spy.mockRestore();
   });
 
+  it("auditions a ratchet as several delayed hits", () => {
+    session.setStep(0);
+    session.setCursor({ channel: 3, order: 0, row: 0, column: 3 });
+    expect(session.setEffectCode(0x11)).toBe(true);
+    session.adjustValue(4);
+    const engine = session.backend!;
+    const spy = vi.spyOn(engine, "previewPattern");
+    session.auditionRow([3], 0, 0);
+    const notes = (spy.mock.calls.at(-1)?.[3] ?? []) as Array<{
+      delaySec?: number;
+    }>;
+    expect(notes.length).toBeGreaterThanOrEqual(4);
+    expect(notes.some((note) => (note.delaySec ?? 0) > 0)).toBe(true);
+    spy.mockRestore();
+    session.undo();
+    session.undo();
+    session.setStep(1);
+  });
+
   it("auditions after entering a note", () => {
     const spy = vi.spyOn(session, "auditionRow");
     session.setCursor({ order: 0, channel: 3, row: 0, column: 0 });
@@ -277,6 +297,25 @@ describe("tracker block operations", () => {
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
     session.undo();
+  });
+
+  it("sets an FX code from the picker", () => {
+    session.setCursor({ channel: 0, order: 0, row: 0, column: 3 });
+    expect(session.setEffectCode(0x09)).toBe(true);
+    expect(cellAt(session.song!, 0, 0, 0).effects[0]!.effect).toBe(0x09);
+    session.undo();
+  });
+
+  it("offers FX types on an effect column", () => {
+    const actions = contextActions(session.getState(), {
+      kind: "tracker",
+      channel: 0,
+      order: 0,
+      row: 0,
+      column: 3,
+    });
+    expect(actions.some((action) => action.special === "set-fx:16")).toBe(true);
+    expect(actions.some((action) => action.special === "clear-fx")).toBe(true);
   });
 
   it("recalls command history", () => {

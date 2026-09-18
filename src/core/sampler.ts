@@ -173,6 +173,11 @@ export interface SamplerSettings {
   vibratoDepth: number;
   polyphonic: boolean;
   voiceCap: number;
+  /**
+   * When true (default) a new note or note-off on the channel hard-cuts the
+   * previous voice immediately, skipping its release tail.
+   */
+  choke: boolean;
   spectral: SpectralSettings;
   /** Chord instrument mode (root note in the pattern). */
   chord: ChordSettings;
@@ -199,6 +204,7 @@ export function defaultSamplerSettings(): SamplerSettings {
     vibratoDepth: 0,
     polyphonic: false,
     voiceCap: 8,
+    choke: true,
     spectral: defaultSpectralSettings(),
     chord: defaultChordSettings(),
     muted: false,
@@ -327,6 +333,14 @@ export type SamplerEvent =
       panOffset?: number;
       /** Strum/roll delay in seconds before this voice starts. */
       delaySec?: number;
+      /** Start position within the trimmed region, 0..1. */
+      offsetFraction?: number;
+      /** Play the trimmed region backwards. */
+      reverse?: boolean;
+      /** Slow tape-drift detune in cents (from the channel). */
+      detuneCents?: number;
+      /** 14xx hold/freeze: loop the note until the next note or OFF. */
+      hold?: boolean;
     }
   | { type: "off"; channel: number }
   | { type: "pitchRamp"; channel: number; rate: number; duration: number };
@@ -340,6 +354,16 @@ export interface Sequence {
 
 export function sequenceDuration(sequence: Sequence): number {
   return sequence.rowTimes[sequence.rowTimes.length - 1] ?? 0;
+}
+
+/** Deterministic 0..1 roll per (row, channel) for the `10xx` probability FX. */
+export function rowRoll(globalRow: number, channel: number): number {
+  let x =
+    (Math.imul(globalRow, 2654435761) + Math.imul(channel + 1, 40503)) >>> 0;
+  x = (x ^ (x << 13)) >>> 0;
+  x = (x ^ (x >>> 17)) >>> 0;
+  x = (x ^ (x << 5)) >>> 0;
+  return x / 4294967296;
 }
 
 export function sequenceFromSong(
@@ -371,6 +395,30 @@ export function sequenceFromSong(
       if (!cell) continue;
 
       const note: NoteValue | null = cell.note;
+      // Parse this cell's effect columns once: 01/02 pitch slides plus the
+      // glitch-event FX (probability / ratchet / reverse / sample offset).
+      let probability = 1;
+      let ratchet = 1;
+      let reverse = false;
+      let offsetFraction = 0;
+      let hold = false;
+      const effectCount = Math.min(ch.effectColumns, cell.effects.length);
+      for (let e = 0; e < effectCount; e++) {
+        const effect = cell.effects[e]!;
+        const value = effect.value;
+        if (value === null) continue;
+        if (effect.effect === 0x01) slides[channel] = value / 32;
+        else if (effect.effect === 0x02) slides[channel] = -value / 32;
+        else if (effect.effect === 0x10)
+          probability = Math.min(Math.max(value, 0), 255) / 255;
+        else if (effect.effect === 0x11)
+          ratchet = Math.min(Math.max(Math.round(value), 1), 16);
+        else if (effect.effect === 0x12) reverse = value !== 0;
+        else if (effect.effect === 0x13)
+          offsetFraction = Math.min(Math.max(value, 0), 255) / 255;
+        else if (effect.effect === 0x14) hold = value !== 0;
+      }
+
       if (note) {
         if (note.kind === "off" || note.kind === "release") {
           events.push({ type: "off", channel });
@@ -378,31 +426,39 @@ export function sequenceFromSong(
         } else if (note.kind === "note" || note.kind === "rawFreq") {
           const instrument = ch.insTimeline[step.order]?.[step.row] ?? null;
           const rate = samplerPlaybackRate(note, song.meta.tuningA4, 0);
+          // Deterministic trigger chance so playback and WAV export agree.
+          const plays =
+            probability >= 1 || rowRoll(globalRow, channel) < probability;
           if (
+            plays &&
             instrument !== null &&
             rate !== null &&
             instrument < song.instruments.length &&
             Number.isFinite(rate) &&
             rate > 0
           ) {
-            events.push({
-              type: "note",
-              channel,
-              instrument,
-              rate,
-              volume: Math.min(cell.volume ?? 15, 15) / 15,
-            });
+            const level = Math.min(cell.volume ?? 15, 15) / 15;
             const chord = settings?.[instrument]?.chord;
+            // Per-channel tape drift: a slow sine offset in cents.
+            const drift = ch.detuneDriftCents;
+            const detuneCents =
+              drift === 0
+                ? 0
+                : drift *
+                  Math.sin(
+                    2 *
+                      Math.PI *
+                      (ch.detuneDriftRate > 0 ? ch.detuneDriftRate : 0.2) *
+                      (song.rowTimes[globalRow] ?? 0) +
+                      (channel + 1) * 1.7,
+                  );
+            const base: Extract<SamplerEvent, { type: "note" }>[] = [];
             if (chord?.enabled) {
               // Expand the root note into its chord voices, sharing one group so
               // a note-off releases the whole chord together.
               const group = (globalRow % 65536) * 4 + channel;
-              const level = Math.min(cell.volume ?? 15, 15) / 15;
-              // Replace the single root voice with the chord tones (the root is
-              // interval 0, so the chord already contains it).
-              events.pop();
               for (const voice of chordVoices(chord)) {
-                events.push({
+                base.push({
                   type: "note",
                   channel,
                   instrument,
@@ -411,22 +467,42 @@ export function sequenceFromSong(
                   voiceGroup: group,
                   panOffset: voice.pan,
                   delaySec: voice.delaySec,
+                  offsetFraction,
+                  reverse,
+                  detuneCents,
+                  hold,
                 });
               }
+            } else {
+              base.push({
+                type: "note",
+                channel,
+                instrument,
+                rate,
+                volume: level,
+                offsetFraction,
+                reverse,
+                detuneCents,
+                hold,
+              });
+            }
+            // Ratchet: repeat the row's note(s) evenly across the row duration.
+            if (ratchet > 1) {
+              const rowDur = rowDuration(song, globalRow);
+              for (let hit = 0; hit < ratchet; hit++) {
+                for (const event of base) {
+                  events.push({
+                    ...event,
+                    delaySec: (event.delaySec ?? 0) + (hit * rowDur) / ratchet,
+                  });
+                }
+              }
+            } else {
+              for (const event of base) events.push(event);
             }
             baseRates[channel] = rate;
             pitchOffsets[channel] = 0;
           }
-        }
-      }
-
-      const effectCount = Math.min(ch.effectColumns, cell.effects.length);
-      for (let e = 0; e < effectCount; e++) {
-        const effect = cell.effects[e]!;
-        if (effect.effect === 0x01 && effect.value !== null) {
-          slides[channel] = effect.value / 32;
-        } else if (effect.effect === 0x02 && effect.value !== null) {
-          slides[channel] = -effect.value / 32;
         }
       }
 

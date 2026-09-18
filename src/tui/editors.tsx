@@ -324,6 +324,7 @@ export function samplerGroups(
               ),
             ]
           : []),
+        bool("Choke", s.choke, (v) => set({ choke: !!v }), true),
       ],
     },
   ];

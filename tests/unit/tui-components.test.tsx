@@ -64,6 +64,7 @@ describe("TUI overlays", () => {
       const frame = lastFrame() ?? "";
       expect(frame).toContain("CH1 phase");
       expect(frame).toContain("CH1 speed");
+      expect(frame).toContain("CH1 drift");
       unmount();
     } finally {
       session.setCyclesMode(previous, false);
@@ -403,6 +404,48 @@ describe("TUI overlays", () => {
       expect(session.patternSlotInfo(0, 0)!.rowLength).toBe(before + 4);
       session.undo();
       unmount();
+    });
+
+    it("selects within a short channel and moves with arrows immediately", async () => {
+      session.setChannelOrderLength(2, 2);
+      session.setViewOrder(4);
+      session.setCursor({ channel: 2, order: 4, row: 0 });
+      const titles: string[] = [];
+      const { stdin, unmount } = render(
+        <PatternsOverlay
+          session={session}
+          active
+          onClose={() => {}}
+          onExplain={(content) => {
+            titles.push(content.title);
+          }}
+        />,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(titles.at(-1)).toContain("order 01");
+      stdin.write("\u001B[A");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(titles.at(-1)).toContain("order 00");
+      unmount();
+      session.undo();
+    });
+
+    it("opens on the tracker's current channel", () => {
+      session.setCursor({ channel: 2, order: 0, row: 0 });
+      let title = "";
+      const { unmount } = render(
+        <PatternsOverlay
+          session={session}
+          active
+          onClose={() => {}}
+          onExplain={(content) => {
+            title = content.title;
+          }}
+        />,
+      );
+      expect(title).toContain("Ch 3");
+      unmount();
+      session.setCursor({ channel: 0, order: 0, row: 0 });
     });
   });
 

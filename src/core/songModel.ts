@@ -36,6 +36,10 @@ export interface Channel {
   phaseOffsetRows: number;
   /** Row-advance multiplier: 0.5 = half-time, 2 = double-time. */
   speed: number;
+  /** Slow tape-drift detune depth in cents (per channel). */
+  detuneDriftCents: number;
+  /** Tape-drift LFO rate in Hz. */
+  detuneDriftRate: number;
   orderList: number[];
   /** Keyed by pattern index (not guaranteed dense). */
   patterns: Map<number, Pattern>;
@@ -71,6 +75,9 @@ export interface ChannelPatternSnapshot {
   /** Per-channel phase offset and speed (Cycles Mode). */
   phaseOffsetRows?: number;
   speed?: number;
+  /** Per-channel tape-drift detune. */
+  detuneDriftCents?: number;
+  detuneDriftRate?: number;
 }
 
 /**
@@ -257,6 +264,10 @@ export function buildSongModelFromProject(
       phaseOffsetRows:
         typeof snap?.phaseOffsetRows === "number" ? snap.phaseOffsetRows : 0,
       speed: typeof snap?.speed === "number" ? snap.speed : 1,
+      detuneDriftCents:
+        typeof snap?.detuneDriftCents === "number" ? snap.detuneDriftCents : 0,
+      detuneDriftRate:
+        typeof snap?.detuneDriftRate === "number" ? snap.detuneDriftRate : 0.2,
       orderList,
       patterns,
       insTimeline: [],
@@ -354,6 +365,8 @@ export function patternSnapshot(song: SongModel): PatternSnapshot {
         patterns,
         phaseOffsetRows: channel.phaseOffsetRows,
         speed: channel.speed,
+        detuneDriftCents: channel.detuneDriftCents,
+        detuneDriftRate: channel.detuneDriftRate,
       };
     }),
   };
@@ -376,6 +389,10 @@ export function applySnapshot(
     channel.phaseOffsetRows =
       typeof snap.phaseOffsetRows === "number" ? snap.phaseOffsetRows : 0;
     channel.speed = typeof snap.speed === "number" ? snap.speed : 1;
+    channel.detuneDriftCents =
+      typeof snap.detuneDriftCents === "number" ? snap.detuneDriftCents : 0;
+    channel.detuneDriftRate =
+      typeof snap.detuneDriftRate === "number" ? snap.detuneDriftRate : 0.2;
     channel.patterns = new Map();
     for (const [index, rows, storedLength, storedName] of snap.patterns) {
       const rowLength =
