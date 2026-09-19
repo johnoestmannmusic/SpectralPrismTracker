@@ -12,8 +12,6 @@ It plays and edits sample-based instruments with an optional Spectral / Percussi
 It ships as two front ends built from one code base:
 
 - a **desktop TUI** (the main app), and
-- a **web version** that streams the same TUI into an xterm.js frame in the
-  browser.
 
 Projects are `.sptproj` files.
 
@@ -51,33 +49,12 @@ npm run build:dist
 Once it is running, press `/` for the command palette, `?` for help, `Space` to
 play, and `/quit` (or `/exit`) to leave.
 
-## Run the web version
-
-```bash
-npm run build:web
-npm run serve:web
-```
-
-Then open <http://127.0.0.1:8123> in your browser. The web host runs the same TUI
-and streams it to the page; audio plays on the machine running the host.
-
-The web build has no filesystem access, so commands such as `/open`, `/save`
-and `/restore` show a notice instead. Use the **Download WAV** button to grab
-the demo WAV placed in `assets/WAVExport/`.
-
 
 ## Changing the Source Sample sounds
 
 Replace the `.ogg` files in `assets/SourceSamples/` with your own (with filenames starting with numbers 0-5). These are read in automatically by the program as the source material.
 
 _The `.oggs` included in this repository are from my Mechsounds sound pack: https://johnoestmannmusic.com/mechsounds/_
-
-
-## Web-hosted version defaults
-
-The Web version of this program has a `Download WAV` button, which simply reads and downloads the `.wav` file that is in `assets/WAVExport/`
-
-The Web version also reads in `assets/lmp-default-proj.sptproj` by default. This is to keep everything bundled and limit dynamic filereads on web servers.
 
 
 ## Other Tips
