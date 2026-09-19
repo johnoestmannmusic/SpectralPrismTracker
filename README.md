@@ -79,7 +79,7 @@ _The `.oggs` included in this repository are from my Mechsounds sound pack: http
 
 ## Web-hosted version defaults
 
-The Web version of this program has a `Download WAV` button, which simply reads and downloads the `.wav` file that is in `assets/WAVExport`
+The Web version of this program has a `Download WAV` button, which simply reads and downloads the `.wav` file that is in `assets/WAVExport/`
 
 The Web version also reads in `assets/lmp-default-proj.sptproj` by default. This is to keep everything bundled and limit dynamic filereads on web servers.
 
