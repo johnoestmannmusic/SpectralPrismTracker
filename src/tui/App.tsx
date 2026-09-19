@@ -49,6 +49,7 @@ import {
 } from "./components/ParamEditorOverlay";
 import {
   chordGroups,
+  defaultWavOutputPath,
   instrumentTabFor,
   masterFxGroups,
   microtexturesGroups,
@@ -59,7 +60,7 @@ import {
   wavExportGroups,
 } from "./editors";
 import { useSession } from "./hooks";
-import { dirname } from "@/runtime/paths";
+import { basename, dirname } from "@/runtime/paths";
 import type { Session, SessionState } from "./session";
 
 /** "N rows × M cols" for the current block selection, or null when none. */
@@ -191,6 +192,8 @@ export function App({ session }: Props) {
     label: string;
     fraction: number;
   } | null>(null);
+  /** Tree-view picker for the WAV output path (FEAT-158). */
+  const [outputPickerOpen, setOutputPickerOpen] = useState(false);
   const showExplainer = columns >= 84;
   const showWidthAdvisory = !showExplainer && !widthAdvisoryDismissed;
   const inputRef = useRef(input);
@@ -376,14 +379,9 @@ export function App({ session }: Props) {
    * registry forwards stage progress to `ctx.onProgress`.
    */
   const beginWavExport = useCallback(() => {
-    const name = (session.getState().song?.meta.name || "export").replace(
-      /[^\w.-]+/g,
-      "_",
-    );
-    // Write beside the project when it has a path, otherwise the working dir.
-    const projectPath = session.getState().projectPath;
-    const dir = projectPath ? dirname(projectPath) : "";
-    const target = dir ? `${dir}/${name}.wav` : `${name}.wav`;
+    // The Output file param wins; otherwise derive it beside the project.
+    const target =
+      session.getState().wavExport.outputPath || defaultWavOutputPath(session);
     setOverlay("none");
     setExporting({ label: "Preparing instruments", fraction: 0.02 });
     void (async () => {
@@ -1217,8 +1215,12 @@ export function App({ session }: Props) {
     activeOverlay === "song" && !stepMode ? songInfoGroups(session) : null;
   const wavGroups =
     activeOverlay === "wav" && !stepMode
-      ? wavExportGroups(session, beginWavExport)
+      ? wavExportGroups(session, beginWavExport, () =>
+          setOutputPickerOpen(true),
+        )
       : null;
+  const currentOutputPath =
+    session.getState().wavExport.outputPath || defaultWavOutputPath(session);
   const instrumentTabs: InstrumentTab[] = [
     "sampler",
     "spectral",
@@ -1282,27 +1284,32 @@ export function App({ session }: Props) {
                   title: "Mixer / Master FX",
                   hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
                 }
-              : activeOverlay === "filepicker"
+              : outputPickerOpen
                 ? {
-                    title: "Open project",
-                    hint: "↑↓ select · enter/→ open · ←/backspace up · z open · x/esc cancel",
+                    title: "Choose output file",
+                    hint: "↑↓ select · enter open dir/overwrite · ←/backspace up · n name · s save · x/esc cancel",
                   }
-                : activeOverlay === "samples"
+                : activeOverlay === "filepicker"
                   ? {
-                      title: "Source Samples",
-                      hint: "↑↓ select · p preview · enter edit info · esc close",
+                      title: "Open project",
+                      hint: "↑↓ select · enter/→ open · ←/backspace up · z open · x/esc cancel",
                     }
-                  : activeOverlay === "instruments"
+                  : activeOverlay === "samples"
                     ? {
-                        title: "Instruments",
-                        hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+                        title: "Source Samples",
+                        hint: "↑↓ select · p preview · enter edit info · esc close",
                       }
-                    : activeOverlay === "patterns"
+                    : activeOverlay === "instruments"
                       ? {
-                          title: "Pattern Manager",
-                          hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · del remove · e number · enter/z settings · g jump · esc close",
+                          title: "Instruments",
+                          hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
                         }
-                      : null;
+                      : activeOverlay === "patterns"
+                        ? {
+                            title: "Pattern Manager",
+                            hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · del remove · e number · enter/z settings · g jump · esc close",
+                          }
+                        : null;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -1440,6 +1447,21 @@ export function App({ session }: Props) {
               onExplain={setMenuExplainer}
               highlight={paramHighlights}
             />
+          ) : outputPickerOpen ? (
+            <FilePicker
+              session={session}
+              active={outputPickerOpen}
+              mode="save"
+              width={contentWidth}
+              height={contentHeight}
+              initialDirectory={dirname(currentOutputPath)}
+              initialFilename={basename(currentOutputPath)}
+              onSelect={(path) => {
+                session.setWavExport({ outputPath: path });
+                setOutputPickerOpen(false);
+              }}
+              onClose={() => setOutputPickerOpen(false)}
+            />
           ) : wavGroups ? (
             <ParamEditorOverlay
               title="Export WAV"
@@ -1516,10 +1538,11 @@ export function App({ session }: Props) {
             <FilePicker
               session={session}
               active={activeOverlay === "filepicker"}
+              mode="open"
               onClose={() => setOverlay("none")}
               width={contentWidth}
               height={contentHeight}
-              onOpen={(path) => {
+              onSelect={(path) => {
                 setOverlay("none");
                 void runCommand(`/open "${path}"`);
               }}

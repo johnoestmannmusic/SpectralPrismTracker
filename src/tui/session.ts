@@ -139,13 +139,15 @@ export interface SessionState {
   cyclesMode: boolean;
   /** Show dim rows from the previous/next order around the current one. */
   ghosting: boolean;
-  /** WAV export modal options (loops, fades, normalize, cycles length cap). */
+  /** WAV export modal options (loops, fades, normalize, cycles cap, output). */
   wavExport: {
     loops: number;
     fadeInMs: number;
     fadeOutMs: number;
     normalize: boolean;
     lengthSeconds: number;
+    /** Target file path; empty means derive it beside the project. */
+    outputPath: string;
   };
   /** Row the view scrolls to while following (null when not following). */
   viewRow: number | null;
@@ -236,6 +238,7 @@ function initialState(): SessionState {
       fadeOutMs: 0,
       normalize: false,
       lengthSeconds: 0,
+      outputPath: "",
     },
     viewRow: null,
     dirty: false,

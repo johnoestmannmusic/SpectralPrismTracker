@@ -54,6 +54,59 @@
 
 ## Implemented
 
+### FEAT-158 — WAV export: Output file parameter (type path or tree-view picker)
+- priority: high
+- tags: wav, export, filepicker, save, tui, hc002
+- created: 2026-09-19
+- updated: 2026-09-19
+
+Add an **Output file** parameter to the WAV export menu that can be typed, plus a tree-view picker to choose the location and filename.
+
+
+- Add `outputPath` to Session `wavExport` state; default to `<project dir>/<sanitised song title>.wav`.
+- `wavExportGroups` gains a **text** param "Output file" (type a full path) and an **action** row "Choose output location…" that opens the picker.
+- Extend `FilePicker` with a `mode: "open" | "save"`:
+  - `open` = existing behaviour (dirs + project files).
+  - `save` = dirs + existing `.wav` files, with an editable **Filename** field and a "Save here" row; returns `dir/filename`.
+- App wires an output-picker overlay that writes the chosen path back into `wavExport.outputPath` and returns to the WAV menu. `beginWavExport` uses `outputPath` when set.
+
+
+- HC001: picker is Ink TUI.
+- HC002: Output file is one row; Browse is one more row in the already-open export menu.
+- HC003: works on Node + web host via `HostFs`.
+- HC004: no new deps; SC001 TypeScript.
+
+
+- WAV menu shows "Output file" (editable) and "Choose output location…".
+- The picker navigates directories, lets the user type a filename, and writes the full path back.
+- Exporting uses the chosen path; default is beside the project.
+- Tests for the output-path default and the save-mode path join.
+
+### BUG-37 — Uncapped /export wav froze on long polymeter projects; direct command showed no progress
+- priority: critical
+- tags: wav, export, cycles, polymeter, oom, progress
+- created: 2026-09-19
+- updated: 2026-09-19
+
+`/export wav ./b2.wav` froze. It never showed the progress modal and no file appeared.
+
+
+Two issues:
+
+1. `project.sptproj` is a true-polymeter Cycles song whose channel cycles (336/10/36/92 rows) have an LCM of 115,920 rows — ~4 h — capped by `MAX_LOOP_ROWS` to 65,536 rows = **8,330 s**. An export with no Track length rendered that entire loop: `renderSamplerMix` allocated ~2.9 GB and `wavPcm16` additionally built a JS `number[]` of every byte, so the main thread froze/OOM'd.
+2. A directly typed `/export wav <path>` bypassed the modal-only `beginWavExport`, so `ctx.onProgress` had no `exporting` state to update — no progress UI at all.
+
+
+- **Safety cap**: `effectiveWavLength(requested, songSeconds)` — an explicit Track length wins; otherwise the export auto-caps at `MAX_WAV_SECONDS` (300 s) and the status says so. `/export wav` on this project now completes in ~7.8 s with progress.
+- **Progress for direct commands**: `ctx.onProgress` now opens the modal (max fraction, so it never goes backwards) and `runCommand` clears it in a `finally`.
+- **Memory**: `wavPcm16` writes straight into one preallocated `Uint8Array` (+`DataView`) instead of a `number[]`.
+- Track length explainer documents the auto-cap.
+
+
+- `effectiveWavLength` unit tests (explicit/auto-cap/normal).
+- End-to-end probe: `exportWav` on `project.sptproj` → ok in 7.8 s, 9 progress updates, capping note.
+- 333 tests pass; `tsc`/lint clean; builds succeed; constraints PASS.
+
 ### BUG-36 — Quit left the shell hung: Prism worker kept the process alive; /exit undiscoverable
 - priority: high
 - tags: quit, exit, worker-thread, terminal, teardown

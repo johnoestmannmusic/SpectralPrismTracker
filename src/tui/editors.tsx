@@ -21,6 +21,7 @@ import {
   type SamplerSettings,
 } from "@/core/sampler";
 import { renderEnvelope, renderWaveform } from "./format";
+import { dirname } from "@/runtime/paths";
 import type { EditorGroup, EditorParam } from "./components/ParamEditorOverlay";
 import type { Session, SongMetaField } from "./session";
 
@@ -963,12 +964,44 @@ export function microtexturesGroups(
 }
 
 /** WAV export options groups (the export modal). */
+/** Default WAV target: `<project dir>/<song title>.wav`, else the cwd. */
+export function defaultWavOutputPath(session: Session): string {
+  const state = session.getState();
+  const raw = state.project?.songTitle || state.song?.meta.name || "export";
+  const name = raw.replace(/[^\w.-]+/g, "_") || "export";
+  const dir = state.projectPath ? dirname(state.projectPath) : "";
+  return dir ? `${dir}/${name}.wav` : `${name}.wav`;
+}
+
 export function wavExportGroups(
   session: Session,
   onExport?: () => void,
+  onChooseOutput?: () => void,
 ): EditorGroup[] {
-  const w = session.getState().wavExport;
+  const state = session.getState();
+  const w = state.wavExport;
   const set = (patch: Partial<typeof w>) => session.setWavExport(patch);
+  const outputPath = w.outputPath || defaultWavOutputPath(session);
+  const outputParams: EditorParam[] = [
+    {
+      label: "Output file",
+      kind: "text",
+      value: outputPath,
+      set: (value) => set({ outputPath: String(value) }),
+      explain:
+        "Full path to write. Type it here, or use the row below to browse for a folder and filename.",
+    },
+  ];
+  if (onChooseOutput) {
+    outputParams.push({
+      label: "Choose output location…",
+      kind: "action",
+      value: "",
+      set: () => {},
+      explain: "Open a directory tree to pick the folder and filename.",
+      run: onChooseOutput,
+    });
+  }
   const params: EditorParam[] = [
     num("Loops", w.loops, (v) => set({ loops: v as number }), {
       min: 0,
@@ -1004,12 +1037,15 @@ export function wavExportGroups(
           step: 1,
           unit: "s",
           explain:
-            "Expected output length in Cycles Mode. 0 = cap one full pass. When > 0 the export fills exactly this length; fade in/out land inside it.",
+            "Expected output length in Cycles Mode. 0 = the full song loop (auto-capped at 300 s when a polymeter loop is longer). When > 0 the export fills exactly this length and fade in/out land inside it.",
         },
       ),
     );
   }
-  const groups: EditorGroup[] = [{ title: "Export WAV", params }];
+  const groups: EditorGroup[] = [
+    { title: "Output", params: outputParams },
+    { title: "Export WAV", params },
+  ];
   if (onExport) {
     groups.push({
       title: "Action",

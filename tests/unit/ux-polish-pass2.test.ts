@@ -9,7 +9,7 @@ import {
   isProjectPath,
 } from "@/runtime/paths";
 import { projectToJson } from "@/core/project";
-import { openPath } from "@/tui/io";
+import { MAX_WAV_SECONDS, effectiveWavLength, openPath } from "@/tui/io";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,8 +18,12 @@ import { rowTimeForChannel } from "@/core/timing";
 import { cellExplain, instrumentExplain } from "@/tui/explainer";
 import { flatColumnsForChannel } from "@/core/tracker";
 import { cellAt } from "@/core/songModel";
-import { pickableEntries } from "@/tui/components/FilePicker";
-import { wavExportGroups } from "@/tui/editors";
+import {
+  joinOutputPath,
+  pickableEntries,
+  saveEntries,
+} from "@/tui/components/FilePicker";
+import { defaultWavOutputPath, wavExportGroups } from "@/tui/editors";
 import { progressBar } from "@/tui/components/ProgressModal";
 
 /**
@@ -154,6 +158,75 @@ describe("/exit alias (BUG-36)", () => {
     });
     expect(result.ok).toBe(true);
     expect(exited).toBe(true);
+  });
+});
+
+describe("WAV export safety cap (BUG-37)", () => {
+  it("honours an explicit track length", () => {
+    expect(effectiveWavLength(25, 8330)).toEqual({
+      lengthSeconds: 25,
+      autoCapped: false,
+    });
+  });
+
+  it("auto-caps a very long polymeter loop", () => {
+    expect(effectiveWavLength(0, 8330)).toEqual({
+      lengthSeconds: MAX_WAV_SECONDS,
+      autoCapped: true,
+    });
+  });
+
+  it("leaves a normal-length song uncapped", () => {
+    expect(effectiveWavLength(0, 120)).toEqual({
+      lengthSeconds: 0,
+      autoCapped: false,
+    });
+  });
+});
+
+describe("WAV output file param (FEAT-158)", () => {
+  it("joins a directory and filename", () => {
+    expect(joinOutputPath("/tmp/songs", "out.wav")).toBe("/tmp/songs/out.wav");
+    expect(joinOutputPath("/tmp/songs/", "out.wav")).toBe("/tmp/songs/out.wav");
+    expect(joinOutputPath("", "out.wav")).toBe("out.wav");
+  });
+
+  it("filters save-mode entries to directories and WAVs", () => {
+    const entries = [
+      { name: "d", path: "/d", isDirectory: true },
+      { name: "a.wav", path: "/a.wav", isDirectory: false },
+      { name: "b.sptproj", path: "/b.sptproj", isDirectory: false },
+      { name: "c.txt", path: "/c.txt", isDirectory: false },
+    ];
+    expect(saveEntries(entries).map((entry) => entry.name)).toEqual([
+      "d",
+      "a.wav",
+    ]);
+  });
+
+  it("exposes an editable Output file and a browse action", () => {
+    let picked = false;
+    const groups = wavExportGroups(
+      session,
+      () => {},
+      () => {
+        picked = true;
+      },
+    );
+    const params = groups.flatMap((group) => group.params);
+    const output = params.find((param) => param.label === "Output file");
+    expect(output?.kind).toBe("text");
+    expect(String(output?.value)).toMatch(/\.wav$/);
+    const browse = params.find(
+      (param) => param.label === "Choose output location…",
+    );
+    expect(browse?.kind).toBe("action");
+    browse?.run?.();
+    expect(picked).toBe(true);
+  });
+
+  it("defaults the output beside the project", () => {
+    expect(defaultWavOutputPath(session)).toMatch(/\.wav$/);
   });
 });
 

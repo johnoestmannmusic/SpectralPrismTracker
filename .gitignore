@@ -6,5 +6,7 @@ native/prism-wasm/target/
 native/prism-wasm/pkg/
 native/prism_dsp/target/
 native/prism_dsp/Cargo.lock
+KANBAN.md
+CONSTRAINTS.md
 *.log
 .DS_Store

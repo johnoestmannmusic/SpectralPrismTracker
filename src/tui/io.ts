@@ -9,7 +9,11 @@ import {
 import { writeMidi } from "@/core/midi";
 import { defaultProject, projectFromJson, projectToJson } from "@/core/project";
 import type { ProjectFile } from "@/core/project";
-import { defaultSamplerSettings, sequenceFromSong } from "@/core/sampler";
+import {
+  defaultSamplerSettings,
+  sequenceDuration,
+  sequenceFromSong,
+} from "@/core/sampler";
 import { spectralRenderEnabled, spectralWasmAvailable } from "@/core/spectral";
 import { applyMasterFxOffline } from "@/audio/offline";
 import { coverPngBytes } from "@/runtime/cover";
@@ -281,6 +285,31 @@ export interface WavExportOptions {
   lengthSeconds?: number;
 }
 
+/**
+ * Hard ceiling for an export with no explicit track length. A true-polymeter
+ * Cycles loop can be hours long (the LCM of independent channel cycles), and
+ * rendering that allocates gigabytes and freezes the app. The Track length
+ * control (Cycles Mode) can request anything up to the song loop; only the
+ * automatic/full export is bounded.
+ */
+export const MAX_WAV_SECONDS = 300;
+
+/**
+ * Resolves the export length (FEAT-158/BUG-37): an explicit Track length wins;
+ * otherwise the full song loop is used unless it exceeds {@link MAX_WAV_SECONDS},
+ * in which case it is auto-capped and flagged.
+ */
+export function effectiveWavLength(
+  requestedSeconds: number,
+  songSeconds: number,
+): { lengthSeconds: number; autoCapped: boolean } {
+  if (requestedSeconds > 0)
+    return { lengthSeconds: requestedSeconds, autoCapped: false };
+  if (songSeconds > MAX_WAV_SECONDS)
+    return { lengthSeconds: MAX_WAV_SECONDS, autoCapped: true };
+  return { lengthSeconds: 0, autoCapped: false };
+}
+
 /** Waits for spectral fusion renders so the export uses the fused clips. */
 /**
  * Waits for in-flight Spectral/Percussion renders before an export (FEAT-156).
@@ -368,23 +397,41 @@ export async function exportWav(
   const clips: Array<AudioClip | null> = settings.map((_, i) =>
     engine.effectiveClip(i),
   );
-  // Cap the render to `lengthSeconds` so a 20 s export of a long song does not
-  // mix the whole song first (FEAT-156).
+  const sequence = sequenceFromSong(song, settings);
+  const songSeconds = sequenceDuration(sequence);
+  // Safety ceiling (BUG-37): a true-polymeter Cycles loop can be hours long, so
+  // an export with no explicit track length is capped instead of allocating
+  // gigabytes. An explicit Track length is honoured up to the song loop.
+  const { lengthSeconds: effectiveLength, autoCapped } = effectiveWavLength(
+    params.lengthSeconds,
+    songSeconds,
+  );
+  const exportParams =
+    effectiveLength > 0
+      ? { ...params, lengthSeconds: effectiveLength }
+      : params;
+  if (autoCapped) {
+    report(
+      0.06,
+      `Song loop is ${Math.round(songSeconds)}s — rendering the first ${MAX_WAV_SECONDS}s`,
+    );
+    await paint();
+  }
   const base = renderSamplerMix(
-    sequenceFromSong(song, settings),
+    sequence,
     settings,
     clips,
     channelVolume,
     channelMuted,
     masterVolume,
-    params.lengthSeconds,
+    effectiveLength,
   );
 
   // A Cycles loop can be very long; an explicit length caps one pass before
   // the loop/arrange and envelope stages.
-  const countLimited = params.lengthSeconds > 0;
+  const countLimited = effectiveLength > 0;
   const source = countLimited
-    ? clipSlice(base, Math.round(params.lengthSeconds * base.sampleRate))
+    ? clipSlice(base, Math.round(effectiveLength * base.sampleRate))
     : base;
 
   report(0.14, "Arranging loops and fades");
@@ -394,7 +441,7 @@ export async function exportWav(
   // (repeating) the pattern with no appended fade pass, and we trim to the
   // exact length below; `applyExportEnvelope` then fades the last `fadeOutMs`
   // (e.g. start at 21 s for 25 s + 4 s).
-  const arranged = arrangeForExport(source, params);
+  const arranged = arrangeForExport(source, exportParams);
 
   report(0.18, "Applying master FX");
   await paint();
@@ -402,7 +449,7 @@ export async function exportWav(
     report(0.18 + fraction * 0.6, "Applying master FX"),
   );
   const keepFrames = countLimited
-    ? Math.min(clipLen(wet), Math.round(params.lengthSeconds * wet.sampleRate))
+    ? Math.min(clipLen(wet), Math.round(effectiveLength * wet.sampleRate))
     : clipLen(arranged);
   const trimmed =
     countLimited || params.fadeOutMs > 0 ? clipSlice(wet, keepFrames) : wet;
@@ -429,11 +476,14 @@ export async function exportWav(
     : `${filePath}.wav`;
   const written = await session.host.fs.writeBytesSafe(target, bytes);
   if (!written.ok) return { ok: false, error: written.error };
+  const capNote = autoCapped
+    ? ` (capped at ${MAX_WAV_SECONDS}s — set a Track length for a longer export)`
+    : "";
   report(1, "Done");
-  session.setStatus(`Exported ${written.value}`);
+  session.setStatus(`Exported ${written.value}${capNote}`);
   return {
     ok: true,
-    message: `Exported ${written.value}`,
+    message: `Exported ${written.value}${capNote}`,
     path: written.value,
   };
 }
