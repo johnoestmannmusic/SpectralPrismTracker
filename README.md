@@ -69,15 +69,22 @@ The web build has no filesystem access, so commands such as `/open`, `/save`
 and `/restore` show a notice instead. Use the **Download WAV** button to grab
 the demo WAV placed in `assets/WAVExport/`.
 
-## Other useful commands
 
-```bash
-npm test           # unit tests
-npm run typecheck  # TypeScript check
-npm run test:all   # typecheck + tests + lint + format + builds
-```
+## Changing the Source Sample sounds
 
-## Learn more
+Replace the `.ogg` files in `assets/SourceSamples/` with your own (with filenames starting with numbers 0-5). These are read in automatically by the program as the source material.
+
+_The `.oggs` included in this repository are from my Mechsounds sound pack: https://johnoestmannmusic.com/mechsounds/_
+
+
+## Web-hosted version defaults
+
+The Web version of this program has a `Download WAV` button, which simply reads and downloads the `.wav` file that is in `assets/WAVExport`
+
+The Web version also reads in `assets/lmp-default-proj.sptproj` by default. This is to keep everything bundled and limit dynamic filereads on web servers.
+
+
+## Other Tips
 
 - `/viewsource` inside the app opens the source repository.
 - `/stepthrough` walks through rebuilding the loaded project step by step.
