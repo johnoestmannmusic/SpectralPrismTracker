@@ -3,7 +3,9 @@ import { nodeFs } from "./files";
 import { nodeAssets } from "./assets";
 import { nodeConfig } from "./config";
 import { nodeAudio } from "./audio";
+import { openExternal } from "./openExternal";
 
+export * from "./openExternal";
 export * from "./files";
 export * from "./assets";
 export * from "./config";
@@ -17,6 +19,7 @@ export function createNodeHost(config = nodeConfig): Host {
     assets: nodeAssets,
     config,
     audio: nodeAudio,
+    openExternal,
   };
 }
 

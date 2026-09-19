@@ -235,13 +235,19 @@ describe("tracker block operations", () => {
     expect(session.getState().cyclesMode).toBe(false);
   });
 
-  it("persists Cycles Mode to the config store", async () => {
+  it("stores Cycles Mode on the project, not the user config (BUG-31)", async () => {
+    const configBefore = await session.host.config.read();
     session.setCyclesMode(true);
     await session.flushConfigWrites();
-    expect((await session.host.config.read()).cyclesMode).toBe(true);
-    session.setCyclesMode(false);
-    await session.flushConfigWrites();
-    expect((await session.host.config.read()).cyclesMode).toBe(false);
+    // The change is captured by the project and marks it dirty...
+    expect(session.buildProjectFile()!.cyclesMode).toBe(true);
+    expect(session.getState().dirty).toBe(true);
+    // ...and never touches the user config.
+    expect(await session.host.config.read()).toEqual(configBefore);
+    // Undo restores both the state and the project flag.
+    expect(session.undo()).toBe(true);
+    expect(session.getState().cyclesMode).toBe(false);
+    expect(session.buildProjectFile()!.cyclesMode).toBe(false);
   });
 
   it("uses glitch defaults for instruments created in Cycles Mode", () => {

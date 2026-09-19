@@ -7,7 +7,8 @@ import { installShellButtons, type ShellClient } from "./shell";
 /**
  * Web entrypoint (HC003).
  *
- * Renders the LANTERN TUI, streamed from the local Node host over SSE, inside
+ * Renders the SpectralPrism Tracker TUI, streamed from the local Node host over
+ * SSE, inside
  * an xterm.js frame with extra non-TUI buttons. Input is POSTed back to the
  * host, so the browser and the desktop app share one implementation.
  */
@@ -18,6 +19,9 @@ function terminalOptions() {
     cursorBlink: true,
     fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
     fontSize: 15,
+    // Whole-pixel cell metrics keep Ink's row/column maths aligned (FEAT-154).
+    lineHeight: 1,
+    letterSpacing: 0,
     scrollback: 2000,
     theme: {
       background: "#07090c",
@@ -42,7 +46,6 @@ function main(): void {
   const fit = new FitAddon();
   terminal.loadAddon(fit);
   terminal.open(container);
-  fit.fit();
 
   // Serialise input POSTs: HTTP allows concurrent requests, but terminal input
   // must arrive in order (and Ink parses one keypress per chunk).
@@ -57,6 +60,21 @@ function main(): void {
     for (const char of text) enqueue(char);
   };
 
+  // Fit and tell the host our size. Re-fit once the monospace webfont has
+  // loaded: measuring before the font settles picks the wrong cell height and
+  // every Ink row drifts (FEAT-154).
+  const syncSize = (): void => {
+    fit.fit();
+    enqueue(
+      JSON.stringify({ cols: terminal.cols, rows: terminal.rows }),
+      "/api/resize",
+    );
+  };
+  syncSize();
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    void document.fonts.ready.then(() => syncSize());
+  }
+
   const client: ShellClient = {
     send: sendInput,
     command: (command) => sendInput(`${command}\r`),
@@ -66,13 +84,7 @@ function main(): void {
   terminal.onResize(({ cols, rows }) => {
     enqueue(JSON.stringify({ cols, rows }), "/api/resize");
   });
-  window.addEventListener("resize", () => {
-    fit.fit();
-    enqueue(
-      JSON.stringify({ cols: terminal.cols, rows: terminal.rows }),
-      "/api/resize",
-    );
-  });
+  window.addEventListener("resize", () => syncSize());
 
   // Stream the TUI output from the host.
   const source = new EventSource("/api/stream");
@@ -81,7 +93,7 @@ function main(): void {
   };
   source.onerror = () => {
     terminal.write(
-      "\r\n\x1b[31m[web] Lost connection to the Lantern host.\x1b[0m\r\n",
+      "\r\n\x1b[31m[web] Lost connection to the SpectralPrism host.\x1b[0m\r\n",
     );
   };
 

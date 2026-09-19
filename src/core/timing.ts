@@ -136,6 +136,45 @@ export function rowTime(song: SongModel, order: number, row: number): number {
   return song.rowTimes[index] ?? 0;
 }
 
+/**
+ * Absolute song time at which `channel` is on (order, row) in its own cycle
+ * (FEAT-147). Channel 0 shares the global order clock, but under true polymeter
+ * every channel wraps independently, so its position must be resolved through
+ * the global LCM row clock. Phase offsets are honoured; non-unit speeds fall
+ * back to a scan of one full loop.
+ */
+export function rowTimeForChannel(
+  song: SongModel,
+  channel: number,
+  order: number,
+  row: number,
+): number {
+  const ch = song.channels[channel];
+  const fallback = Math.max(song.meta.patternLength, 1);
+  if (!ch) return song.rowTimes[0] ?? 0;
+  const steps = channelSteps(ch, fallback);
+  if (steps.length === 0) return song.rowTimes[0] ?? 0;
+  const target = steps.findIndex(
+    (step) => step.order === order && step.row === row,
+  );
+  if (target < 0) return song.rowTimes[0] ?? 0;
+  const speed = Number.isFinite(ch.speed) && ch.speed > 0 ? ch.speed : 1;
+  const offset = Number.isFinite(ch.phaseOffsetRows) ? ch.phaseOffsetRows : 0;
+  if (speed === 1) {
+    const size = steps.length;
+    const globalRow = (((target - offset) % size) + size) % size;
+    return song.rowTimes[globalRow] ?? song.rowTimes[0] ?? 0;
+  }
+  const loop = songLoopRows(song);
+  for (let globalRow = 0; globalRow < loop; globalRow++) {
+    const step = channelStepAtGlobal(song, channel, globalRow);
+    if (step?.order === order && step.row === row) {
+      return song.rowTimes[globalRow] ?? 0;
+    }
+  }
+  return song.rowTimes[0] ?? 0;
+}
+
 export function rowDuration(song: SongModel, absoluteRow: number): number {
   const start = song.rowTimes[absoluteRow];
   const end = song.rowTimes[absoluteRow + 1];

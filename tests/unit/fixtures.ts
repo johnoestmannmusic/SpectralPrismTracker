@@ -24,6 +24,6 @@ export function fixtureText(rel: string): string {
  */
 export function fixtureSong(): SongModel {
   return buildSongModelFromProject(
-    projectFromJson(fixtureText("assets/lmp-default-proj.lampjson")),
+    projectFromJson(fixtureText("assets/lmp-default-proj.sptproj")),
   );
 }

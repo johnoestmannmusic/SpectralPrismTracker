@@ -11,7 +11,7 @@ import { sanitizeConfig } from "../configSanitize";
 const DB_NAME = "lantern";
 const STORE = "keyval";
 const CONFIG_KEY = "config";
-const BACKUP_PATH = "/backup.lmpjson";
+const BACKUP_PATH = "/backup.sptproj";
 
 function idbAvailable(): boolean {
   return typeof indexedDB !== "undefined";

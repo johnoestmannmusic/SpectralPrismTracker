@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -34,15 +34,38 @@ describe("runtime config", () => {
       "/tmp/x/custom.json",
     );
     expect(configDir({ LANTERN_CONFIG: "/tmp/x/custom.json" })).toBe("/tmp/x");
-    expect(configDir({ XDG_CONFIG_HOME: "/tmp/xdg" })).toBe("/tmp/xdg/lantern");
+    expect(configDir({ XDG_CONFIG_HOME: "/tmp/xdg" })).toBe(
+      "/tmp/xdg/spectralprism",
+    );
   });
 
-  it("round-trips the Cycles Mode workspace flag", async () => {
-    expect(await writeConfig({ cyclesMode: true }, env)).toBe(true);
-    expect((await readConfig(env)).cyclesMode).toBe(true);
-    expect(await writeConfig({ cyclesMode: false }, env)).toBe(true);
-    expect((await readConfig(env)).cyclesMode).toBe(false);
-    // Malformed values are ignored.
+  it("migrates a legacy ~/.config/lantern config without recursing (FEAT-151)", async () => {
+    const xdg = await mkdtemp(path.join(tmpdir(), "lantern-migrate-"));
+    try {
+      await mkdir(path.join(xdg, "lantern"), { recursive: true });
+      await writeFile(
+        path.join(xdg, "lantern", "config.json"),
+        JSON.stringify({ recentProjects: ["/songs/a.sptproj"] }),
+        "utf8",
+      );
+      const migratedEnv = { XDG_CONFIG_HOME: xdg };
+      const config = await readConfig(migratedEnv);
+      expect(config.recentProjects).toEqual(["/songs/a.sptproj"]);
+      // The canonical file now exists and is readable without migration.
+      const again = await readConfig(migratedEnv);
+      expect(again.recentProjects).toEqual(["/songs/a.sptproj"]);
+      expect(configPath(migratedEnv)).toBe(
+        path.join(xdg, "spectralprism", "config.json"),
+      );
+    } finally {
+      await rm(xdg, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("ignores the legacy Cycles Mode flag (now project-scoped, BUG-31)", async () => {
+    // A legacy config may still contain the field; it must be dropped on read
+    // so the workspace no longer leaks across projects.
+    expect(sanitizeConfig({ cyclesMode: true })).toEqual({});
     expect(sanitizeConfig({ cyclesMode: "yes" })).toEqual({});
     // Leave the shared config file empty for the next test.
     await rm(configPath(env), { force: true });
@@ -145,10 +168,10 @@ describe("autosave", () => {
     session.setAutosaveHook(null);
   });
 
-  it("writes the live project to backup.lmpjson and restores it", async () => {
+  it("writes the live project to backup.sptproj and restores it", async () => {
     session.setMasterVolume(0.42);
     expect(await saveBackup(session)).toBe(true);
-    expect(backupPath(session)).toBe(path.join(dir, "backup.lmpjson"));
+    expect(backupPath(session)).toBe(path.join(dir, "backup.sptproj"));
 
     session.setMasterVolume(1);
     const result = await restoreBackup(session, backupPath(session));
@@ -157,7 +180,7 @@ describe("autosave", () => {
   });
 
   it("reports a clear error when the backup is missing", async () => {
-    const result = await restoreBackup(session, path.join(dir, "nope.lmpjson"));
+    const result = await restoreBackup(session, path.join(dir, "nope.sptproj"));
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Cannot read");
   });

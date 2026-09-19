@@ -162,7 +162,7 @@ function instrumentActions(
   const actions: ContextAction[] = [
     {
       id: "sampler",
-      label: "Edit Sampler",
+      label: "Edit SAMPLER-CORE",
       keys: ["1"],
       command: `/sampler ${index}`,
     },
@@ -178,10 +178,23 @@ function instrumentActions(
       keys: ["3"],
       command: `/percussion ${index}`,
     },
+    {
+      id: "chord",
+      label: "Edit Chord",
+      keys: ["4"],
+      command: `/chord ${index}`,
+    },
+    {
+      id: "microtextures",
+      label: "Edit MicroTextures",
+      keys: ["5"],
+      command: `/microtextures ${index}`,
+    },
     { id: "rename", label: "Rename…", special: "rename-instrument" },
     {
       id: "duplicate",
       label: "Duplicate instrument",
+      keys: ["d"],
       command: `/duplicateinstrument ${index}`,
     },
     {
@@ -207,7 +220,7 @@ function instrumentActions(
   actions.push({
     id: "delete",
     label: "Delete instrument…",
-    keys: ["d"],
+    keys: ["del"],
     special: "delete-instrument",
     enabled: state.settings.length > 1,
   });
@@ -241,6 +254,7 @@ function sampleActions(
     {
       id: "import",
       label: "Import an audio file into this slot…",
+      keys: ["a"],
       special: "import-sample",
     },
     {

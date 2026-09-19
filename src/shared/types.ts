@@ -1,5 +1,5 @@
 export interface LoadedSong {
-  /** `lmp-default-proj.lampjson` contents as text. */
+  /** `lmp-default-proj.sptproj` contents as text. */
   project: string;
   samples: Array<Uint8Array | null>;
   error?: string;

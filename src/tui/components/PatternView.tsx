@@ -360,7 +360,9 @@ export function PatternView({
                         ghost
                           ? "gray"
                           : isPlayhead
-                            ? "green"
+                            ? tint
+                              ? "green"
+                              : "gray"
                             : isBar
                               ? "black"
                               : isBeat
@@ -376,7 +378,7 @@ export function PatternView({
                               ? "gray"
                               : undefined
                       }
-                      bold={!ghost && (isPlayhead || isBar)}
+                      bold={!ghost && ((isPlayhead && !!tint) || isBar)}
                       dimColor={
                         !ghost &&
                         (!inRange || (!isPlayhead && !isBar && !isBeat))
@@ -412,11 +414,13 @@ export function PatternView({
                                 ? "gray"
                                 : isCursor
                                   ? "black"
-                                  : segment.column === 0 && cell.note
-                                    ? CHANNEL_COLORS[
-                                        channel % CHANNEL_COLORS.length
-                                      ]
-                                    : undefined
+                                  : isPlayhead && !tint
+                                    ? "black"
+                                    : segment.column === 0 && cell.note
+                                      ? CHANNEL_COLORS[
+                                          channel % CHANNEL_COLORS.length
+                                        ]
+                                      : undefined
                             }
                             backgroundColor={
                               ghost
@@ -426,14 +430,11 @@ export function PatternView({
                                   : inSelection
                                     ? "blue"
                                     : (tint ??
-                                      (beatBackground ? "gray" : undefined))
-                            }
-                            inverse={
-                              !ghost &&
-                              isPlayhead &&
-                              !isCursor &&
-                              !inSelection &&
-                              !tint
+                                      (isPlayhead && !tint
+                                        ? "gray"
+                                        : beatBackground
+                                          ? "gray"
+                                          : undefined))
                             }
                           >
                             {segment.text}
@@ -548,11 +549,17 @@ export function PatternView({
                     );
                   })();
                 const beatBackground = isBar && !isPlayheadRow;
+                const playheadGrey =
+                  isPlayheadRow &&
+                  !tint &&
+                  !isCursor &&
+                  !inSelection &&
+                  !isHighlighted;
                 return (
                   <Text
                     key={index}
                     color={
-                      isCursor || isHighlighted
+                      isCursor || isHighlighted || playheadGrey
                         ? "black"
                         : beatBackground
                           ? undefined
@@ -567,14 +574,9 @@ export function PatternView({
                           ? "blue"
                           : isHighlighted
                             ? "yellow"
-                            : (tint ?? (beatBackground ? "gray" : undefined))
-                    }
-                    inverse={
-                      isPlayheadRow &&
-                      !isCursor &&
-                      !inSelection &&
-                      !tint &&
-                      !isHighlighted
+                            : playheadGrey
+                              ? "gray"
+                              : (tint ?? (beatBackground ? "gray" : undefined))
                     }
                   >
                     {segment.text}

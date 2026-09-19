@@ -34,6 +34,7 @@ interface NumOptions {
   unit?: string;
   preview?: boolean;
   format?: (value: number) => string;
+  explain?: string;
 }
 
 function num(
@@ -53,6 +54,7 @@ function num(
     unit: options.unit,
     preview: options.preview,
     format: options.format ? (v) => options.format!(v as number) : undefined,
+    explain: options.explain,
     set,
   };
 }
@@ -128,7 +130,7 @@ export function instrumentTabFor(
   return "sampler";
 }
 
-/** Sampler/instrument editor groups. */
+/** SAMPLER-CORE / instrument editor groups. */
 export function samplerGroups(
   session: Session,
   index: number,
@@ -961,7 +963,10 @@ export function microtexturesGroups(
 }
 
 /** WAV export options groups (the export modal). */
-export function wavExportGroups(session: Session): EditorGroup[] {
+export function wavExportGroups(
+  session: Session,
+  onExport?: () => void,
+): EditorGroup[] {
   const w = session.getState().wavExport;
   const set = (patch: Partial<typeof w>) => session.setWavExport(patch);
   const params: EditorParam[] = [
@@ -982,6 +987,8 @@ export function wavExportGroups(session: Session): EditorGroup[] {
       max: 60_000,
       step: 10,
       unit: "ms",
+      explain:
+        "In Cycles Mode with a track length set, the fade is applied to the final ms of that track (e.g. 4000 ms on a 25 s track starts at 21 s) and continues the patterns instead of restarting them.",
     }),
     bool("Peak normalize", w.normalize, (v) => set({ normalize: !!v })),
   ];
@@ -991,11 +998,35 @@ export function wavExportGroups(session: Session): EditorGroup[] {
         "Track length",
         w.lengthSeconds,
         (v) => set({ lengthSeconds: v as number }),
-        { min: 0, max: 3600, step: 1, unit: "s" },
+        {
+          min: 0,
+          max: 3600,
+          step: 1,
+          unit: "s",
+          explain:
+            "Expected output length in Cycles Mode. 0 = cap one full pass. When > 0 the export fills exactly this length; fade in/out land inside it.",
+        },
       ),
     );
   }
-  return [{ title: "Export WAV", params }];
+  const groups: EditorGroup[] = [{ title: "Export WAV", params }];
+  if (onExport) {
+    groups.push({
+      title: "Action",
+      params: [
+        {
+          label: "Start export",
+          kind: "action",
+          value: "",
+          set: () => {},
+          explain:
+            "Renders the song offline (master FX included) and writes the WAV.",
+          run: onExport,
+        },
+      ],
+    });
+  }
+  return groups;
 }
 
 /** Editable Song Info groups (title, credits, links, timing) for `/info`. */
@@ -1068,6 +1099,58 @@ export function songInfoGroups(session: Session): EditorGroup[] {
   ];
 }
 
+/**
+ * Per-channel Cycles phasing controls (FEAT-143). Moved here from the Mixer so
+ * `/fx` is the single home. Values only affect Cycles Mode playback, but they
+ * are always editable so a song can be prepared before switching views.
+ */
+function channelPhasingGroups(session: Session): EditorGroup[] {
+  const params: EditorParam[] = [];
+  for (let channel = 0; channel < 4; channel++) {
+    const explain =
+      "Cycles Mode phasing: shifts this channel's cycle start, row-advance speed and tape-drift detune so the channels slowly drift apart.";
+    params.push(
+      num(
+        `CH${channel + 1} phase`,
+        session.channelPhaseOffset(channel),
+        (v) => session.setChannelPhaseOffset(channel, Math.round(v as number)),
+        {
+          min: 0,
+          max: 64,
+          step: 1,
+          integer: true,
+          format: (v) => `${Math.round(v)} rows`,
+        },
+      ),
+      num(
+        `CH${channel + 1} speed`,
+        session.channelSpeed(channel),
+        (v) => session.setChannelSpeed(channel, v as number),
+        {
+          min: 0.25,
+          max: 4,
+          step: 0.25,
+          format: (v) => `${v.toFixed(2)}x`,
+        },
+      ),
+      num(
+        `CH${channel + 1} drift`,
+        session.channelDetuneDrift(channel),
+        (v) => session.setChannelDetuneDrift(channel, v as number),
+        { min: 0, max: 24, step: 1, unit: " cents" },
+      ),
+      num(
+        `CH${channel + 1} drift hz`,
+        session.channelDetuneRate(channel),
+        (v) => session.setChannelDetuneRate(channel, v as number),
+        { min: 0.05, max: 2, step: 0.05, unit: " Hz" },
+      ),
+    );
+    for (const param of params.slice(-4)) param.explain = explain;
+  }
+  return [{ title: "Channel Phasing", params }];
+}
+
 /** Master output FX editor groups. */
 export function masterFxGroups(
   session: Session,
@@ -1117,5 +1200,6 @@ export function masterFxGroups(
         unit01("Mix", reverb.mix, (v) => setReverb({ mix: v as number })),
       ],
     },
+    ...channelPhasingGroups(session),
   ];
 }

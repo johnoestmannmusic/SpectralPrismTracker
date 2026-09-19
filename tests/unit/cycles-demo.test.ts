@@ -12,7 +12,7 @@ import {
 import { fixtureText } from "./fixtures";
 
 function demoProject() {
-  return projectFromJson(fixtureText("examples/cycles-demo.lampjson"));
+  return projectFromJson(fixtureText("examples/cycles-demo.sptproj"));
 }
 
 function demoTarget(project: ReturnType<typeof demoProject>): BuildTarget {

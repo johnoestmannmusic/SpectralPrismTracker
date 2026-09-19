@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import type { BuildStep } from "@/core/stepthrough";
+import { marqueeSlice } from "./Marquee";
 
 interface Props {
   steps: BuildStep[];
@@ -29,10 +30,7 @@ type Row =
 
 /** Horizontal marquee window into `text`, wrapping around with a gap. */
 export function marquee(text: string, width: number, offset: number): string {
-  if (text.length <= width) return text;
-  const full = `${text}   `;
-  const position = offset % full.length;
-  return (full + full).slice(position, position + width);
+  return marqueeSlice(text, width, offset);
 }
 
 /**

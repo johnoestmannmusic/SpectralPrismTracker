@@ -1,8 +1,8 @@
-import { Box, useApp, useInput, useWindowSize } from "ink";
+import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { tokenize } from "./commands/registry";
+import { CommandRegistry, tokenize } from "./commands/registry";
 import { createRegistry } from "./commands";
-import type { CommandContext } from "./commands/types";
+import type { CommandContext, CommandResult } from "./commands/types";
 import { SongHeader } from "./components/SongHeader";
 import { PatternView } from "./components/PatternView";
 import { CommandBar, type Suggestion } from "./components/CommandBar";
@@ -23,6 +23,8 @@ import {
 } from "./components/InstrumentsOverlay";
 import { PatternsOverlay } from "./components/PatternsOverlay";
 import { StepPanel } from "./components/StepPanel";
+import { FilePicker } from "./components/FilePicker";
+import { ProgressModal } from "./components/ProgressModal";
 import { SongInfoPanel } from "./components/SongInfoPanel";
 import { ExplainerPanel } from "./components/ExplainerPanel";
 import {
@@ -57,6 +59,7 @@ import {
   wavExportGroups,
 } from "./editors";
 import { useSession } from "./hooks";
+import { dirname } from "@/runtime/paths";
 import type { Session, SessionState } from "./session";
 
 /** "N rows × M cols" for the current block selection, or null when none. */
@@ -131,6 +134,7 @@ type Overlay =
   | "chord"
   | "microtextures"
   | "wav"
+  | "filepicker"
   | "fx";
 
 interface Props {
@@ -178,6 +182,17 @@ export function App({ session }: Props) {
     base: BuildTarget;
     index: number;
   } | null>(null);
+  /** True while the (potentially slow) stepthrough recipe is being built. */
+  const [stepBuilding, setStepBuilding] = useState(false);
+  /** Dismissed the "terminal too narrow for the Explainer" advisory this run. */
+  const [widthAdvisoryDismissed, setWidthAdvisoryDismissed] = useState(false);
+  /** WAV export progress modal (FEAT-156): null when not exporting. */
+  const [exporting, setExporting] = useState<{
+    label: string;
+    fraction: number;
+  } | null>(null);
+  const showExplainer = columns >= 84;
+  const showWidthAdvisory = !showExplainer && !widthAdvisoryDismissed;
   const inputRef = useRef(input);
   inputRef.current = input;
   const suggestionsRef = useRef(suggestions);
@@ -186,19 +201,27 @@ export function App({ session }: Props) {
   const startStepthrough = useCallback(() => {
     const final = session.snapshotTarget();
     if (!final) return;
-    const steps = buildSteps(final);
     setHelpOpen(false);
-    if (steps.length === 0) {
-      session.setStatus("Nothing to rebuild — project is already empty");
-      return;
-    }
-    // Start from a blank project and build it up step by step.
-    setStepMode({ steps, base: blankTargetFrom(final), index: 0 });
-    session.setStatus(`Stepthrough: ${steps.length} steps`);
+    // Building the recipe can take a moment on large projects, so paint a
+    // modal first and yield to the event loop (FEAT-144) rather than freezing.
+    setStepBuilding(true);
+    setTimeout(() => {
+      const steps = buildSteps(final);
+      if (steps.length === 0) {
+        setStepBuilding(false);
+        session.setStatus("Nothing to rebuild — project is already empty");
+        return;
+      }
+      // Start from a blank project and build it up step by step.
+      setStepMode({ steps, base: blankTargetFrom(final), index: 0 });
+      setStepBuilding(false);
+      session.setStatus(`Stepthrough: ${steps.length} steps`);
+    }, 20);
   }, [session]);
 
   const stopStepthrough = useCallback(() => {
     setStepMode(null);
+    setStepBuilding(false);
     session.restoreStepAudio();
     session.setStatus("Stepthrough off");
   }, [session]);
@@ -246,7 +269,18 @@ export function App({ session }: Props) {
       exit,
       listCommands: () => registry.all(),
       print: (text: string) => session.setStatus(text),
+      // A command that reports progress (currently WAV export) opens the
+      // progress modal even when it was typed directly, e.g. `/export wav x.wav`.
+      onProgress: (fraction, label) =>
+        setExporting((current) => ({
+          label: label ?? current?.label ?? "Working…",
+          fraction: Math.max(current?.fraction ?? 0, fraction),
+        })),
       openOverlay: (name, arg) => {
+        if (name === "filepicker") {
+          setOverlay("filepicker");
+          return;
+        }
         if (name === "stepthrough") {
           if (arg === -1) stopStepthrough();
           else startStepthrough();
@@ -297,20 +331,26 @@ export function App({ session }: Props) {
       }
       if (
         def &&
-        ["new", "open", "restore", "quit"].includes(def.id) &&
+        ["new", "open", "restore", "quit", "exit"].includes(def.id) &&
         session.getState().dirty &&
         !raw.includes("--force")
       ) {
         setPending({
           raw,
           description:
-            def.id === "quit"
+            def.id === "quit" || def.id === "exit"
               ? "Quit with unsaved changes?"
               : `Run /${def.id} and discard unsaved changes?`,
         });
         return;
       }
-      const result = await registry.execute(raw, ctx);
+      let result: CommandResult;
+      try {
+        result = await registry.execute(raw, ctx);
+      } finally {
+        // Any command that showed progress (WAV export) closes its modal here.
+        setExporting(null);
+      }
       session.recordCommand(raw);
       setPaletteOpen(false);
       setInput("");
@@ -329,6 +369,31 @@ export function App({ session }: Props) {
     },
     [registry, ctx, session, openRecentPicker],
   );
+
+  /**
+   * Starts a WAV export and drives the progress modal (FEAT-156). The export
+   * itself runs through the command registry so scripts keep the same path; the
+   * registry forwards stage progress to `ctx.onProgress`.
+   */
+  const beginWavExport = useCallback(() => {
+    const name = (session.getState().song?.meta.name || "export").replace(
+      /[^\w.-]+/g,
+      "_",
+    );
+    // Write beside the project when it has a path, otherwise the working dir.
+    const projectPath = session.getState().projectPath;
+    const dir = projectPath ? dirname(projectPath) : "";
+    const target = dir ? `${dir}/${name}.wav` : `${name}.wav`;
+    setOverlay("none");
+    setExporting({ label: "Preparing instruments", fraction: 0.02 });
+    void (async () => {
+      try {
+        await runCommand(`/export wav "${target}"`);
+      } finally {
+        setExporting(null);
+      }
+    })();
+  }, [runCommand, session]);
 
   /** Runs a context-menu action: commands go through the registry. */
   const runMenuAction = useCallback(
@@ -356,20 +421,28 @@ export function App({ session }: Props) {
     [actionTarget, state],
   );
 
-  /** Ctrl+C / quit with an unsaved-changes guard. */
-  const requestQuit = useCallback(() => {
-    if (session.getState().dirty) {
-      setPending({ raw: "/quit", description: "Quit with unsaved changes?" });
-      return;
-    }
-    exit();
-  }, [session, exit]);
-
+  // Global undo/redo while a menu or overlay owns the screen (FEAT-135). The
+  // tracker handler covers the no-overlay case; keeping this separate avoids
+  // running undo twice when both would otherwise be active.
   useInput(
-    (_char, key) => {
-      if (key.ctrl && _char === "c") requestQuit();
+    (char, key) => {
+      if (!key.ctrl) return;
+      if (char === "z") {
+        session.undo();
+        return;
+      }
+      if (char === "y") session.redo();
     },
-    { isActive: true },
+    {
+      isActive:
+        (overlay !== "none" && overlay !== "patterns") ||
+        helpOpen ||
+        stepMode !== null ||
+        actionTarget !== null ||
+        orderPickerOpen ||
+        recentPickerOpen ||
+        pending !== null,
+    },
   );
 
   const resolvePending = useCallback(
@@ -556,13 +629,20 @@ export function App({ session }: Props) {
         }
         if (key.return) {
           // Enter autocompletes an unfinished command exactly like Tab; once
-          // the command name is complete it executes.
+          // the command name is complete it executes. When the top suggestion
+          // takes no required arguments, complete AND run it in one press
+          // (FEAT-142), e.g. /in + Enter → /info.
           if (
             registry.enterAction(
               inputRef.current,
               suggestionsRef.current.length > 0,
             ) === "complete"
           ) {
+            const top = registry.topSuggestion(inputRef.current);
+            if (top && !CommandRegistry.hasRequiredArgs(top)) {
+              void runCommand(`/${top.name}`);
+              return;
+            }
             applySuggestion();
             return;
           }
@@ -738,9 +818,9 @@ export function App({ session }: Props) {
         }
         return;
       }
-      // Clipboard. Ctrl+Shift+C/X/V (undefined Ctrl+Shift+F for flood) so that
-      // plain Ctrl+C stays available to quit the app, and the uppercase note
-      // keys (X/C/V) keep working.
+      // Clipboard (FEAT-145). Ctrl+C / Ctrl+X / Ctrl+V are the primary
+      // copy/cut/paste keys; the old Ctrl+Shift+C/X/V aliases are kept for
+      // muscle memory. Ctrl+C no longer quits — use /quit or /exit.
       const ctrlShift = (letter: string) =>
         key.ctrl && key.shift && char?.toLowerCase() === letter;
       if (ctrlShift("s")) {
@@ -748,7 +828,7 @@ export function App({ session }: Props) {
         setInput("/save-as ");
         return;
       }
-      if (ctrlShift("c")) {
+      if (ctrlShift("c") || (key.ctrl && char === "c")) {
         const summary = selectionSummary(session);
         session.setStatus(
           session.copySelection()
@@ -919,6 +999,9 @@ export function App({ session }: Props) {
         overlay === "none" &&
         !helpOpen &&
         !stepMode &&
+        !stepBuilding &&
+        !exporting &&
+        !showWidthAdvisory &&
         !actionTarget &&
         !orderPickerOpen &&
         !pending &&
@@ -954,6 +1037,32 @@ export function App({ session }: Props) {
       if (!stepMode) return;
       if (key.escape) {
         stopStepthrough();
+        return;
+      }
+      // Category jumps: Ctrl+↑/↓ (FEAT-144).
+      if (key.ctrl && (key.upArrow || key.downArrow)) {
+        const direction = key.upArrow ? -1 : 1;
+        setStepMode((mode) =>
+          mode
+            ? { ...mode, index: jumpChapter(mode.steps, mode.index, direction) }
+            : mode,
+        );
+        return;
+      }
+      // Ten steps at a time: ←/→ (FEAT-144).
+      if (key.leftArrow || key.rightArrow) {
+        const delta = key.leftArrow ? -10 : 10;
+        setStepMode((mode) =>
+          mode
+            ? {
+                ...mode,
+                index: Math.min(
+                  Math.max(mode.index + delta, 0),
+                  mode.steps.length - 1,
+                ),
+              }
+            : mode,
+        );
         return;
       }
       if (key.upArrow) {
@@ -1030,8 +1139,11 @@ export function App({ session }: Props) {
     : overlay === "none"
       ? trackerExplainer
       : menuExplainer;
-  const showExplainer = columns >= 84;
   const showPanel = stepMode !== null || showExplainer;
+  // Any key dismisses the narrow-terminal advisory (FEAT-137).
+  useInput(() => setWidthAdvisoryDismissed(true), {
+    isActive: showWidthAdvisory,
+  });
   const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
   const contentHeight = viewportRows + 2;
   // The explainer reserves the bottom ~6 rows for the channel/master meters.
@@ -1091,7 +1203,7 @@ export function App({ session }: Props) {
                 : null;
   const editorTitle =
     activeOverlay === "sampler"
-      ? `Sampler — ${instrumentLabel}`
+      ? `SAMPLER-CORE — ${instrumentLabel}`
       : activeOverlay === "spectral"
         ? `Spectral — ${instrumentLabel}`
         : activeOverlay === "percussion"
@@ -1104,7 +1216,9 @@ export function App({ session }: Props) {
   const songGroups =
     activeOverlay === "song" && !stepMode ? songInfoGroups(session) : null;
   const wavGroups =
-    activeOverlay === "wav" && !stepMode ? wavExportGroups(session) : null;
+    activeOverlay === "wav" && !stepMode
+      ? wavExportGroups(session, beginWavExport)
+      : null;
   const instrumentTabs: InstrumentTab[] = [
     "sampler",
     "spectral",
@@ -1115,7 +1229,13 @@ export function App({ session }: Props) {
   const editorTabs =
     editorGroups && activeOverlay !== "fx"
       ? {
-          labels: ["Sampler", "Spectral", "Percussion", "Chord", "MicroTx"],
+          labels: [
+            "SAMPLER-CORE",
+            "Spectral",
+            "Percussion",
+            "Chord",
+            "MicroTx",
+          ],
           active: Math.max(
             instrumentTabs.indexOf(activeOverlay as InstrumentTab),
             0,
@@ -1123,7 +1243,8 @@ export function App({ session }: Props) {
           onSelect: (index: number) =>
             setOverlay(instrumentTabs[index] ?? "sampler"),
           highlight: [
-            false,
+            // The core sampler stage is always active.
+            true,
             !!state.settings[activeInstrument]?.spectral.enabled,
             !!state.settings[activeInstrument]?.spectral.percussion.enabled,
             !!state.settings[activeInstrument]?.chord.enabled,
@@ -1142,7 +1263,7 @@ export function App({ session }: Props) {
     stepMode && currentStep
       ? {
           title: `Step ${stepMode.index + 1}/${stepMode.steps.length} — ${currentStep.title}`,
-          hint: "↑↓ step · pgup/pgdn chapter · home/end · esc exit",
+          hint: "↑↓ step · ←→ ±10 · ctrl+↑↓/pgup/pgdn chapter · home/end · esc exit",
         }
       : helpOpen
         ? {
@@ -1161,34 +1282,83 @@ export function App({ session }: Props) {
                   title: "Mixer / Master FX",
                   hint: "↑↓ select · ctrl+↑↓ category · ←→ adjust · m mute/toggle · esc close",
                 }
-              : activeOverlay === "samples"
+              : activeOverlay === "filepicker"
                 ? {
-                    title: "Source Samples",
-                    hint: "↑↓ select · p preview · enter edit info · esc close",
+                    title: "Open project",
+                    hint: "↑↓ select · enter/→ open · ←/backspace up · z open · x/esc cancel",
                   }
-                : activeOverlay === "instruments"
+                : activeOverlay === "samples"
                   ? {
-                      title: "Instruments",
-                      hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+                      title: "Source Samples",
+                      hint: "↑↓ select · p preview · enter edit info · esc close",
                     }
-                  : activeOverlay === "patterns"
+                  : activeOverlay === "instruments"
                     ? {
-                        title: "Pattern Manager",
-                        hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · x remove · e number · enter jump · esc close",
+                        title: "Instruments",
+                        hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
                       }
-                    : null;
+                    : activeOverlay === "patterns"
+                      ? {
+                          title: "Pattern Manager",
+                          hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · del remove · e number · enter/z settings · g jump · esc close",
+                        }
+                      : null;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
       <SongHeader state={state} playhead={playhead} context={menuContext} />
       <Box flexDirection="row" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1}>
-          {actionTarget ? (
+          {exporting ? (
+            <ProgressModal
+              title="Exporting…"
+              label={exporting.label}
+              fraction={exporting.fraction}
+              width={Math.max(16, contentWidth - 10)}
+            />
+          ) : showWidthAdvisory ? (
+            <Box
+              flexDirection="column"
+              borderStyle="round"
+              borderColor="yellow"
+              paddingX={2}
+              paddingY={1}
+              alignSelf="flex-start"
+            >
+              <Text bold color="yellow">
+                Terminal is a bit narrow
+              </Text>
+              <Text wrap="wrap">
+                The Explainer panel needs about 84 columns and is hidden at{" "}
+                {columns}. Widen the window to bring it back — the tracker below
+                still works normally.
+              </Text>
+              <Text dimColor>press any key to continue</Text>
+            </Box>
+          ) : stepBuilding ? (
+            <Box
+              flexDirection="column"
+              borderStyle="round"
+              borderColor="yellow"
+              paddingX={2}
+              paddingY={1}
+              alignSelf="flex-start"
+            >
+              <Text bold color="yellow">
+                Generating Stepthrough Recipe…
+              </Text>
+              <Text dimColor>
+                Analysing the project and composing the rebuild steps.
+              </Text>
+            </Box>
+          ) : actionTarget ? (
             <ActionMenu
               title="Actions for this cell"
               actions={menuActions}
               active
               height={viewportRows}
+              width={contentWidth}
+              onExplain={setMenuExplainer}
               onClose={() => setActionTarget(null)}
               onRun={runMenuAction}
             />
@@ -1225,6 +1395,8 @@ export function App({ session }: Props) {
               ]}
               active
               height={viewportRows}
+              width={contentWidth}
+              onExplain={setMenuExplainer}
               onClose={() => setPending(null)}
               onRun={resolvePending}
             />
@@ -1240,6 +1412,8 @@ export function App({ session }: Props) {
               }))}
               active
               height={viewportRows}
+              width={contentWidth}
+              onExplain={setMenuExplainer}
               onClose={() => setRecentPickerOpen(false)}
               onRun={(action) => {
                 setRecentPickerOpen(false);
@@ -1251,6 +1425,7 @@ export function App({ session }: Props) {
               commands={registry.all()}
               active={helpOpen}
               height={viewportRows}
+              width={contentWidth}
               onClose={() => setHelpOpen(false)}
             />
           ) : activeOverlay === "song" && stepMode ? (
@@ -1276,14 +1451,7 @@ export function App({ session }: Props) {
               submit={{
                 key: "e",
                 label: "Export",
-                run: () => {
-                  const name = (state.song?.meta.name || "export").replace(
-                    /[^\w.-]+/g,
-                    "_",
-                  );
-                  setOverlay("none");
-                  void runCommand(`export wav ${name}.wav`);
-                },
+                run: beginWavExport,
               }}
             />
           ) : editorGroups ? (
@@ -1344,6 +1512,18 @@ export function App({ session }: Props) {
               state={stepMode ? state : undefined}
               highlightRow={highlightMixerRow}
             />
+          ) : activeOverlay === "filepicker" ? (
+            <FilePicker
+              session={session}
+              active={activeOverlay === "filepicker"}
+              onClose={() => setOverlay("none")}
+              width={contentWidth}
+              height={contentHeight}
+              onOpen={(path) => {
+                setOverlay("none");
+                void runCommand(`/open "${path}"`);
+              }}
+            />
           ) : activeOverlay === "samples" ? (
             <SamplesOverlay
               session={session}
@@ -1392,6 +1572,7 @@ export function App({ session }: Props) {
       <StatusBar
         status={state.status}
         error={state.error}
+        width={contentWidth}
         hint={
           menuContext?.hint ??
           (stepMode
@@ -1405,6 +1586,7 @@ export function App({ session }: Props) {
         placeholder="type / for commands…"
         suggestions={suggestions}
         selected={selected}
+        width={contentWidth}
       />
     </Box>
   );

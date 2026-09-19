@@ -45,8 +45,8 @@ async function main(): Promise<void> {
     client = await ControlClient.connect(socketPath);
   } catch (error) {
     process.stderr.write(
-      `Cannot connect to the Lantern control socket at ${socketPath}.\n` +
-        `Is the app running? Set LANTERN_SOCKET to override. (${String(error)})\n`,
+      `Cannot connect to the SpectralPrism control socket at ${socketPath}.\n` +
+        `Is the app running? Set SPT_SOCKET to override. (${String(error)})\n`,
     );
     process.exitCode = 3;
     return;

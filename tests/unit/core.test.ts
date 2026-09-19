@@ -946,7 +946,7 @@ describe("project json", () => {
 
   it("migrates legacy tick rate + speed into a single BPM", () => {
     const project = projectFromJson(
-      fixtureText("assets/lmp-default-proj.lampjson"),
+      fixtureText("assets/lmp-default-proj.sptproj"),
     );
     // 60 * 47.2 * 150 / (6 * 150 * 4) = 118 BPM, preserving row duration.
     expect(project.bpmOverride).toBeCloseTo(118, 4);

@@ -86,7 +86,17 @@ export function ExplainerPanel({ content, width, height, session }: Props) {
         {content.title}
       </Text>
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        <Text wrap="wrap">{content.body}</Text>
+        {content.segments && content.segments.length > 0 ? (
+          <Text wrap="wrap">
+            {content.segments.map((segment, index) => (
+              <Text key={index} color={segment.color} bold={segment.bold}>
+                {segment.text}
+              </Text>
+            ))}
+          </Text>
+        ) : (
+          <Text wrap="wrap">{content.body}</Text>
+        )}
       </Box>
       {session ? (
         <Box flexDirection="column" flexShrink={0}>

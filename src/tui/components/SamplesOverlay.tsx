@@ -7,6 +7,7 @@ import type { ExplainerText } from "../explainer";
 import type { SessionState } from "../session";
 import { ActionMenu } from "./ActionMenu";
 import { contextActions, type ContextAction } from "../contextActions";
+import { isCancel, isConfirm } from "../keys";
 
 interface Props {
   session: Session;
@@ -166,7 +167,7 @@ export function SamplesOverlay({
 
       if (menuOpen) return; // ActionMenu owns the keyboard while open.
 
-      if (key.escape || char === "q" || char === "x") {
+      if (isCancel(char, key) || char === "q") {
         onClose();
         return;
       }
@@ -182,12 +183,17 @@ export function SamplesOverlay({
         );
         return;
       }
-      if (key.return || char === "z") {
+      if (isConfirm(char, key)) {
         setMenuOpen(true);
         return;
       }
       if (char === "p") {
         session.backend?.previewSample(selected);
+        return;
+      }
+      // A adds: import an audio file into the selected slot (FEAT-146).
+      if (char === "a") {
+        onImportSample?.(selected);
       }
     },
     { isActive: active },
@@ -201,6 +207,7 @@ export function SamplesOverlay({
         }`}
         actions={contextActions(state, { kind: "sample", slot: selected })}
         active={active}
+        onExplain={onExplain}
         onClose={() => setMenuOpen(false)}
         onRun={runAction}
       />
@@ -253,7 +260,9 @@ export function SamplesOverlay({
       <Text bold color="magenta">
         Source Samples
       </Text>
-      <Text dimColor>↑↓ select · p preview · enter menu · esc close</Text>
+      <Text dimColor>
+        ↑↓ select · p preview · a import · enter menu · esc close
+      </Text>
       <Box flexDirection="column">
         {names.map((name, sampleIndex) => {
           const cursor = sampleIndex === selected;

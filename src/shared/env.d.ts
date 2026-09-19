@@ -12,3 +12,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env?: ImportMetaEnv;
 }
+
+/** Injected by the build (esbuild/Vite/Vitest) as a YYYYMMDD string. */
+declare const __BUILD_DATE__: string;

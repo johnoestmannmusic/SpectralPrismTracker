@@ -126,6 +126,18 @@ export class CommandRegistry {
     return [];
   }
 
+  /** The best fuzzy suggestion for the command name being typed. */
+  topSuggestion(input: string): CommandDef | undefined {
+    const raw = input.trim().replace(/^\//, "");
+    const tokens = tokenize(raw);
+    return this.suggest(tokens[0] ?? "", 1)[0];
+  }
+
+  /** True when a command declares at least one required argument. */
+  static hasRequiredArgs(def: CommandDef): boolean {
+    return (def.args ?? []).some((arg) => arg.required);
+  }
+
   /**
    * Whether pressing Enter should autocomplete the unfinished command (like
    * Tab) or execute it: complete while the command name is not yet a real

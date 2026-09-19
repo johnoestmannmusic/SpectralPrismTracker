@@ -1,6 +1,6 @@
 # Platform support (HC003)
 
-Lantern ships two front ends from one code base:
+SpectralPrism Tracker ships two front ends from one code base:
 
 | Target      | Entry                                     | Runs                              |
 | ----------- | ----------------------------------------- | --------------------------------- |
@@ -11,17 +11,18 @@ Lantern ships two front ends from one code base:
 
 `src/runtime/config.ts` resolves the config/autosave directory in this order:
 
-1. `LANTERN_CONFIG` (explicit file path) — all platforms.
-2. `$XDG_CONFIG_HOME/lantern` — POSIX when set.
-3. `%APPDATA%\lantern` — Windows when `APPDATA` is set.
-4. `~/.config/lantern` — fallback (POSIX and macOS).
+1. `SPT_CONFIG` (explicit file path; legacy `LANTERN_CONFIG` still works).
+2. `$XDG_CONFIG_HOME/spectralprism` — POSIX when set.
+3. `%APPDATA%\spectralprism` — Windows when `APPDATA` is set.
+4. `~/.config/spectralprism` — fallback (POSIX and macOS).
 
-Covered by `tests/unit/config-paths.test.ts`.
+On first run an existing `~/.config/lantern/config.json` is migrated into the
+new directory automatically. Covered by `tests/unit/config-paths.test.ts`.
 
 ## Other OS-sensitive surfaces
 
 - **Control socket** (`src/control/paths.ts`): Unix domain socket on
-  macOS/Linux, named pipe (`\\.\pipe\lantern-<user>`) on Windows.
+  macOS/Linux, named pipe (`\\.\pipe\spectralprism-<user>`) on Windows.
 - **Audio** (`node-web-audio-api`): ships prebuilt binaries; the desktop build
   installs it as a native dependency. The web host runs audio on the host
   machine.
@@ -35,4 +36,5 @@ Covered by `tests/unit/config-paths.test.ts`.
 
 `npm run build:web` produces `dist/web` (static xterm client) and
 `dist/web-host` (Node SSE host). `npm run serve:web` starts the host on
-`127.0.0.1:8123`; override with `LANTERN_WEB_HOST` / `LANTERN_WEB_PORT`.
+`127.0.0.1:8123`; override with `SPT_WEB_HOST` / `SPT_WEB_PORT` (legacy
+`LANTERN_WEB_HOST` / `LANTERN_WEB_PORT` still work).

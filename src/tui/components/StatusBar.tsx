@@ -1,9 +1,12 @@
-import { Box, Text } from "ink";
+import { Box } from "ink";
+import { MarqueeText } from "./Marquee";
 
 interface Props {
   status: string;
   error: string | null;
   hint?: string;
+  /** Columns available to each line; long lines marquee instead of truncating. */
+  width?: number;
 }
 
 /** Collapses any multi-line status into a single line so the layout never grows. */
@@ -11,22 +14,20 @@ function oneLine(text: string): string {
   return text.replace(/\s*\n+\s*/g, " · ").trim();
 }
 
-export function StatusBar({ status, error, hint }: Props) {
+export function StatusBar({ status, error, hint, width = 120 }: Props) {
   return (
     <Box flexDirection="column">
       {error ? (
-        <Text color="red" wrap="truncate-end">
-          ✖ {oneLine(error)}
-        </Text>
+        <MarqueeText color="red" width={width} text={`✖ ${oneLine(error)}`} />
       ) : (
-        <Text color="gray" wrap="truncate-end">
-          {status ? `• ${oneLine(status)}` : " "}
-        </Text>
+        <MarqueeText
+          color="gray"
+          width={width}
+          text={status ? `• ${oneLine(status)}` : " "}
+        />
       )}
       {hint ? (
-        <Text dimColor wrap="truncate-end">
-          {oneLine(hint)}
-        </Text>
+        <MarqueeText dimColor width={width} text={oneLine(hint)} />
       ) : null}
     </Box>
   );

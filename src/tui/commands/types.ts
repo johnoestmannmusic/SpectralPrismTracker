@@ -51,6 +51,11 @@ export interface CommandContext {
   listCommands?: () => CommandDef[];
   /** Opens a TUI overlay (mixer / samples / editors). No-op in non-UI hosts. */
   openOverlay?: (name: OverlayName, arg?: number) => void;
+  /**
+   * Optional long-task progress sink (0..1 plus a label), e.g. WAV export.
+   * Non-UI hosts leave it undefined.
+   */
+  onProgress?: (fraction: number, label?: string) => void;
 }
 
 export type OverlayName =
@@ -66,6 +71,7 @@ export type OverlayName =
   | "chord"
   | "microtextures"
   | "wav"
+  | "filepicker"
   | "fx";
 
 export interface CommandDef {

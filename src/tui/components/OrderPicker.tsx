@@ -2,6 +2,7 @@ import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { songLoopOrders } from "@/core/timing";
 import type { Session } from "../session";
+import { isCancel, isConfirm } from "../keys";
 
 interface Props {
   session: Session;
@@ -39,7 +40,7 @@ export function OrderPicker({ session, active, onClose, height }: Props) {
 
   useInput(
     (char, key) => {
-      if (key.escape) {
+      if (isCancel(char, key)) {
         onClose();
         return;
       }
@@ -69,7 +70,7 @@ export function OrderPicker({ session, active, onClose, height }: Props) {
         );
         return;
       }
-      if (key.return) {
+      if (isConfirm(char, key)) {
         jump(target !== null && Number.isFinite(target) ? target : clamped);
         return;
       }

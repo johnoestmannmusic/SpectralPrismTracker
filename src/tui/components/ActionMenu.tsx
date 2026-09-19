@@ -1,6 +1,10 @@
 import { Box, Text, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import type { ContextAction } from "../contextActions";
+import type { ExplainerText } from "../explainer";
+import { isCancel, isConfirm } from "../keys";
+import { MarqueeText } from "./Marquee";
 
 interface Props {
   title: string;
@@ -10,6 +14,10 @@ interface Props {
   onRun: (action: ContextAction) => void;
   /** Rows available for the list (menu chrome is subtracted). */
   height?: number;
+  /** Columns available to the title (for marqueeing long instrument names). */
+  width?: number;
+  /** Receives the highlighted action so the Explainer can describe it. */
+  onExplain?: (content: ExplainerText) => void;
 }
 
 /**
@@ -25,6 +33,8 @@ export function ActionMenu({
   onClose,
   onRun,
   height,
+  width = 100,
+  onExplain,
 }: Props) {
   const enabled = useMemo(
     () => actions.map((action, index) => ({ action, index })),
@@ -32,6 +42,14 @@ export function ActionMenu({
   );
   const firstEnabled = enabled.find((entry) => entry.action.enabled !== false);
   const [selected, setSelected] = useState(firstEnabled?.index ?? 0);
+  // Latest actions without making them an effect dependency: callers often
+  // build the list inline, so depending on the array identity re-fires the
+  // explainer effect every render and loops (the OOM fix).
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const onExplainRef = useRef(onExplain);
+  onExplainRef.current = onExplain;
+  const selectedId = actions[selected]?.id ?? "";
 
   // Keep the selection on an enabled row whenever the action list changes.
   useEffect(() => {
@@ -42,6 +60,36 @@ export function ActionMenu({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actions]);
+
+  // Describe the highlighted action in the Explainer (FEAT-139). Only re-fires
+  // when the highlighted row actually changes, never on array identity.
+  useEffect(() => {
+    const explain = onExplainRef.current;
+    if (!explain) return;
+    const action = actionsRef.current[selected];
+    if (!action) {
+      explain({
+        title: "Actions",
+        body: "No action is available for this selection.",
+      });
+      return;
+    }
+    const details = [
+      action.hint,
+      action.command ? `Runs ${action.command}` : undefined,
+      action.keys?.length ? `Shortcut: ${action.keys.join(" ")}` : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    explain({
+      title: `Action · ${action.label}`,
+      body:
+        details ||
+        (action.enabled === false
+          ? "Unavailable for this selection."
+          : "Enter to run this action."),
+    });
+  }, [selected, selectedId]);
 
   const visible = Math.max(3, (height ?? actions.length + 4) - 4);
   let start = 0;
@@ -61,7 +109,7 @@ export function ActionMenu({
 
   useInput(
     (char, key) => {
-      if (key.escape || key.ctrl) {
+      if (isCancel(char, key)) {
         onClose();
         return;
       }
@@ -73,7 +121,7 @@ export function ActionMenu({
         move(1);
         return;
       }
-      if (key.return) {
+      if (isConfirm(char, key)) {
         const action = actions[selected];
         if (action && action.enabled !== false) onRun(action);
         return;
@@ -95,9 +143,12 @@ export function ActionMenu({
       paddingX={1}
       flexGrow={1}
     >
-      <Text bold color="yellow">
-        {title}
-      </Text>
+      <MarqueeText
+        bold
+        color="yellow"
+        width={Math.max(10, width - 4)}
+        text={title}
+      />
       <Text dimColor wrap="truncate-end">
         ↑↓/jk select · enter run · esc close
         {actions.length > visible

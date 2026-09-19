@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyExportEnvelope,
   arrangeExport,
+  arrangeForExport,
   crc32,
   finalizeExport,
   wavPcm16,
@@ -219,6 +220,15 @@ describe("export finalisation", () => {
     expect(foundArtwork).toBe(true);
   });
 
+  it("embeds large cover art without a call-stack overflow", () => {
+    const clip = makeClip([[0, 0.1]], 8000);
+    // 200 KB is far beyond the argument-count limit that `push(...bytes)`
+    // used to hit (BUG-35).
+    const artwork = new Uint8Array(200_000);
+    for (let i = 0; i < artwork.length; i++) artwork[i] = i & 0xff;
+    expect(() => wavPcm16(clip, { title: "Large", artwork })).not.toThrow();
+  });
+
   it("peak-normalises to full scale when enabled", () => {
     const clip = makeClip([[0.25, -0.5, 0.1]], 1000);
     const out = finalizeExport(clip, {
@@ -230,6 +240,52 @@ describe("export finalisation", () => {
     const peak = Math.max(...Array.from(out.channels[0]!, (v) => Math.abs(v)));
     expect(Math.abs(peak - 1)).toBeLessThan(1e-9);
     expect(out.channels[0]![0]).toBeCloseTo(0.5);
+  });
+});
+
+describe("Cycles track-length fade (FEAT-157)", () => {
+  const source = () => makeClip([new Array(44_100).fill(0.5)], 44_100); // 1 s
+
+  it("fills the track length without appending a fade pass", () => {
+    const arranged = arrangeForExport(source(), {
+      loops: 0,
+      fadeInMs: 0,
+      fadeOutMs: 4000,
+      normalize: false,
+      lengthSeconds: 3,
+    });
+    // 3 x 1 s, not 3 s + 4 s of restarted patterns.
+    expect(clipDuration(arranged)).toBeCloseTo(3, 2);
+  });
+
+  it("appends a fade pass when no track length is set", () => {
+    const arranged = arrangeForExport(source(), {
+      loops: 0,
+      fadeInMs: 0,
+      fadeOutMs: 1000,
+      normalize: false,
+      lengthSeconds: 0,
+    });
+    expect(clipDuration(arranged)).toBeCloseTo(2, 2);
+  });
+
+  it("fades the final fadeOutMs of the requested length", () => {
+    const rate = 44_100;
+    const total = 25 * rate;
+    const clip = makeClip([new Array(total).fill(1)], rate);
+    const out = applyExportEnvelope(clip, {
+      loops: 0,
+      fadeInMs: 0,
+      fadeOutMs: 4000,
+      normalize: false,
+      lengthSeconds: 25,
+    });
+    const at = (seconds: number) =>
+      out.channels[0]![Math.round(seconds * rate)]!;
+    expect(at(20)).toBeCloseTo(1, 2);
+    expect(at(21)).toBeCloseTo(1, 2); // fade starts at 21 s
+    expect(at(22.5)).toBeLessThan(0.7);
+    expect(at(24.99)).toBeLessThan(0.01);
   });
 });
 
@@ -273,6 +329,19 @@ describe("offline sampler mixdown", () => {
     expect(clipDuration(mix)).toBeGreaterThan(0.9);
     const peak = Math.max(...Array.from(mix.channels[0]!, (v) => Math.abs(v)));
     expect(peak).toBeGreaterThan(0);
+
+    // A `maxSeconds` cap stops the mix early (FEAT-156) so a 20 s export does
+    // not render the whole song.
+    const capped = renderSamplerMix(
+      sequence,
+      [settings],
+      [clip],
+      [1, 1, 1, 1],
+      [false, false, false, false],
+      1,
+      0.25,
+    );
+    expect(clipDuration(capped)).toBeLessThanOrEqual(0.3);
   });
 
   it("renders reverse notes offline, differing from forward playback", () => {

@@ -3,6 +3,7 @@ import type { Cursor, SessionState } from "../session";
 import { formatClock } from "../format";
 import { songLoopOrders } from "@/core/timing";
 import { orderRowLength } from "@/core/layout";
+import { versionStamp } from "../version";
 
 interface Props {
   state: SessionState;
@@ -17,7 +18,7 @@ export function SongHeader({ state, playhead, context }: Props) {
     return (
       <Box flexDirection="column">
         <Text bold color="yellow">
-          Lantern
+          {versionStamp()}
         </Text>
         <Text dimColor>{state.status || "Loading…"}</Text>
       </Box>
@@ -39,6 +40,10 @@ export function SongHeader({ state, playhead, context }: Props) {
   return (
     <Box flexDirection="column">
       <Box>
+        <Text bold color="green">
+          {versionStamp()}
+        </Text>
+        <Text> </Text>
         <Text bold color="green">
           ♪{" "}
         </Text>

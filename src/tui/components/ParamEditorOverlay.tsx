@@ -1,10 +1,11 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DEFAULT_EXPLAINER, type ExplainerText } from "../explainer";
+import { isCancel, isConfirm } from "../keys";
 
 export interface EditorParam {
   label: string;
-  kind: "number" | "toggle" | "enum" | "text";
+  kind: "number" | "toggle" | "enum" | "text" | "action";
   value: number | boolean | string;
   min?: number;
   max?: number;
@@ -14,6 +15,8 @@ export interface EditorParam {
   unit?: string;
   format?: (value: number | boolean | string) => string;
   set: (value: number | boolean | string) => void;
+  /** For `kind: "action"`: runs when the row is activated with Enter/z. */
+  run?: () => void;
   /** Ask the host to audition after the change (spectral/percussion). */
   preview?: boolean;
   /** Short explanation shown in the right-hand explainer panel. */
@@ -39,7 +42,7 @@ interface Props {
   submit?: { key: string; label: string; run: () => void };
   /** Receives the highlighted setting for the right-hand explainer panel. */
   onExplain?: (content: ExplainerText) => void;
-  /** Optional tab bar (e.g. Sampler / Spectral / Percussion). */
+  /** Optional tab bar (e.g. SAMPLER-CORE / Spectral / Percussion). */
   tabs?: {
     labels: string[];
     active: number;
@@ -54,6 +57,12 @@ interface Props {
 }
 
 function describeParam(groupTitle: string, param: EditorParam): ExplainerText {
+  if (param.kind === "action") {
+    return {
+      title: `${groupTitle} · ${param.label}`,
+      body: param.explain ?? "Press Enter (or z) to run this action.",
+    };
+  }
   const body: string[] = [];
   if (groupTitle) body.push(`${groupTitle}.`);
   if (param.explain) body.push(param.explain);
@@ -92,6 +101,7 @@ function clamp(value: number, min?: number, max?: number): number {
 }
 
 function displayValue(param: EditorParam): string {
+  if (param.kind === "action") return "";
   if (param.format) return param.format(param.value);
   if (param.kind === "text") return String(param.value);
   if (param.kind === "toggle") return param.value ? "on" : "off";
@@ -334,7 +344,7 @@ export function ParamEditorOverlay({
 
   const resetCurrent = () => {
     const entry = flat[Math.max(0, Math.min(selected, flat.length - 1))];
-    if (!entry) return;
+    if (!entry || entry.param.kind === "action") return;
     const base = baseline.current.get(
       `${shownGroups[entry.groupIndex]?.title ?? ""}::${entry.param.label}`,
     );
@@ -344,6 +354,7 @@ export function ParamEditorOverlay({
   };
 
   const adjust = (param: EditorParam, direction: 1 | -1, large = false) => {
+    if (param.kind === "action") return;
     if (param.kind === "toggle") {
       param.set(!(param.value as boolean));
     } else if (param.kind === "enum") {
@@ -395,11 +406,11 @@ export function ParamEditorOverlay({
       }
       // Enum chooser popup swallows keys until Enter/Escape.
       if (choosing) {
-        if (key.escape || char === "x") {
+        if (isCancel(char, key)) {
           setChoosing(null);
           return;
         }
-        if (key.return) {
+        if (isConfirm(char, key)) {
           const option = choosing.options[choosing.index];
           if (option !== undefined && current) {
             current.param.set(option);
@@ -440,7 +451,7 @@ export function ParamEditorOverlay({
       }
       // Inline value entry swallows every key until Enter/Escape.
       if (editing !== null) {
-        if (key.escape || char === "x") {
+        if (isCancel(char, key)) {
           setEditing(null);
           return;
         }
@@ -472,7 +483,7 @@ export function ParamEditorOverlay({
         return;
       }
 
-      if (key.escape || char === "x") {
+      if (isCancel(char, key)) {
         if (filter) {
           setFilter("");
           return;
@@ -558,8 +569,12 @@ export function ParamEditorOverlay({
         if (current) adjust(current.param, key.leftArrow ? -1 : 1, key.ctrl);
         return;
       }
-      if (key.return || char === "z") {
+      if (isConfirm(char, key)) {
         if (current) {
+          if (current.param.kind === "action") {
+            current.param.run?.();
+            return;
+          }
           if (current.param.kind === "enum") {
             const options = current.param.choices ?? [];
             const index = Math.max(
@@ -702,9 +717,13 @@ export function ParamEditorOverlay({
                       Math.max(0, 12 - Math.round(ratio * 12)),
                     )} `
                   : ""}
-                {isSelected && editing !== null
-                  ? `${editing}▏`
-                  : displayValue(row.param)}
+                {row.param.kind === "action"
+                  ? isSelected
+                    ? "↵ run"
+                    : ""
+                  : isSelected && editing !== null
+                    ? `${editing}▏`
+                    : displayValue(row.param)}
               </Text>
             </Box>
           );

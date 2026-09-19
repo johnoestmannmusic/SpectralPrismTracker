@@ -17,9 +17,21 @@ import type { SessionState } from "./session";
  * cell under the cursor, or the highlighted row in an open menu. The panel on
  * the right-hand side always shows the matching text.
  */
+export interface ExplainerSpan {
+  text: string;
+  color?: "cyan" | "yellow" | "green" | "gray" | "red" | "magenta" | "white";
+  bold?: boolean;
+}
+
 export interface ExplainerText {
   title: string;
   body: string;
+  /**
+   * Optional coloured rendering (FEAT-139). `body` stays the plain-text
+   * contract for tests/automation; the panel prefers `segments` when present.
+   * Colours: cyan = calculated value, yellow = variable/name, green = raw input.
+   */
+  segments?: ExplainerSpan[];
 }
 
 export const DEFAULT_EXPLAINER: ExplainerText = {
@@ -96,7 +108,14 @@ export function instrumentExplain(
   const ins = song.instruments[index];
   return {
     title: `Instrument ${index.toString().padStart(2, "0")} · ${ins?.name ?? ""}`,
-    body: "A sampler / Spectral / Percussion instrument. Rename it from the Sampler menu's Name parameter; a adds a new instrument and d deletes the selected one (with confirmation).",
+    body: "A SAMPLER-CORE / Spectral / Percussion instrument. Rename it from the SAMPLER-CORE menu's Name parameter; a adds a new instrument and del deletes the selected one (with confirmation).",
+    segments: [
+      { text: "Instrument " },
+      { text: String(index).padStart(2, "0"), color: "cyan" },
+      { text: " · " },
+      { text: ins?.name ?? "(unnamed)", color: "yellow", bold: true },
+      { text: "\nA SAMPLER-CORE / Spectral / Percussion instrument." },
+    ],
   };
 }
 
@@ -145,15 +164,39 @@ export function cellExplain(
     }
     const freq = noteToFreq(note, song.meta.tuningA4) ?? 0;
     const ins = cell.instrument ?? null;
+    const instrumentName =
+      ins !== null ? instrumentDescription(song, ins) : undefined;
     return {
       title: `${label} · ${noteToName(note)}`,
       body: `note = ${noteToName(note)} (raw ${note.note})\n≈ ${freq.toFixed(
         2,
       )} Hz (tuning ${song.meta.tuningA4} Hz).\n${
         ins !== null
-          ? `Instrument ${ins} · ${instrumentDescription(song, ins)}.`
+          ? `Instrument ${ins} · ${instrumentName}.`
           : "No instrument set yet on this channel."
       }`,
+      segments: [
+        { text: "note = " },
+        { text: noteToName(note), color: "yellow", bold: true },
+        { text: ` (raw ${note.note})` },
+        { text: "\n≈ " },
+        { text: `${freq.toFixed(2)} Hz`, color: "cyan" },
+        { text: ` (tuning ${song.meta.tuningA4} Hz).\n` },
+        ...(ins !== null && instrumentName
+          ? [
+              { text: "Instrument ", color: "gray" as const },
+              { text: String(ins), color: "cyan" as const },
+              { text: " · " },
+              { text: instrumentName, color: "yellow" as const },
+              { text: "." },
+            ]
+          : [
+              {
+                text: "No instrument set yet on this channel.",
+                color: "gray" as const,
+              },
+            ]),
+      ],
     };
   }
 
@@ -177,11 +220,17 @@ export function cellExplain(
         body: "No override — plays at whatever level the envelope / volume slide already set.",
       };
     }
+    const pct = Math.round((cell.volume / 15) * 100);
     return {
       title: `${label} · volume ${cell.volume}`,
-      body: `volume = ${cell.volume} / 15 (≈ ${Math.round(
-        (cell.volume / 15) * 100,
-      )}%) from here until the next volume cell or slide.`,
+      body: `volume = ${cell.volume} / 15 (≈ ${pct}%) from here until the next volume cell or slide.`,
+      segments: [
+        { text: "volume = " },
+        { text: String(cell.volume), color: "cyan", bold: true },
+        { text: " / 15 (≈ " },
+        { text: `${pct}%`, color: "cyan" },
+        { text: ") from here until the next volume cell or slide." },
+      ],
     };
   }
 

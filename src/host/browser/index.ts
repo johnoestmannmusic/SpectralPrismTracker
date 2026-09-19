@@ -1,4 +1,4 @@
-import type { Host } from "../types";
+import type { Host, Result } from "../types";
 import { browserFs } from "./files";
 import { browserAssets } from "./assets";
 import { browserConfig } from "./config";
@@ -18,7 +18,18 @@ export function createBrowserHost(): Host {
     assets: browserAssets,
     config: browserConfig,
     audio: browserAudio,
+    openExternal,
   };
+}
+
+/** Opens a URL in a new browser tab (FEAT-149). */
+async function openExternal(url: string): Promise<Result<string>> {
+  try {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return { ok: true, value: url };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
 }
 
 export const browserHost: Host = createBrowserHost();

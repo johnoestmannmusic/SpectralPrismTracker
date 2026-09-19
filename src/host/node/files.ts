@@ -11,7 +11,7 @@ import {
   saveFilterFor,
   type SaveFilter,
 } from "@/runtime/paths";
-import type { HostFs, Result, WriteOptions } from "../types";
+import type { DirectoryEntry, HostFs, Result, WriteOptions } from "../types";
 
 // Re-export the pure helpers so `@/runtime/files` stays the single import site.
 export {
@@ -115,4 +115,26 @@ export const nodeFs: HostFs = {
   fileExists,
   resolvePath: (filePath) => path.resolve(filePath),
   completePath,
+  listDirectory,
 };
+
+/** Lists one directory's immediate entries (FEAT-155). */
+export async function listDirectory(dir: string): Promise<DirectoryEntry[]> {
+  try {
+    const entries = await readdir(dir.length ? dir : ".", {
+      withFileTypes: true,
+    });
+    return entries
+      .map((entry) => ({
+        name: entry.name,
+        path: path.join(dir, entry.name),
+        isDirectory: entry.isDirectory(),
+      }))
+      .sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+  } catch {
+    return [];
+  }
+}

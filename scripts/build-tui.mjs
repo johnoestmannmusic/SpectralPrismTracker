@@ -7,6 +7,11 @@ const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const src = path.join(projectRoot, "src");
 const dist = path.join(projectRoot, "dist", "tui");
 
+// Build stamp shown in the song header (FEAT-153): SPECTRALPRISM TRACKER vYYYYMMDD.
+const d = new Date();
+const buildDate = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+const define = { __BUILD_DATE__: JSON.stringify(buildDate) };
+
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
@@ -19,6 +24,7 @@ await build({
   sourcemap: true,
   jsx: "automatic",
   alias: { "@": src },
+  define,
   // Keep native bindings and React/Ink external: Ink conditionally imports the
   // optional react-devtools-core peer, which must resolve at runtime, and both
   // Ink and our components must share one React instance.
@@ -43,6 +49,7 @@ await build({
   target: "node22",
   sourcemap: true,
   alias: { "@": src },
+  define,
   outfile: path.join(dist, "prism-worker.mjs"),
   logLevel: "info",
 });
@@ -56,6 +63,7 @@ await build({
   target: "node22",
   sourcemap: true,
   alias: { "@": src },
+  define,
   banner: { js: "#!/usr/bin/env node" },
   outfile: path.join(dist, "run-script.mjs"),
   logLevel: "info",

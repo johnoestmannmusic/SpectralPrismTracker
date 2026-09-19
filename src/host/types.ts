@@ -15,8 +15,6 @@ export interface LanternConfig {
   defaultOpen?: DefaultOpen;
   /** Most-recently used project paths, newest first (max 10). */
   recentProjects?: string[];
-  /** Workspace preference: true polymeter Cycles view. */
-  cyclesMode?: boolean;
 }
 
 export interface SourceSampleAsset {
@@ -32,6 +30,13 @@ export interface WriteOptions {
   overwrite?: boolean;
   /** Create missing parent directories. Defaults to true. */
   createDirs?: boolean;
+}
+
+/** One directory entry returned by {@link HostFs.listDirectory}. */
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
 }
 
 /** File system + path completion surface used by the TUI IO layer. */
@@ -51,6 +56,11 @@ export interface HostFs {
    * filesystem; the browser returns [] because it cannot browse paths.
    */
   completePath(prefix: string): Promise<string[]>;
+  /**
+   * Lists one directory's immediate entries (FEAT-155). Optional so minimal
+   * test hosts can omit it; hosts without it cannot power the file picker.
+   */
+  listDirectory?(dir: string): Promise<DirectoryEntry[]>;
 }
 
 /** Bundled-asset loading surface. */
@@ -86,4 +96,9 @@ export interface Host {
   assets: HostAssets;
   config: HostConfig;
   audio: HostAudio;
+  /**
+   * Opens an external URL in the user's browser (FEAT-149). Optional so test
+   * hosts and minimal platforms can omit it; callers must handle absence.
+   */
+  openExternal?(url: string): Promise<Result<string>>;
 }

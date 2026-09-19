@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { MarqueeText } from "./Marquee";
 
 export interface Suggestion {
   label: string;
@@ -21,6 +22,8 @@ interface Props {
   placeholder: string;
   suggestions: Suggestion[];
   selected: number;
+  /** Columns available to suggestion descriptions. */
+  width?: number;
 }
 
 export function CommandBar({
@@ -29,6 +32,7 @@ export function CommandBar({
   placeholder,
   suggestions,
   selected,
+  width = 100,
 }: Props) {
   return (
     <Box flexDirection="column">
@@ -47,21 +51,29 @@ export function CommandBar({
                   ? " ".repeat(18 - suggestion.label.length)
                   : " "}
               </Text>
-              <Text dimColor={index !== selected}>
-                {" "}
-                {suggestion.kind === "recent"
-                  ? `recent · ${suggestion.description ?? ""}`
-                  : (suggestion.description ?? "")}
-              </Text>
+              <MarqueeText
+                dimColor={index !== selected}
+                width={Math.max(10, width - 22)}
+                text={
+                  suggestion.kind === "recent"
+                    ? `recent · ${suggestion.description ?? ""}`
+                    : (suggestion.description ?? "")
+                }
+              />
             </Box>
           ))}
           {suggestions[selected]?.usage ? (
-            <Text dimColor wrap="truncate-end">
+            <Text wrap="truncate-end">
               {"   "}
-              {suggestions[selected]!.usage}
-              {suggestions[selected]!.example
-                ? `  e.g. ${suggestions[selected]!.example}`
-                : ""}
+              <MarqueeText
+                dimColor
+                width={Math.max(10, width - 4)}
+                text={`${suggestions[selected]!.usage}${
+                  suggestions[selected]!.example
+                    ? `  e.g. ${suggestions[selected]!.example}`
+                    : ""
+                }`}
+              />
             </Text>
           ) : null}
         </Box>

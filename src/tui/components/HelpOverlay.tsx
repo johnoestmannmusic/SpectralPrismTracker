@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { CommandDef } from "../commands/types";
+import { isCancel } from "../keys";
+import { MarqueeText } from "./Marquee";
 
 interface Props {
   commands: CommandDef[];
@@ -8,6 +10,8 @@ interface Props {
   active: boolean;
   /** Rows available to the overlay (already excludes the app header/status/command bar). */
   height: number;
+  /** Columns available to the overlay (for marqueeing long descriptions). */
+  width?: number;
 }
 
 interface Line {
@@ -16,36 +20,51 @@ interface Line {
   secondary?: string;
 }
 
-/** EDIT MODE keyboard shortcuts (parity with the original app's help menu). */
+/**
+ * EDIT MODE keyboard shortcuts (FEAT-148). Kept in one place next to the shared
+ * key predicates so the help text can never drift from the implementation.
+ */
 const KEY_SHORTCUTS: Array<[string, string]> = [
-  ["Arrows", "Move selection (wraps across patterns)"],
+  ["Arrows", "Move the cursor / extend the selection in selection mode"],
   ["Ctrl+Up/Down", "Move 16 rows (menus: skip category)"],
   ["Ctrl+Left/Right", "Jump channel (NOTE column)"],
   ["Enter", "Open the context-action menu for the cursor cell"],
   ["E", "Visual selection: arrows extend · E again copies"],
   ["T", "Cut the highlighted block"],
   ["R / Shift+R", "Paste / flood-paste to end of pattern"],
-  ["v", "Edit the cell's instrument (sampler/spectral/percussion)"],
+  ["v", "Edit the cell's instrument (SAMPLER-CORE/Spectral/…)"],
   ["I", "Open the Instruments panel (list of every instrument)"],
   ["O", "Go to order… (jump picker)"],
   ["L", "Loop the viewed order / the whole song"],
+  ["C", "Toggle Cycles Mode (per-project workspace)"],
   ["Shift+Arrows", "Extend selection (some terminals capture this to scroll)"],
   ["[ / ]", "Cycle orders (previous / next)"],
   ["PgUp / PgDn", "Move order"],
-  ["z", "Place the last value (note/ins/vol/effect)"],
-  ["x", "Clear cell or range"],
+  ["z", "Place the last value · confirm (z) inside menus"],
+  ["x", "Clear cell/range · cancel (x) inside menus"],
   ["c", "Note off"],
   ["q / a", "Value +1 / -1"],
   ["w / s", "Value +12 / -12 (coarse)"],
-  ["Ctrl+Shift+C / X / V", "Copy / cut / paste"],
+  ["Ctrl+C / X / V", "Copy / cut / paste"],
   ["Ctrl+Shift+F", "Flood paste to end"],
   ["Ctrl+A", "Select column / all"],
-  ["Ctrl+Z / Y", "Undo / redo (pattern, order, instrument and mixer edits)"],
+  ["Del", "Delete / remove in list menus (instruments, patterns, samples)"],
+  ["D / A", "Duplicate / add in those menus"],
+  [
+    "Ctrl+Z / Y",
+    "Undo / redo (patterns, orders, instruments, mixer, workspace)",
+  ],
   ["Ctrl+S", "Save the current project"],
   ["Ctrl+Shift+S", "Save As to a new path"],
-  ["Ctrl+C", "Quit (prompts when there are unsaved changes)"],
   ["Space", "Play from pattern start / pause"],
-  ["Ctrl+Space", "Play from the selected cell"],
+  ["Ctrl+Space", "Play from the selected cell (channel-aware under Cycles)"],
+  ["Stepthrough ↑↓", "Move one step · ←→ move 10 steps"],
+  ["Stepthrough Ctrl+↑↓", "Previous / next category (PgUp/PgDn too)"],
+  ["Stepthrough Home/End", "First / last step · Esc exits"],
+  [
+    "/quit or /exit",
+    "Quit (Ctrl+C no longer quits; prompts on unsaved changes)",
+  ],
 ];
 
 function buildLines(commands: CommandDef[]): Line[] {
@@ -65,23 +84,40 @@ function buildLines(commands: CommandDef[]): Line[] {
   )) {
     lines.push({ kind: "spacer", text: "" });
     lines.push({ kind: "header", text: category });
-    for (const command of list
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const command of list.slice().sort((a, b) => {
+      // /stepthrough leads its category (FEAT-148).
+      if (category === "Stepthrough Mode") {
+        if (a.id === "stepthrough") return -1;
+        if (b.id === "stepthrough") return 1;
+      }
+      return a.name.localeCompare(b.name);
+    })) {
       const args = (command.args ?? [])
         .map((arg) => (arg.required ? `<${arg.name}>` : `[${arg.name}]`))
         .join(" ");
+      // Surface aliases (e.g. /exit for /quit) so they are discoverable.
+      const aliases = (command.aliases ?? [])
+        .filter((alias) => alias !== "?")
+        .map((alias) => `/${alias}`);
       lines.push({
         kind: "command",
         text: `/${command.name}${args ? ` ${args}` : ""}`,
-        secondary: command.description,
+        secondary: `${command.description}${
+          aliases.length ? ` · aliases: ${aliases.join(", ")}` : ""
+        }`,
       });
     }
   }
   return lines;
 }
 
-export function HelpOverlay({ commands, onClose, active, height }: Props) {
+export function HelpOverlay({
+  commands,
+  onClose,
+  active,
+  height,
+  width = 100,
+}: Props) {
   const [offset, setOffset] = useState(0);
   const lines = buildLines(commands);
   // One terminal row per list entry; the box adds a title, hint and 2 border rows.
@@ -92,7 +128,7 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
 
   useInput(
     (char, key) => {
-      if (key.escape || char === "q" || char === "x") {
+      if (isCancel(char, key) || char === "q") {
         onClose();
         return;
       }
@@ -139,7 +175,7 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
       flexGrow={1}
     >
       <Text bold color="green">
-        Lantern commands ({commands.length})
+        SpectralPrism Tracker commands ({commands.length})
       </Text>
       <Text dimColor>
         ↑↓/jk scroll · ctrl+↑↓ category · space/PgDn page · esc close ·{" "}
@@ -159,7 +195,11 @@ export function HelpOverlay({ commands, onClose, active, height }: Props) {
         return (
           <Text key={key} wrap="truncate-end">
             <Text color="green">{line.text.padEnd(28)}</Text>
-            <Text dimColor>{line.secondary}</Text>
+            <MarqueeText
+              dimColor
+              width={Math.max(10, width - 30)}
+              text={line.secondary ?? ""}
+            />
           </Text>
         );
       })}

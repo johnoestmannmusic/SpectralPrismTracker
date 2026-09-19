@@ -67,7 +67,28 @@ test("shell buttons drive the shared command surface", async ({ page }) => {
   await page.getByRole("button", { name: "Help" }).click();
   await expect
     .poll(() => screenText(page), { timeout: 10_000 })
-    .toContain("Lantern commands");
+    .toContain("SpectralPrism Tracker commands");
+});
+
+test("renders aligned terminal rows with the version header", async ({
+  page,
+}) => {
+  await loadAndSettle(page);
+  const text = await screenText(page);
+  const lines = text.split("\n");
+  expect(lines[0]).toContain("SPECTRALPRISM TRACKER v");
+  // Every tracker body line must place its `│` separators in the same columns,
+  // i.e. no row drifted by a partial cell (FEAT-154).
+  const separatorColumns = lines
+    .filter((line) => line.includes("│"))
+    .map((line) =>
+      [...line]
+        .map((char, index) => (char === "│" ? index : -1))
+        .filter((index) => index >= 0)
+        .join(","),
+    );
+  expect(separatorColumns.length).toBeGreaterThan(2);
+  expect(new Set(separatorColumns).size).toBe(1);
 });
 
 test("reflows on resize", async ({ page }) => {

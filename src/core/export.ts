@@ -27,7 +27,14 @@ function pushU32(out: number[], value: number): void {
   );
 }
 
-/** Encodes an AudioClip as a canonical 16-bit PCM WAV file. */
+/**
+ * Encodes an AudioClip as a canonical 16-bit PCM WAV file.
+ *
+ * Writes straight into one preallocated `Uint8Array` (BUG-37). The previous
+ * implementation accumulated a JS `number[]` of every byte and then copied it —
+ * ~8x the memory and enough GC pressure to freeze (or OOM) the whole-song
+ * export.
+ */
 export function wavPcm16(clip: AudioClip, tags?: WavTags): Uint8Array {
   const channels = clip.channels.length;
   if (clipIsEmpty(clip)) throw new Error("Audio clip is empty");
@@ -40,23 +47,33 @@ export function wavPcm16(clip: AudioClip, tags?: WavTags): Uint8Array {
 
   const metadata = tags ? buildWavMetadataChunks(tags) : new Uint8Array(0);
 
-  const out: number[] = [];
+  const out = new Uint8Array(44 + dataSize + metadata.length);
+  const view = new DataView(out.buffer);
+  let offset = 0;
   const writeAscii = (s: string) => {
-    for (const ch of s) out.push(ch.charCodeAt(0));
+    for (let i = 0; i < s.length; i++) out[offset++] = s.charCodeAt(i) & 0xff;
+  };
+  const u16 = (value: number) => {
+    view.setUint16(offset, value & 0xffff, true);
+    offset += 2;
+  };
+  const u32 = (value: number) => {
+    view.setUint32(offset, value >>> 0, true);
+    offset += 4;
   };
 
   writeAscii("RIFF");
-  pushU32(out, 36 + dataSize + metadata.length);
+  u32(36 + dataSize + metadata.length);
   writeAscii("WAVEfmt ");
-  pushU32(out, 16);
-  pushU16(out, 1);
-  pushU16(out, channels);
-  pushU32(out, clip.sampleRate);
-  pushU32(out, clip.sampleRate * blockAlign);
-  pushU16(out, blockAlign);
-  pushU16(out, 16);
+  u32(16);
+  u16(1);
+  u16(channels);
+  u32(clip.sampleRate);
+  u32(clip.sampleRate * blockAlign);
+  u16(blockAlign);
+  u16(16);
   writeAscii("data");
-  pushU32(out, dataSize);
+  u32(dataSize);
 
   for (let frame = 0; frame < frames; frame++) {
     for (let c = 0; c < channels; c++) {
@@ -64,13 +81,13 @@ export function wavPcm16(clip: AudioClip, tags?: WavTags): Uint8Array {
       const sample = Math.min(Math.max(raw, -1), 1);
       const value =
         sample < 0 ? Math.trunc(sample * 32768) : Math.trunc(sample * 32767);
-      pushU16(out, value & 0xffff);
+      view.setUint16(offset, value & 0xffff, true);
+      offset += 2;
     }
   }
 
-  for (const byte of metadata) out.push(byte);
-
-  return Uint8Array.from(out);
+  out.set(metadata, offset);
+  return out;
 }
 
 const CRC_TABLE = (() => {
@@ -173,6 +190,12 @@ export interface ExportParams {
   fadeInMs: number;
   fadeOutMs: number;
   normalize: boolean;
+  /**
+   * Cycles track-length cap in seconds (FEAT-157). When > 0 the export fills
+   * this exact length and the fade-out lands inside it instead of appending a
+   * fade pass that restarts the patterns.
+   */
+  lengthSeconds?: number;
 }
 
 /**
@@ -182,6 +205,26 @@ export interface ExportParams {
  * continuous signal (effects must not be baked in per loop, or each repeat would
  * carry its own decaying tail and leave a gap before the next).
  */
+/** Arranges a source clip for export. When `lengthSeconds` is set (Cycles
+ * track-length mode) the clip is repeated to fill the requested length with no
+ * appended fade pass, so the fade-out applied later lands inside the track
+ * instead of restarting the patterns (FEAT-157). Otherwise the source is
+ * repeated `loops + 1` times and a `fadeOutMs` pass is appended, as before. */
+export function arrangeForExport(
+  source: AudioClip,
+  params: ExportParams,
+): AudioClip {
+  const lengthSeconds = params.lengthSeconds ?? 0;
+  if (lengthSeconds > 0) {
+    const frames = clipLen(source);
+    const seconds = frames > 0 ? frames / source.sampleRate : 0;
+    const passes =
+      seconds > 0 ? Math.max(1, Math.ceil(lengthSeconds / seconds)) : 1;
+    return arrangeExport(source, passes - 1, 0);
+  }
+  return arrangeExport(source, params.loops, params.fadeOutMs);
+}
+
 export function arrangeExport(
   clip: AudioClip,
   loops: number,
@@ -397,14 +440,23 @@ export function renderSamplerMix(
   channelVolume: number[],
   channelMuted: boolean[],
   master: number,
+  /**
+   * Optional cap in seconds (FEAT-156). Caps the allocation and stops
+   * scheduling rows past the cap, so a 20 s export of a long song does not
+   * render the whole song first.
+   */
+  maxSeconds = 0,
 ): AudioClip {
-  const duration = sequenceDuration(sequence);
+  const fullDuration = sequenceDuration(sequence);
+  const duration =
+    maxSeconds > 0 ? Math.min(fullDuration, maxSeconds) : fullDuration;
   const voices: RenderVoice[] = [];
   const lastByChannel: Array<RenderVoice | null> = [null, null, null, null];
   const random = makePrng(RENDER_PRNG_SEED);
 
   for (let row = 0; row < sequence.rows.length; row++) {
     const time = sequence.rowTimes[row] ?? 0;
+    if (maxSeconds > 0 && time >= duration) break;
     for (const event of sequence.rows[row] ?? []) {
       if (event.type === "off") {
         // Release every voice on the channel (all chord tones together);

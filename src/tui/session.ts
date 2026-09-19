@@ -29,6 +29,7 @@ import {
   clampBpm,
   rowDuration,
   rowTime,
+  rowTimeForChannel,
   songGlobalRowAt,
   songPositionAt,
 } from "@/core/timing";
@@ -183,6 +184,12 @@ export interface SessionMemento {
   channelMuted: boolean[];
   masterVolume: number;
   masterFx: MasterFxSettings;
+  /** Presentation/transport preferences that still deserve an undo step. */
+  reference: boolean;
+  follow: boolean;
+  colorInstruments: boolean;
+  ghosting: boolean;
+  wavExport: SessionState["wavExport"];
 }
 
 interface MementoHistoryGroup {
@@ -249,7 +256,7 @@ export class Session {
   private state: SessionState = initialState();
   private listeners = new Set<() => void>();
   private engine: WebAudioBackend | null = null;
-  /** Serialised config-write queue (see `persistConfig`). */
+  /** Serialised config-write queue, awaited by the config tests. */
   private configWriteChain: Promise<void> = Promise.resolve();
   private history: HistoryGroup[] = [];
   private redoStack: HistoryGroup[] = [];
@@ -336,10 +343,6 @@ export class Session {
     this.host.audio.installGlobals();
     this.patch({ status: "Loading bundled song…" });
     try {
-      const config = await this.host.config.read();
-      if (typeof config.cyclesMode === "boolean") {
-        this.patch({ cyclesMode: config.cyclesMode });
-      }
       const result = await this.host.assets.loadDefaultSong();
       await this.applyLoaded(result);
     } catch (error) {
@@ -411,6 +414,7 @@ export class Session {
       masterVolume: loadedProject.masterVolume,
       masterFx: loadedProject.masterFx,
       reference: loadedProject.refPitchEnabled,
+      cyclesMode: loadedProject.cyclesMode ?? false,
       status: `${model.meta.name} — ${model.instruments.length} instruments`,
       dirty: false,
       projectPath: null,
@@ -460,48 +464,58 @@ export class Session {
   }
 
   setFollow(follow: boolean): void {
+    if (this.state.follow === follow) return;
+    const before = this.captureMemento();
     this.patch({ follow });
+    this.recordMemento("toggle follow", before);
   }
 
   setColorInstruments(colorInstruments: boolean): void {
+    if (this.state.colorInstruments === colorInstruments) return;
+    const before = this.captureMemento();
     this.patch({ colorInstruments });
-  }
-
-  /** Cycles Mode: independent per-channel polymeter view. Persists to config. */
-  setCyclesMode(cyclesMode: boolean, persist = true): void {
-    this.patch({ cyclesMode });
-    if (persist) this.persistConfig({ cyclesMode });
+    this.recordMemento("toggle instrument colours", before);
   }
 
   /**
-   * Serialises config writes so a late fire-and-forget write cannot clobber a
-   * newer one, and lets tests await the queue.
+   * Cycles Mode (BUG-31): independent per-channel polymeter view. Stored on the
+   * project so it travels with the song; never written to the user config.
+   * The second parameter is retained for call-site compatibility and ignored.
    */
-  private persistConfig(patch: Parameters<Host["config"]["write"]>[0]): void {
-    this.configWriteChain = this.configWriteChain
-      .catch(() => {})
-      .then(() => this.host.config.write(patch))
-      .then(() => undefined);
+  setCyclesMode(cyclesMode: boolean, _persist = true): void {
+    if (this.state.cyclesMode === cyclesMode) return;
+    const before = this.captureMemento();
+    const project = this.state.project
+      ? { ...this.state.project, cyclesMode }
+      : this.state.project;
+    this.patch({ cyclesMode, project, dirty: true });
+    this.recordMemento("toggle cycles mode", before);
+    this.markAction();
   }
 
-  /** Awaits any queued config persistence (used by tests). */
+  /** Awaits any queued config persistence (kept for the config tests). */
   async flushConfigWrites(): Promise<void> {
     await this.configWriteChain;
   }
 
   toggleCyclesMode(): boolean {
     const next = !this.state.cyclesMode;
-    this.patch({ cyclesMode: next });
+    this.setCyclesMode(next);
     return next;
   }
 
   /** Ghost rows: dim preview of the adjacent orders above/below. */
   setGhosting(ghosting: boolean): void {
+    if (this.state.ghosting === ghosting) return;
+    const before = this.captureMemento();
     this.patch({ ghosting });
+    this.recordMemento("toggle ghost rows", before);
   }
 
   setWavExport(patch: Partial<SessionState["wavExport"]>): void {
+    const before = this.captureMemento();
     this.patch({ wavExport: { ...this.state.wavExport, ...patch } });
+    this.recordMemento("wav export settings", before);
   }
 
   /** Current order/row under the playhead, or null when not playing. */
@@ -549,7 +563,12 @@ export class Session {
     engine.ensureStarted();
     const song = this.state.song;
     const start = song
-      ? rowTime(song, this.state.cursor.order, this.state.cursor.row)
+      ? rowTimeForChannel(
+          song,
+          this.state.cursor.channel,
+          this.state.cursor.order,
+          this.state.cursor.row,
+        )
       : engine.currentTime();
     if (engine.isPlaying()) engine.seek(start);
     else engine.play(start);
@@ -1112,6 +1131,11 @@ export class Session {
       channelMuted: [...state.channelMuted],
       masterVolume: state.masterVolume,
       masterFx: structuredClone(state.masterFx),
+      reference: state.reference,
+      follow: state.follow,
+      colorInstruments: state.colorInstruments,
+      ghosting: state.ghosting,
+      wavExport: { ...state.wavExport },
     };
   }
 
@@ -1141,6 +1165,12 @@ export class Session {
       channelMuted: [...memento.channelMuted],
       masterVolume: memento.masterVolume,
       masterFx: structuredClone(memento.masterFx),
+      reference: memento.reference,
+      follow: memento.follow,
+      colorInstruments: memento.colorInstruments,
+      ghosting: memento.ghosting,
+      wavExport: { ...memento.wavExport },
+      cyclesMode: memento.project?.cyclesMode ?? this.state.cyclesMode,
       dirty: true,
     };
     const song = this.state.song;
@@ -2252,7 +2282,10 @@ export class Session {
   }
 
   setReference(reference: boolean): void {
+    if (this.state.reference === reference) return;
+    const before = this.captureMemento();
     this.patch({ reference });
+    this.recordMemento("toggle reference tuning", before);
   }
 
   /** Points the audio engine at the growing stepthrough snapshot. */

@@ -8,7 +8,7 @@ import type { HostAssets, SourceSampleAsset } from "../types";
 export interface AssetRootOptions {
   /** Explicit assets directory (highest priority). */
   root?: string;
-  /** Environment used to read `LANTERN_ASSETS`. Defaults to `process.env`. */
+  /** Environment used to read `SPT_ASSETS` (legacy `LANTERN_ASSETS`). */
   env?: NodeJS.ProcessEnv;
   /** Working directory used for the `assets` candidate. Defaults to `process.cwd()`. */
   cwd?: string;
@@ -23,7 +23,7 @@ function scriptDir(): string {
 /**
  * Finds the bundled `assets/` directory. Resolution order:
  *   1. explicit `root`
- *   2. `LANTERN_ASSETS`
+ *   2. `SPT_ASSETS` (legacy `LANTERN_ASSETS`)
  *   3. `<cwd>/assets`
  *   4. `<scriptDir>/assets`, then up to two parent directories
  *
@@ -34,7 +34,8 @@ function scriptDir(): string {
 export function resolveAssetsDir(options: AssetRootOptions = {}): string {
   if (options.root) return path.resolve(options.root);
   const env = options.env ?? process.env;
-  if (env.LANTERN_ASSETS) return path.resolve(env.LANTERN_ASSETS);
+  const override = env.SPT_ASSETS ?? env.LANTERN_ASSETS;
+  if (override) return path.resolve(override);
 
   const cwd = options.cwd ?? process.cwd();
   const base = scriptDir();
@@ -46,7 +47,7 @@ export function resolveAssetsDir(options: AssetRootOptions = {}): string {
   ];
 
   const withProject = candidates.find((candidate) =>
-    existsSync(path.join(candidate, "lmp-default-proj.lampjson")),
+    existsSync(path.join(candidate, "lmp-default-proj.sptproj")),
   );
   if (withProject) return withProject;
 
@@ -120,7 +121,7 @@ export async function loadDefaultSong(
   let project: string | null;
   try {
     project = await readTextIfPresent(
-      path.join(dir, "lmp-default-proj.lampjson"),
+      path.join(dir, "lmp-default-proj.sptproj"),
     );
   } catch (error) {
     return {

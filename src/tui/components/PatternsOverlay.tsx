@@ -4,6 +4,7 @@ import { useSession } from "../hooks";
 import { songLoopOrders } from "@/core/timing";
 import type { ExplainerText } from "../explainer";
 import type { Session, SessionState } from "../session";
+import { isCancel, isConfirm } from "../keys";
 
 interface Props {
   session: Session;
@@ -85,13 +86,16 @@ export function PatternsOverlay({
       title: `Ch ${channel + 1} · order ${String(clamped).padStart(2, "0")} · pattern ${pattern}`,
       body: `Channel ${channel + 1} of ${channelCount}, position ${clamped} of ${listLength}. Channels loop independently — lengths ${lengths.join("/")} repeat every ${loopOrders} orders (LCM).
 
-←/→ pick channel. ↑/↓ select. Shift+↑/↓ or J/K move this channel's order. a add, d duplicate, x/del remove, L set exact length, e pattern number. Enter opens the pattern settings (name / rows / number); z jumps the tracker here. c clears all.`,
+←/→ pick channel. ↑/↓ select. Shift+↑/↓ or J/K move this channel's order. a add, d duplicate, del/r remove, L set exact length, e pattern number. Enter/z opens the pattern settings (name / rows / number); g jumps the tracker here. c clears all.`,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel, clamped, listLength, loopOrders, onExplain, song?.meta.name]);
 
   useInput(
     (char, key) => {
+      // App handles undo globally for most overlays, but the Pattern Manager is
+      // also rendered directly in tests, so it keeps its own ctrl+z/y (App
+      // excludes this overlay to avoid a double undo).
       if (key.ctrl && char === "z") {
         session.undo();
         return;
@@ -101,7 +105,7 @@ export function PatternsOverlay({
         return;
       }
       if (editing !== null) {
-        if (key.escape || char === "x") {
+        if (isCancel(char, key)) {
           setEditing(null);
           return;
         }
@@ -138,7 +142,7 @@ export function PatternsOverlay({
           setSettingsOpen(false);
           return;
         }
-        if (key.escape || char === "q") {
+        if (isCancel(char, key) || char === "q") {
           setSettingsOpen(false);
           return;
         }
@@ -183,7 +187,7 @@ export function PatternsOverlay({
         return;
       }
 
-      if (key.escape || char === "q" || char === "x") {
+      if (isCancel(char, key) || char === "q") {
         onClose();
         return;
       }
@@ -263,12 +267,12 @@ export function PatternsOverlay({
         }
         return;
       }
-      if (key.return) {
+      if (isConfirm(char, key)) {
         setSettingsOpen(true);
         setSettingsField(0);
         return;
       }
-      if (char === "z") {
+      if (char === "g") {
         session.setViewOrder(clamped);
         onClose();
       }
@@ -338,7 +342,7 @@ export function PatternsOverlay({
       ) : (
         <Text dimColor wrap="truncate-end">
           ←→ channel · ↑↓ select · shift+↑↓/J/K move · a add · d duplicate ·
-          del/r remove · L length · e number · enter settings · z jump · esc
+          del/r remove · L length · e number · enter/z settings · g jump · esc
           close
         </Text>
       )}

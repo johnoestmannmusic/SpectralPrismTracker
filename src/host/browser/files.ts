@@ -8,7 +8,7 @@ import {
   saveFilterFor,
   type SaveFilter,
 } from "@/runtime/paths";
-import type { HostFs, Result, WriteOptions } from "../types";
+import type { DirectoryEntry, HostFs, Result, WriteOptions } from "../types";
 
 export {
   basenameNoExt,
@@ -186,6 +186,34 @@ export async function completePath(prefix: string): Promise<string[]> {
   }
 }
 
+/** Lists OPFS entries under a directory (FEAT-155); [] when OPFS is absent. */
+export async function listDirectory(dir: string): Promise<DirectoryEntry[]> {
+  const root = await opfsRoot();
+  if (!root) return [];
+  try {
+    const normalized = normalizePath(dir);
+    let handle = root;
+    for (const part of normalized.split("/").filter(Boolean)) {
+      handle = await handle.getDirectoryHandle(part, { create: false });
+    }
+    const out: DirectoryEntry[] = [];
+    for await (const entry of handle.values()) {
+      out.push({
+        name: entry.name,
+        path: normalizePath(`${normalized}/${entry.name}`),
+        isDirectory: entry.kind === "directory",
+      });
+    }
+    out.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /** Browser implementation of the file-system host contract. */
 export const browserFs: HostFs = {
   readTextSafe,
@@ -194,4 +222,5 @@ export const browserFs: HostFs = {
   fileExists,
   resolvePath: (filePath) => normalizePath(filePath),
   completePath,
+  listDirectory,
 };

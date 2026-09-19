@@ -49,11 +49,22 @@ describe("contextActions", () => {
         "sampler",
         "spectral",
         "percussion",
+        "chord",
+        "microtextures",
         "duplicate",
         "preview",
         "delete",
       ]),
     );
+    expect(actions.find((action) => action.id === "chord")!.command).toBe(
+      "/chord 0",
+    );
+    expect(
+      actions.find((action) => action.id === "microtextures")!.command,
+    ).toBe("/microtextures 0");
+    expect(actions.find((action) => action.id === "delete")!.keys).toEqual([
+      "del",
+    ]);
     expect(actions.find((action) => action.id === "duplicate")!.command).toBe(
       "/duplicateinstrument 0",
     );

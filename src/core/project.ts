@@ -69,6 +69,12 @@ export interface ProjectFile {
   /** Master output effects (delay + reverb). */
   masterFx: MasterFxSettings;
   patternSnapshot?: PatternSnapshot | null;
+  /**
+   * Workspace preference: the Cycles Mode polymeter view (BUG-31). Stored on
+   * the project so it travels with the song instead of the user config.
+   * Absent in legacy projects, which default to off.
+   */
+  cyclesMode?: boolean;
   /** Tempo in beats per minute. Absent in legacy projects (migrated on load). */
   bpmOverride?: number | null;
   highlightAOverride?: number | null;
@@ -97,6 +103,7 @@ export function defaultProject(): ProjectFile {
     theme: "system",
     masterFx: defaultMasterFx(),
     patternSnapshot: null,
+    cyclesMode: false,
     bpmOverride: null,
     highlightAOverride: null,
     highlightBOverride: null,
@@ -630,6 +637,8 @@ export function projectFromValue(value: Record<string, unknown>): ProjectFile {
     theme: str("theme", "system"),
     masterFx: masterFxFromJson(value.masterFx),
     patternSnapshot: snapshotFromSerde(value.patternSnapshot),
+    cyclesMode:
+      typeof value.cyclesMode === "boolean" ? value.cyclesMode : undefined,
     bpmOverride,
     highlightAOverride,
     highlightBOverride,
@@ -669,6 +678,7 @@ export function projectToValue(project: ProjectFile): Record<string, unknown> {
   if (project.websiteLink) value.websiteLink = project.websiteLink;
   if (project.patternSnapshot)
     value.patternSnapshot = snapshotToSerde(project.patternSnapshot);
+  if (project.cyclesMode) value.cyclesMode = true;
   if (project.bpmOverride != null) value.bpmOverride = project.bpmOverride;
   if (project.highlightAOverride != null)
     value.highlightAOverride = project.highlightAOverride;

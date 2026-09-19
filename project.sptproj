@@ -24540,6 +24540,7 @@
       }
     ]
   },
+  "cyclesMode": true,
   "bpmOverride": 118,
   "highlightAOverride": 4,
   "highlightBOverride": 16

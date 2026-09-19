@@ -41,7 +41,7 @@ describe("browser host (FEAT-102/103)", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith("lmp-default-proj.lampjson")) {
+        if (url.endsWith("lmp-default-proj.sptproj")) {
           return new Response("{}", { status: 200 });
         }
         if (url.includes("SourceSamples/1.ogg")) {
@@ -67,7 +67,7 @@ describe("browser host (FEAT-102/103)", () => {
     expect(written).toBe(true);
     // No IndexedDB/localStorage in the node test env: read degrades to {}.
     expect(await browserConfig.read()).toEqual({});
-    expect(browserConfig.backupPath()).toBe("/backup.lmpjson");
+    expect(browserConfig.backupPath()).toBe("/backup.sptproj");
   });
 
   it("exposes the browser audio bootstrap", () => {

@@ -1,7 +1,7 @@
-# Lantern control smoke test.
+# SpectralPrism Tracker control smoke test.
 # Run the app (npm run dev:tui), then:
 #   node dist/tui/run-script.mjs examples/control-smoke.lmpscript
-# Override the socket with LANTERN_SOCKET or --socket.
+# Override the socket with SPT_SOCKET or --socket.
 
 # Inspect state (results stream to stdout as they run).
 /query song.name
@@ -24,4 +24,4 @@
 @echo ${greeting} ${name}
 
 # Export the headless cover art.
-/export png /tmp/lantern-cover.png
+/export png /tmp/spectralprism-cover.png

@@ -5,6 +5,7 @@ import type { Session } from "../session";
 import { useSession } from "../hooks";
 import type { ExplainerText } from "../explainer";
 import type { SessionState } from "../session";
+import { isCancel } from "../keys";
 
 interface Props {
   session: Session;
@@ -66,61 +67,7 @@ export function MixerOverlay({
       meterIndex: channel,
     });
   }
-  if (state.cyclesMode) {
-    for (let channel = 0; channel < 4; channel++) {
-      rows.push({
-        label: `CH${channel + 1} phase`,
-        group: "phase",
-        explain:
-          "Cycles phasing: rows to shift this channel's cycle start. Channels stay un-synced until the LCM loop point.",
-        get: () => session.channelPhaseOffset(channel),
-        set: (value) => {
-          session.setChannelPhaseOffset(channel, value);
-        },
-        step: 1,
-        noBar: true,
-        format: (value) => `${Math.round(value)} rows`,
-      });
-      rows.push({
-        label: `CH${channel + 1} speed`,
-        group: "speed",
-        explain:
-          "Cycles phasing: row-advance multiplier. 0.5 = half-time, 2 = double-time.",
-        get: () => session.channelSpeed(channel),
-        set: (value) => {
-          session.setChannelSpeed(channel, value);
-        },
-        step: 0.25,
-        noBar: true,
-        format: (value) => `${value.toFixed(2)}x`,
-      });
-      rows.push({
-        label: `CH${channel + 1} drift`,
-        group: "drift",
-        explain:
-          "Per-channel tape drift: slow detune depth in cents for a warbling, unsteady pitch.",
-        get: () => session.channelDetuneDrift(channel),
-        set: (value) => {
-          session.setChannelDetuneDrift(channel, value);
-        },
-        step: 1,
-        noBar: true,
-        format: (value) => `${Math.round(value)}c`,
-      });
-      rows.push({
-        label: `CH${channel + 1} drift hz`,
-        group: "drift",
-        explain: "Tape-drift LFO rate in Hz.",
-        get: () => session.channelDetuneRate(channel),
-        set: (value) => {
-          session.setChannelDetuneRate(channel, value);
-        },
-        step: 0.05,
-        noBar: true,
-        format: (value) => `${value.toFixed(2)}Hz`,
-      });
-    }
-  }
+  // Per-channel phase / speed / drift moved to /fx → Channel Phasing (FEAT-143).
   rows.push({
     label: "MASTER",
     group: "master",
@@ -190,7 +137,7 @@ export function MixerOverlay({
 
   useInput(
     (char, key) => {
-      if (key.escape || char === "q" || char === "x") {
+      if (isCancel(char, key) || char === "q") {
         onClose();
         return;
       }

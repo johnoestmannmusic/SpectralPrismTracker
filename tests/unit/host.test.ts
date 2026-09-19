@@ -34,7 +34,7 @@ describe("host abstraction (FEAT-101)", () => {
     const session = new Session(host);
     expect(session.host).toBe(host);
     expect(session.host.config.backupPath()).toBe(
-      path.join(dir, "backup.lmpjson"),
+      path.join(dir, "backup.sptproj"),
     );
     // The session uses the injected host rather than the process-wide default.
     expect(session.host.config.backupPath()).not.toBe(

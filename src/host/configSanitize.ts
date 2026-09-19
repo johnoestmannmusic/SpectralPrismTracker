@@ -23,6 +23,7 @@ export function sanitizeConfig(value: unknown): LanternConfig {
       config.defaultOpen = { mode: "file", path: entry.path };
     }
   }
-  if (typeof obj.cyclesMode === "boolean") config.cyclesMode = obj.cyclesMode;
+  // `cyclesMode` is project-scoped now (BUG-31), so a legacy value here is
+  // intentionally ignored.
   return config;
 }

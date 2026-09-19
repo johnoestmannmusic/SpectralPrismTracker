@@ -5,7 +5,7 @@ import { Session } from "./session";
 import { ControlServer } from "@/control/server";
 import { setHost } from "@/host";
 import { nodeHost } from "@/host/node";
-import { initPrismWasm } from "@/wasm/prismNode";
+import { disposePrismWasm, initPrismWasm } from "@/wasm/prismNode";
 import { openPath } from "./io";
 import { saveBackup } from "./autosave";
 import { resolveStartupProject } from "./startup";
@@ -19,9 +19,9 @@ export async function main(): Promise<void> {
   // plain sample rather than failing. Prefer the worker thread when bundled.
   if (await initPrismWasm()) session.markWasmReady();
 
-  // Live control channel for scripts/agents (disable with LANTERN_CONTROL=0).
+  // Live control channel for scripts/agents (disable with SPT_CONTROL=0).
   const control = new ControlServer({ session, registry: createRegistry() });
-  if (process.env.LANTERN_CONTROL !== "0") {
+  if ((process.env.SPT_CONTROL ?? process.env.LANTERN_CONTROL) !== "0") {
     try {
       await control.start();
     } catch (error) {
@@ -49,9 +49,14 @@ export async function main(): Promise<void> {
     }
   }
 
+  // Quit: unmount Ink, close the socket/audio, stop the Prism worker thread so
+  // the event loop can drain, then exit explicitly so the shell prompt always
+  // returns (BUG-36).
   await instance.waitUntilExit();
   await control.stop();
   session.dispose();
+  disposePrismWasm();
+  process.exit(0);
 }
 
 void main().catch((error: unknown) => {

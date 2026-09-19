@@ -1,6 +1,6 @@
 import { clipLen, clipSlice, type AudioClip } from "@/core/dsp";
 import {
-  arrangeExport,
+  arrangeForExport,
   applyExportEnvelope,
   renderSamplerMix,
   wavPcm16,
@@ -10,9 +10,15 @@ import { writeMidi } from "@/core/midi";
 import { defaultProject, projectFromJson, projectToJson } from "@/core/project";
 import type { ProjectFile } from "@/core/project";
 import { defaultSamplerSettings, sequenceFromSong } from "@/core/sampler";
+import { spectralRenderEnabled, spectralWasmAvailable } from "@/core/spectral";
 import { applyMasterFxOffline } from "@/audio/offline";
 import { coverPngBytes } from "@/runtime/cover";
-import { basenameNoExt, extensionOf } from "@/runtime/paths";
+import {
+  alternateProjectPath,
+  basenameNoExt,
+  extensionOf,
+  isProjectPath,
+} from "@/runtime/paths";
 import type { Host } from "@/host";
 import type { LoadedSong } from "@/shared/types";
 import { buildSteps } from "@/core/stepthrough";
@@ -102,25 +108,37 @@ export async function loadedSongFromProjectText(
   };
 }
 
-/** Opens a `.lampjson` project file into the session. */
+/** Opens a `.sptproj` project (legacy `.lampjson` still accepted). */
 export async function openPath(
   session: Session,
   filePath: string,
 ): Promise<IoResult> {
-  if (!filePath.toLowerCase().endsWith(".lampjson")) {
+  if (!isProjectPath(filePath)) {
     return {
       ok: false,
-      error: `Unsupported file "${filePath}" (expected .lampjson)`,
+      error: `Unsupported file "${filePath}" (expected .sptproj)`,
     };
   }
-  const text = await session.host.fs.readTextSafe(filePath);
+  // Follow a renamed project across the .lampjson → .sptproj migration.
+  let target = filePath;
+  let text = await session.host.fs.readTextSafe(target);
+  if (!text.ok) {
+    const alternate = alternateProjectPath(filePath);
+    if (alternate && alternate !== filePath) {
+      const alternateText = await session.host.fs.readTextSafe(alternate);
+      if (alternateText.ok) {
+        target = alternate;
+        text = alternateText;
+      }
+    }
+  }
   if (!text.ok) return { ok: false, error: text.error };
   try {
     const loaded = await loadedSongFromProjectText(text.value, session.host);
     await session.load(loaded);
-    session.setProjectPath(filePath);
-    await session.host.config.recordLastProject(filePath);
-    return { ok: true, message: `Opened ${filePath}`, path: filePath };
+    session.setProjectPath(target);
+    await session.host.config.recordLastProject(target);
+    return { ok: true, message: `Opened ${target}`, path: target };
   } catch (error) {
     return { ok: false, error: `Cannot parse project: ${String(error)}` };
   }
@@ -264,27 +282,54 @@ export interface WavExportOptions {
 }
 
 /** Waits for spectral fusion renders so the export uses the fused clips. */
-async function waitForFusion(session: Session): Promise<void> {
+/**
+ * Waits for in-flight Spectral/Percussion renders before an export (FEAT-156).
+ *
+ * Previously this waited on "not ready" alone, so when the Prism WASM was
+ * unavailable (or a render failed) it stalled for the full 30 s and looked
+ * frozen on "Preparing instruments". It now skips entirely without WASM, waits
+ * only while renders are actually in progress (after a short grace for them to
+ * start), and reports progress so the modal keeps moving.
+ */
+async function waitForFusion(
+  session: Session,
+  onProgress?: (label: string) => void,
+): Promise<void> {
   const engine = session.backend;
   if (!engine) return;
+  if (!spectralWasmAvailable()) return;
   const { settings } = session.getState();
-  const pending = () =>
-    settings.some(
-      (setting, i) =>
-        setting.spectral.enabled &&
-        setting.sourceIndex !== null &&
-        !engine.fusionReady(i),
-    );
+  const relevant = settings
+    .map((setting, index) => ({ setting, index }))
+    .filter(
+      ({ setting }) =>
+        spectralRenderEnabled(setting.spectral) && setting.sourceIndex !== null,
+    )
+    .map(({ index }) => index);
+  if (relevant.length === 0) return;
+
   const deadline = Date.now() + 30_000;
-  while (pending() && Date.now() < deadline) {
+  const graceUntil = Date.now() + 1500;
+  while (Date.now() < deadline) {
+    const notReady = relevant.filter((i) => !engine.fusionReady(i));
+    if (notReady.length === 0) return;
+    const rendering = notReady.filter((i) => engine.fusionRendering(i));
+    // Nothing is actively rendering and the grace period has passed: the
+    // render failed or was never scheduled, so do not wait on it.
+    if (rendering.length === 0 && Date.now() > graceUntil) return;
+    onProgress?.(
+      `Rendering Spectral instruments (${relevant.length - notReady.length}/${relevant.length})`,
+    );
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  onProgress?.("Spectral render timed out — exporting available audio");
 }
 
 export async function exportWav(
   session: Session,
   filePath: string,
   options: WavExportOptions = {},
+  onProgress?: (fraction: number, label?: string) => void,
 ): Promise<IoResult> {
   const state = session.getState();
   const {
@@ -299,18 +344,12 @@ export async function exportWav(
   const engine = session.backend;
   if (!song || !engine) return { ok: false, error: "No song loaded" };
 
-  await waitForFusion(session);
-  const clips: Array<AudioClip | null> = settings.map((_, i) =>
-    engine.effectiveClip(i),
-  );
-  const base = renderSamplerMix(
-    sequenceFromSong(song, settings),
-    settings,
-    clips,
-    channelVolume,
-    channelMuted,
-    masterVolume,
-  );
+  // Report coarse stage progress and let Ink paint the "Exporting…" modal
+  // before each CPU-bound stage (FEAT-156). The FX render feeds finer-grained
+  // progress through its own callback.
+  const report = (fraction: number, label?: string) =>
+    onProgress?.(Math.min(Math.max(fraction, 0), 1), label);
+  const paint = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   const params = {
     loops: Math.max(0, Math.floor(options.loops ?? 0)),
@@ -319,29 +358,78 @@ export async function exportWav(
     normalize: options.normalize ?? false,
     lengthSeconds: options.lengthSeconds ?? 0,
   };
+
+  report(0.02, "Preparing instruments");
+  await paint();
+  await waitForFusion(session, (label) => report(0.02, label));
+
+  report(0.06, "Rendering sampler mix");
+  await paint();
+  const clips: Array<AudioClip | null> = settings.map((_, i) =>
+    engine.effectiveClip(i),
+  );
+  // Cap the render to `lengthSeconds` so a 20 s export of a long song does not
+  // mix the whole song first (FEAT-156).
+  const base = renderSamplerMix(
+    sequenceFromSong(song, settings),
+    settings,
+    clips,
+    channelVolume,
+    channelMuted,
+    masterVolume,
+    params.lengthSeconds,
+  );
+
   // A Cycles loop can be very long; an explicit length caps one pass before
   // the loop/arrange and envelope stages.
-  const source =
-    params.lengthSeconds > 0
-      ? clipSlice(base, Math.round(params.lengthSeconds * base.sampleRate))
-      : base;
-  const arranged = arrangeExport(source, params.loops, params.fadeOutMs);
-  const wet = await applyMasterFxOffline(arranged, masterFx);
+  const countLimited = params.lengthSeconds > 0;
+  const source = countLimited
+    ? clipSlice(base, Math.round(params.lengthSeconds * base.sampleRate))
+    : base;
+
+  report(0.14, "Arranging loops and fades");
+  await paint();
+  // Cycles track-length mode (FEAT-157): the fade-out belongs to the final ms
+  // of the requested length. `arrangeForExport` fills the track by continuing
+  // (repeating) the pattern with no appended fade pass, and we trim to the
+  // exact length below; `applyExportEnvelope` then fades the last `fadeOutMs`
+  // (e.g. start at 21 s for 25 s + 4 s).
+  const arranged = arrangeForExport(source, params);
+
+  report(0.18, "Applying master FX");
+  await paint();
+  const wet = await applyMasterFxOffline(arranged, masterFx, (fraction) =>
+    report(0.18 + fraction * 0.6, "Applying master FX"),
+  );
+  const keepFrames = countLimited
+    ? Math.min(clipLen(wet), Math.round(params.lengthSeconds * wet.sampleRate))
+    : clipLen(arranged);
   const trimmed =
-    params.fadeOutMs > 0 ? clipSlice(wet, clipLen(arranged)) : wet;
+    countLimited || params.fadeOutMs > 0 ? clipSlice(wet, keepFrames) : wet;
+
+  report(0.82, "Applying envelope");
+  await paint();
   const final = applyExportEnvelope(trimmed, params);
+
+  report(0.88, "Encoding WAV");
+  await paint();
   const title = project?.songTitle || song.meta.name;
+  // Cover art is no longer embedded in exported WAVs (it is exported
+  // separately via /export png); text tags only.
   const bytes = wavPcm16(final, {
     title,
     artist: project?.artist || undefined,
     album: project?.album || undefined,
-    artwork: coverPngBytes(song, { size: 600 }),
   });
+
+  report(0.95, "Writing file");
+  await paint();
   const target = filePath.toLowerCase().endsWith(".wav")
     ? filePath
     : `${filePath}.wav`;
   const written = await session.host.fs.writeBytesSafe(target, bytes);
   if (!written.ok) return { ok: false, error: written.error };
+  report(1, "Done");
   session.setStatus(`Exported ${written.value}`);
   return {
     ok: true,

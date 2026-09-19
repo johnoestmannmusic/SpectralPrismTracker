@@ -1,12 +1,12 @@
 {
-  "name": "lantern-music-player",
+  "name": "spectralprism-tracker",
   "version": "0.1.0",
   "private": true,
-  "description": "Terminal (TUI) Lantern Music Player — tracker, sampler and spectral synthesis.",
+  "description": "SpectralPrism Tracker — a terminal (TUI) tracker, sampler and spectral synthesiser.",
   "license": "MIT",
   "bin": {
-    "lantern": "dist/tui/main.mjs",
-    "lantern-run": "dist/tui/run-script.mjs"
+    "spt": "dist/tui/main.mjs",
+    "spt-run": "dist/tui/run-script.mjs"
   },
   "scripts": {
     "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",

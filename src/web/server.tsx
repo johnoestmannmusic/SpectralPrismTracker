@@ -23,8 +23,11 @@ import { createTerminalStreams } from "./terminalStreams";
  * `node-web-audio-api`, so a locally-run `lantern --serve` plays on the host.
  */
 
-const PORT = Number(process.env.LANTERN_WEB_PORT ?? 8123);
-const HOST = process.env.LANTERN_WEB_HOST ?? "127.0.0.1";
+const PORT = Number(
+  process.env.SPT_WEB_PORT ?? process.env.LANTERN_WEB_PORT ?? 8123,
+);
+const HOST =
+  process.env.SPT_WEB_HOST ?? process.env.LANTERN_WEB_HOST ?? "127.0.0.1";
 const MAX_LOG = 400_000;
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -42,6 +45,7 @@ const MIME: Record<string, string> = {
   ".ogg": "audio/ogg",
   ".wav": "audio/wav",
   ".png": "image/png",
+  ".sptproj": "application/json",
   ".lampjson": "application/json",
 };
 
@@ -150,7 +154,7 @@ async function main(): Promise<void> {
       response.end(
         JSON.stringify({
           playing: state.playing,
-          name: state.song?.meta.name ?? "Lantern",
+          name: state.song?.meta.name ?? "SpectralPrism Tracker",
           time: state.time,
           duration: state.duration,
           dirty: state.dirty,
@@ -169,14 +173,14 @@ async function main(): Promise<void> {
       const { projectToJson } = await import("@/core/project");
       response.writeHead(200, {
         "Content-Type": "application/json",
-        "Content-Disposition": 'attachment; filename="project.lampjson"',
+        "Content-Disposition": 'attachment; filename="project.sptproj"',
       });
       response.end(projectToJson(project, true));
       return;
     }
 
     if (url.pathname === "/api/upload" && request.method === "POST") {
-      const name = (url.searchParams.get("name") ?? "upload.lampjson").replace(
+      const name = (url.searchParams.get("name") ?? "upload.sptproj").replace(
         /[^a-zA-Z0-9._-]/g,
         "_",
       );
@@ -207,7 +211,9 @@ async function main(): Promise<void> {
   });
 
   server.listen(PORT, HOST, () => {
-    console.log(`Lantern web host running at http://${HOST}:${PORT}`);
+    console.log(
+      `SpectralPrism Tracker web host running at http://${HOST}:${PORT}`,
+    );
     console.log(`Serving ${distWeb}`);
   });
 }

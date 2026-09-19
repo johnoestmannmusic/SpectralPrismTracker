@@ -1,5 +1,6 @@
 import { render } from "ink-testing-library";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
+import { ActionMenu } from "@/tui/components/ActionMenu";
 import { MixerOverlay } from "@/tui/components/MixerOverlay";
 import { SamplesOverlay } from "@/tui/components/SamplesOverlay";
 import { InstrumentsOverlay } from "@/tui/components/InstrumentsOverlay";
@@ -40,6 +41,64 @@ describe("TUI overlays", () => {
     session.dispose();
   });
 
+  it("runs an action row when Enter is pressed (FEAT-156)", async () => {
+    let ran = false;
+    const groups: EditorGroup[] = [
+      {
+        title: "Action",
+        params: [
+          {
+            label: "Start export",
+            kind: "action",
+            value: "",
+            set: () => {},
+            run: () => {
+              ran = true;
+            },
+          },
+        ],
+      },
+    ];
+    const { stdin, lastFrame, unmount } = render(
+      <ParamEditorOverlay
+        title="Export WAV"
+        groups={groups}
+        active
+        height={20}
+        onClose={() => {}}
+      />,
+    );
+    expect(lastFrame() ?? "").toContain("Start export");
+    stdin.write("\r");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(ran).toBe(true);
+    unmount();
+  });
+
+  it("explains the highlighted action without a re-render loop (FEAT-139)", async () => {
+    const seen: string[] = [];
+    const { lastFrame, unmount } = render(
+      <ActionMenu
+        title="Actions"
+        // Inline array on purpose: this used to re-fire the explainer effect
+        // every render and OOM the app.
+        actions={[
+          { id: "a", label: "Alpha" },
+          { id: "b", label: "Beta" },
+        ]}
+        active
+        onClose={() => {}}
+        onRun={() => {}}
+        onExplain={(content) => seen.push(content.title)}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.length).toBeLessThan(10);
+    expect(lastFrame() ?? "").toContain("Alpha");
+    unmount();
+  });
+
   it("renders the mixer with channels, master and FX", () => {
     const { lastFrame, unmount } = render(
       <MixerOverlay session={session} active onClose={() => {}} />,
@@ -54,21 +113,20 @@ describe("TUI overlays", () => {
     unmount();
   });
 
-  it("shows per-channel phase/speed rows in Cycles Mode", () => {
-    const previous = session.getState().cyclesMode;
-    session.setCyclesMode(true, false);
-    try {
-      const { lastFrame, unmount } = render(
-        <MixerOverlay session={session} active onClose={() => {}} />,
-      );
-      const frame = lastFrame() ?? "";
-      expect(frame).toContain("CH1 phase");
-      expect(frame).toContain("CH1 speed");
-      expect(frame).toContain("CH1 drift");
-      unmount();
-    } finally {
-      session.setCyclesMode(previous, false);
-    }
+  it("exposes per-channel phase/speed/drift under /fx, not the mixer", () => {
+    // FEAT-143: /fx is the single home; the Mixer no longer lists them.
+    const labels = masterFxGroups(session).flatMap((group) =>
+      group.params.map((param) => param.label),
+    );
+    expect(labels).toContain("CH1 phase");
+    expect(labels).toContain("CH1 speed");
+    expect(labels).toContain("CH1 drift");
+    const { lastFrame, unmount } = render(
+      <MixerOverlay session={session} active onClose={() => {}} />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("CH1 phase");
+    unmount();
   });
 
   it("renders the source-sample browser with a waveform and instruments", () => {
@@ -222,7 +280,9 @@ describe("TUI overlays", () => {
       <HelpOverlay commands={commands} active height={30} onClose={() => {}} />,
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain(`Lantern commands (${commands.length})`);
+    expect(frame).toContain(
+      `SpectralPrism Tracker commands (${commands.length})`,
+    );
     expect(frame).toMatch(/\d+[\u2013-]\d+ of \d+/);
     // The command list continues past the first page; page until /clear shows.
     for (let i = 0; i < 10 && !(lastFrame() ?? "").includes("/clear"); i++) {

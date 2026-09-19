@@ -5,6 +5,7 @@ import { instrumentExplain, type ExplainerText } from "../explainer";
 import type { Session, SessionState } from "../session";
 import { ActionMenu } from "./ActionMenu";
 import { contextActions, type ContextAction } from "../contextActions";
+import { isCancel, isConfirm } from "../keys";
 
 export type InstrumentTab =
   "sampler" | "spectral" | "percussion" | "chord" | "microtextures";
@@ -111,7 +112,7 @@ export function InstrumentsOverlay({
       }
       if (menuOpen) return; // ActionMenu owns the keyboard while open.
       if (confirmDelete) {
-        if (char === "y" || key.return) {
+        if (char === "y" || isConfirm(char, key)) {
           const deleting = selected;
           if (session.deleteInstrument(deleting)) {
             setIndex((value) =>
@@ -123,12 +124,12 @@ export function InstrumentsOverlay({
           setConfirmDelete(false);
           return;
         }
-        if (char === "n" || key.escape || char === "x" || char === "q") {
+        if (char === "n" || isCancel(char, key) || char === "q") {
           setConfirmDelete(false);
         }
         return;
       }
-      if (key.escape || char === "q" || char === "x") {
+      if (isCancel(char, key) || char === "q") {
         onClose();
         return;
       }
@@ -137,12 +138,18 @@ export function InstrumentsOverlay({
         if (added >= 0) setIndex(added);
         return;
       }
-      if (char === "d" || key.delete) {
+      // DEL deletes, D duplicates, A adds (FEAT-146).
+      if (key.delete) {
         if (instruments.length <= 1) {
           session.setStatus("Cannot delete the only instrument");
         } else {
           setConfirmDelete(true);
         }
+        return;
+      }
+      if (char === "d" || char === "D") {
+        const copy = session.duplicateInstrument(selected);
+        if (copy >= 0) setIndex(copy);
         return;
       }
       if (key.upArrow) {
@@ -157,7 +164,7 @@ export function InstrumentsOverlay({
         );
         return;
       }
-      if (key.return || char === "z") {
+      if (isConfirm(char, key)) {
         setMenuOpen(true);
         return;
       }
@@ -171,6 +178,14 @@ export function InstrumentsOverlay({
       }
       if (char === "3") {
         onOpen(selected, "percussion");
+        return;
+      }
+      if (char === "4") {
+        onOpen(selected, "chord");
+        return;
+      }
+      if (char === "5") {
+        onOpen(selected, "microtextures");
         return;
       }
       if (char === "m") {
@@ -195,6 +210,7 @@ export function InstrumentsOverlay({
         actions={contextActions(state, { kind: "instrument", index: selected })}
         active={active}
         height={height}
+        onExplain={onExplain}
         onClose={() => setMenuOpen(false)}
         onRun={runAction}
       />
@@ -212,8 +228,8 @@ export function InstrumentsOverlay({
         Instruments
       </Text>
       <Text dimColor wrap="truncate-end">
-        ↑↓ select · 1/2/3 sampler/spectral/percussion · enter menu · a add · d
-        delete · m mute · p preview · esc close
+        ↑↓ select · 1-5 core/spectral/percussion/chord/microTx · enter menu · a
+        add · del delete · m mute · p preview · esc close
         {instruments.length > visible
           ? ` · ${start + 1}-${Math.min(start + visible, instruments.length)}/${instruments.length}`
           : ""}

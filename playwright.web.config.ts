@@ -22,6 +22,12 @@ export default defineConfig({
     command: "node dist/web-host/server.mjs",
     url: "http://127.0.0.1:8123",
     reuseExistingServer: true,
-    timeout: 30_000,
+    timeout: 60_000,
+    // Isolate user state so the host never tries to open the developer's real
+    // (large) last project, which would delay startup past the timeout.
+    env: {
+      SPT_CONFIG: "/tmp/spt-web-e2e/config.json",
+      SPT_CONTROL: "0",
+    },
   },
 });

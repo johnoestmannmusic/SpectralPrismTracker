@@ -4,7 +4,7 @@
 
 ## Project overview
 
-**Lantern** is a standalone terminal music tracker/sampler. It is its own format and engine — it does not read or write any external tracker format. Projects are `.lampjson` (version 1 JSON) with a pattern snapshot and Source Sample references.
+**SpectralPrism Tracker** is a standalone terminal music tracker/sampler. It is its own format and engine — it does not read or write any external tracker format. Projects are `.sptproj` (version 1 JSON; legacy `.lampjson` still opens) with a pattern snapshot and Source Sample references.
 
 **What it does**
 
@@ -19,7 +19,7 @@
 
 **Architecture**
 
-- `src/core/` — framework-free domain: `songModel` (builds a playable model from a project snapshot), `tracker` edit ops, `project` (`.lampjson` serde), `sampler`/`spectral`/`percussion`/`dsp`, `masterFx`, `timing`, `export`, `stepthrough`, `coverArt`. No file-format parser.
+- `src/core/` — framework-free domain: `songModel` (builds a playable model from a project snapshot), `tracker` edit ops, `project` (`.sptproj` serde), `sampler`/`spectral`/`percussion`/`dsp`, `masterFx`, `timing`, `export`, `stepthrough`, `coverArt`. No file-format parser.
 - `src/audio/` — `WebAudioBackend` over `node-web-audio-api` + `webSampler`; `src/wasm/` — the Prism DSP via a Node worker thread (optional; falls back to plain samples).
 - `src/tui/` — Ink UI. `session.ts` is the single action surface (state + every mutation); `commands/` is the slash-command registry (fuzzy + Tab completion) that both the UI and the control socket drive; components render tracker/menus/explainer/status.
 - `src/runtime/` — asset loading, path/file IO, and `config.ts` (user config). `src/control/` — Unix-socket control channel. `src/shared/` — cross-layer types.
@@ -53,6 +53,1010 @@
 ## Blocked
 
 ## Implemented
+
+### BUG-36 — Quit left the shell hung: Prism worker kept the process alive; /exit undiscoverable
+- priority: high
+- tags: quit, exit, worker-thread, terminal, teardown
+- created: 2026-09-19
+- updated: 2026-09-19
+
+`/quit` (and `/exit`) unmounted the TUI but did not return to the shell prompt.
+
+
+`initPrismWasm` starts a `worker_threads.Worker` and never terminates it. A live worker keeps the Node event loop alive, so after Ink unmounted, the process hung. The audio context was closed by `session.dispose()`, but the worker was not. `/exit` already worked as a `quit` alias but was not shown anywhere, so it looked missing.
+
+
+- `src/wasm/prismNode.ts`: track the active `PrismWorkerClient` and export `disposePrismWasm()` which terminates the worker.
+- `src/tui/main.tsx`: after `waitUntilExit()` → `control.stop()` → `session.dispose()` → `disposePrismWasm()` → `process.exit(0)`, so the shell always returns.
+- `HelpOverlay` now lists command aliases (so `/quit · aliases: /exit, /q` is visible).
+- Added a test that `/exit` resolves to `quit` and calls `exit`.
+
+
+- 330 tests pass; `tsc`/lint clean; `build:tui`/`build:web` succeed; constraints PASS.
+
+### FEAT-157 — Cycles-mode WAV fade-out lands inside the track length (no pattern restart)
+- priority: high
+- tags: wav, export, cycles, fade, tui
+- created: 2026-09-18
+- updated: 2026-09-18
+
+In Cycles Mode with a track length set, the fade-out must not restart the patterns. It should be applied to the final `fadeOutMs` of the requested track length (e.g. 25 s track + 4000 ms fade → fade starts at 21 s).
+
+
+`arrangeExport` appended a `fadeOutMs` pass **after** the looped source (`channel[j % srcLen]`), restarting the pattern, and the envelope then faded that appended region.
+
+
+- New pure `arrangeForExport(source, params)` in `core/export.ts`: when `lengthSeconds > 0` it repeats the source enough passes to fill the exact length with **no appended fade pass**; otherwise it keeps the old `arrangeExport(source, loops, fadeOut)` behaviour.
+- `exportWav` uses `arrangeForExport`, trims the post-FX clip to exactly `lengthSeconds`, and `applyExportEnvelope` fades the last `fadeOutMs` of that trimmed clip (starts at length − fade).
+- Added `lengthSeconds?` to `ExportParams`; documented the Fade-out / Track length params in the Explainer.
+
+
+- `arrangeForExport` with 1 s source and `lengthSeconds: 3` returns 3 s (not 7 s).
+- With no track length it still appends the fade pass (1 s + 1 s = 2 s).
+- `applyExportEnvelope` on 25 s/4000 ms is ~1.0 at 21 s and ~0 at 24.99 s.
+- 329 unit tests pass; `tsc`/lint/build/constraints green.
+
+### BUG-35 — WAV export crashed with "Maximum call stack size exceeded" on cover art
+- priority: critical
+- tags: wav, export, cover, stack-overflow, regression
+- created: 2026-09-18
+- updated: 2026-09-18
+
+After an export attempt the app reported `✖ RangeError: Maximum call stack size exceeded`.
+
+
+`exportWav` still embedded cover art, and `src/core/wavTags.ts` built the ID3 `APIC` frame with `push(...bytes)`. Spreading the (tens–hundreds of KB) PNG into a function argument list exceeds the engine's argument limit and throws. `buildWavMetadataChunks` also used `Uint8Array.from([...a, ...b])`.
+
+
+- Export no longer embeds cover art: `exportWav` passes only title/artist/album to `wavPcm16` (cover art is still available via `/export png`).
+- Hardened `wavTags.ts` anyway: a byte-wise `append()` replaces every call-spread; the final metadata is written into one allocated `Uint8Array`.
+- Added a regression test that embeds 200 KB of artwork without throwing, plus the existing small-artwork metadata test.
+
+
+- Export target now defaults next to the project file (its directory) instead of the process working directory, falling back to cwd when the project has no path.
+- Export unit tests assert `renderSamplerMix(..., 0.25)` caps the mix.
+
+
+- 326 tests pass; `tsc` + lint clean; `build:tui`/`build:web` succeed; constraints PASS.
+
+### BUG-34 — WAV export stalled on "Preparing instruments" waiting for Spectral renders
+- priority: high
+- tags: wav, export, spectral, fusion, freeze
+- created: 2026-09-18
+- updated: 2026-09-18
+
+Exporting WAV from `project.sptproj` (fade in/out 4000 ms, normalize, length 20 s) appeared frozen on “Preparing instruments”.
+
+
+`waitForFusion` waited while any Spectral/Percussion instrument was merely “not ready”, up to 30 s:
+- If the Prism WASM is unavailable, renders never start, so it always burned the full timeout.
+- If an instrument’s Spectral mode needs sample B but none is set, `loadSampler` skips its render, so it also never becomes ready.
+
+It also reported no progress during the wait, so the modal looked stuck.
+
+
+`waitForFusion` now:
+- returns immediately when `spectralWasmAvailable()` is false;
+- waits only while a relevant render is actually `fusionRendering` (after a 1.5 s grace for renders to start), so skipped/failed renders no longer block;
+- reports `Rendering Spectral instruments (n/m)` into the progress modal.
+
+Also added a `maxSeconds` cap to `renderSamplerMix` and pass `lengthSeconds`, so a 20 s export no longer mixes the entire song before trimming.
+
+
+- Export unit test asserts `renderSamplerMix(..., 0.25)` returns a ≤0.3 s clip.
+- Full suite green; `constraints_validate` passes.
+
+### BUG-33 — Config migration recursed forever and froze/OOM'd on first run
+- priority: critical
+- tags: config, migration, recursion, freeze, oom, regression
+- created: 2026-09-18
+- updated: 2026-09-18
+
+On first run after the `~/.config/lantern` → `~/.config/spectralprism` rename, the app froze and could OOM (~4 GB).
+
+
+`readConfig` migrated a legacy config by calling `writeConfig`, but `writeConfig` began with `await readConfig(env)`. The canonical file did not exist yet, so `readConfig` migrated again → mutual recursion that never wrote the file. Each cycle awaited a promise, so the heap grew until death.
+
+
+Added a pure `readConfigFile(env)` (read + sanitize only, no migration, no writes) and used it inside `writeConfig`. `readConfig` still migrates once, but `writeConfig` no longer calls back into it. Added a regression test that seeds `$XDG_CONFIG_HOME/lantern/config.json`, calls `readConfig`, and asserts it returns quickly and writes `spectralprism/config.json`.
+
+
+- Migration test passes in ~1.8 s (would previously hang/OOM).
+- Full suite green.
+
+### FEAT-156 — WAV export: selectable Export row + Exporting progress modal
+- priority: high
+- tags: wav, export, progress, tui, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+
+The WAV export modal should list an **Export** option (not only the `e` shortcut), and exporting should show an **Exporting…** modal with a progress bar.
+
+
+- `EditorParam` gains `kind: "action"` (with a no-op `set` and a `run` callback). `ParamEditorOverlay` renders action rows in the normal scroll list, runs them on Enter/z, and explains them in the Explainer. `wavExportGroups(session, onExport)` appends an “Action → Start export” row.
+- `exportWav(..., onProgress)` reports coarse stage progress (prepare → sampler mix → arrange → master FX → envelope → encode → write) and forwards `applyMasterFxOffline`’s fine-grained render progress; it yields to the event loop before CPU-bound stages so the modal paints.
+- `CommandContext.onProgress` carries the sink; the `/export wav` command forwards it. App tracks `exporting {label, fraction}` and renders a new `ProgressModal` (animated spinner + `[████░░]` bar + %). `e` remains as a shortcut and calls the same function.
+
+
+- HC001: modal is Ink TUI.
+- HC002: Export is one Enter from the open `/export wav` modal.
+- HC003: works on Node and the streamed web host (progress travels through the command context).
+- HC004: no new dependencies.
+- SC001: TypeScript.
+
+
+- The WAV modal shows a selectable “Start export” row; Enter/z runs it; `e` still works.
+- During export a modal shows a moving progress bar/label, then closes on completion.
+- `progressBar` clamps; action rows run; 325 unit tests pass.
+
+### BUG-32 — ActionMenu explainer effect looped and OOM-crashed the app
+- priority: critical
+- tags: oom, explainer, actionmenu, regression, perf
+- created: 2026-09-18
+- updated: 2026-09-18
+
+Opening a menu (instrument/sample/context) made the app slow down, then it crashed with `FATAL ERROR: Ineffective mark-compacts near heap limit … JavaScript heap out of memory` (~4 GB).
+
+
+FEAT-139 added an explainer effect to `ActionMenu` whose dependency was the `actions` array. Several callers (`InstrumentsOverlay`, `SamplesOverlay`, App's pending/recent menus) build that array inline on every render, so: `onExplain` → parent state update → re-render → new `actions` identity → effect again, allocating unboundedly.
+
+
+`ActionMenu` now holds `actions` and `onExplain` in refs and re-fires the explainer effect only when the highlighted row changes (`[selected, selectedId]`), never on array/callback identity. Added a regression test that renders with an inline `actions` array and asserts the explainer fires a bounded number of times.
+
+
+- 321 unit tests pass, including the new loop regression test.
+- `openPath("project.sptproj")` verified independently (748 ms, 4 instruments) so the project itself was never the problem.
+
+
+Also hardened the `.lampjson` → `.sptproj` rename: `/open` now falls back to the sibling with the other project extension when the recorded path no longer exists, and `HostFs.listDirectory` powers the new `/open` picker (FEAT-155).
+
+### FEAT-155 — /open with no argument opens a TUI project file picker
+- priority: high
+- tags: open, filepicker, tui, hc002, hc003, ux
+- created: 2026-09-18
+- updated: 2026-09-18
+
+`/open` without a path should open a TUI tree-view picker that lists directories and only selectable project files (`.sptproj`, legacy `.lampjson`/`.lmpjson`).
+
+
+- Add `HostFs.listDirectory(dir): Promise<DirEntry[]>` (`DirEntry = { name, path, isDirectory }`). Node reads the real filesystem; browser returns `[]`.
+- New `src/tui/components/FilePicker.tsx`: navigable single-directory tree — path breadcrumb, `..` row, directories, and project files only. `↑↓` move, `Enter`/`z` opens (descends into dirs, opens files), `←`/Backspace up a level, `x`/Esc cancel. Selects an existing `/open "<path>"`.
+- App: add `"filepicker"` overlay; `open` command with no path opens it on Node. On the browser host (no listing) fall back to the existing recent-projects picker, so HC003 still works.
+- Pure helper for the entry list (sort dirs-first, filter by `isProjectPath`) so it is unit-testable.
+
+
+- HC001: picker is Ink TUI.
+- HC002: `/open` is one command + one selection; no new command depth.
+- HC003: Node real listing; web degrades to recent projects.
+- HC004: zero new dependencies.
+- SC001: TypeScript.
+
+
+- `/open` (no arg) opens the picker at the current project's directory (else cwd), showing only dirs + project files.
+- Enter on a file opens it; Enter on a directory descends; `..`/`←` goes up; `x`/Esc cancels.
+- `/open path` still works unchanged; `/open` on web opens the recent-projects picker.
+- Unit tests: entry filter/sort helper, and `open` command with no path requests the picker.
+
+### FEAT-133 — UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand
+- priority: high
+- tags: plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, epic
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: epic
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Cards**
+- FEAT-134 — Keybind parity: Z confirms (Enter) and X cancels (Esc) in every menu
+- FEAT-135 — Universal undo/redo: cover every mutating action (cycles mode, view toggles, settings)
+- FEAT-136 — Shared marquee for any text truncated with an ellipsis
+- FEAT-137 — Advisory popup when the terminal is too narrow for the Explainer
+- FEAT-138 — Duller grey playhead for channels with no instrument colour
+- FEAT-139 — Explainer: coloured calculated values/variable names + hover coverage of every menu row
+- FEAT-140 — Rename Sampler to SAMPLER-CORE and mark it always-active in the instrument chain
+- FEAT-141 — Instrument Enter menu lists every current option (Chord, MicroTextures, …)
+- FEAT-142 — Slash command: Enter runs the top suggestion when it takes no required args
+- FEAT-143 — Move channel phase / speed / drift into /fx as a Channel Phasing category
+- FEAT-144 — Stepthrough: 'Generating Stepthrough Recipe…' modal + Ctrl/arrow navigation
+- FEAT-145 — Clipboard: Ctrl+C / Ctrl+V / Ctrl+X copy-paste-cut; Ctrl+C no longer quits
+- FEAT-146 — Standardise DEL=delete, D=duplicate, A=add across submenus
+- FEAT-147 — Fix Ctrl+Space play-from-playhead in Cycles Mode
+- FEAT-148 — Help overhaul: rename View→Stepthrough Mode, list every current keybind & action
+- FEAT-149 — /viewsource command opening the project README on GitHub
+- FEAT-150 — Project extension .lampjson → .sptproj (legacy still readable)
+- FEAT-151 — Full internal rebrand: package, binary spt, SPT_* env, ~/.config/spectralprism + migration
+- FEAT-152 — User-facing rename to SpectralPrism Tracker (UI, help, web, docs)
+- FEAT-153 — Build-generated version stamp: SPECTRALPRISM TRACKER vYYYYMMDD in the header
+- FEAT-154 — Fix web deployment terminal row misalignment + regression test
+
+### BUG-31 — CYCLES MODE auto-persists to global config instead of being project-specific
+- priority: high
+- tags: plan-ux-polish-pass-2, cycles, config, project, persistence, rebrand
+- created: 2026-09-18
+- updated: 2026-09-18
+
+`/cycles on|off` (and the `C` tracker key, via `toggleCyclesMode()`) changes Cycles Mode, but `setCyclesMode()` at `src/tui/session.ts:471` calls `persistConfig({ cyclesMode })`. The flag is then read back at startup by `init()` (`session.ts:340`, `if (typeof config.cyclesMode === "boolean")`). So toggling the workspace silently writes the **global** user config and follows the user across every project. Cycles Mode is a per-song workspace choice and should live with the project, not in user config.
+
+Note the two entry points already disagree: `C` → `toggleCyclesMode()` does NOT persist, but `/cycles` → `setCyclesMode()` DOES. That inconsistency is what made this look like an auto-save.
+
+
+1. Add `cyclesMode?: boolean` to `ProjectFile` (`src/core/project.ts`), written by `projectToJson` and read by `projectFromJson` (default `false` for legacy projects — no version bump needed, treat as optional).
+2. On load (`session.applyLoaded`), seed `state.cyclesMode` from the loaded project instead of from user config.
+3. Make `setCyclesMode`/`toggleCyclesMode` update state + the in-memory project + mark dirty (`patch({ dirty: true })` / `markAction()`), so the choice is saved when the user saves the project — never via `persistConfig`.
+4. Remove `cyclesMode` from `LanternConfig` (`src/host/types.ts`), `src/host/configSanitize.ts`, and the `init()` read. Keep reading it once for migration is optional; prefer a clean removal since it was never documented project state. (If the internal-rebrand card FEAT-151 migrates config, ensure the dropped field is handled gracefully — unknown fields are ignored by the sanitizer.)
+5. Record an undo memento (ties into FEAT-135: universal undo/redo).
+6. Update Cycle Mode tests that call `setCyclesMode(true, false)` and the persist expectation in `tests/unit/config-autosave.test.ts`, plus any ShotHeader/PatternView assumptions.
+
+
+- Toggling Cycles Mode does **not** write to `config.json` (assert `flushConfigWrites()` leaves config unchanged).
+- Saving a project captures `cyclesMode`; opening that project restores it.
+- Opening a legacy project without the field defaults to Cycles Mode off.
+- `C` and `/cycles` behave identically (both project-scoped, both undoable, both mark dirty).
+- `tests/unit/config-autosave.test.ts`, `tests/unit/tui-components.test.tsx`, `tests/unit/tui-tracker-ops.test.ts`, `tests/unit/core.test.ts` (project serde round-trip) updated and green.
+
+
+- Overlaps FEAT-135 (undo/redo coverage) and FEAT-150/151 (project + config rename). Sequence after FEAT-150 so the new field is serialized under the `.sptproj` workflow; avoid editing the same config-test files as FEAT-151.
+
+### FEAT-154 — Fix web deployment terminal row misalignment + regression test
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, web, xterm, hc003, alignment
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Do not guess: reproduce under launch_chrome_headless with /api/stream, inspect the xterm buffer and the server frames, then apply the minimal fixes (font-ready fit, lineHeight, size sync handshake, and possibly sending the initial resize before subscribing to the stream). Keep the Ink TUI as the product (HC001) — only the frame is touched.
+
+**Architecture**
+src/web/main.tsx; src/web/styles.css; src/web/server.tsx (initial size / resize handling); tests/web/web.spec.ts; playwright.web.config.ts.
+
+**Key decisions**
+- The browser terminal is the source of truth for cols/rows; the host resizes to it before streaming UI frames.
+- No new dependency.
+
+**Alternatives considered**
+- Server-render fixed 120x32 and letterbox (rejected: breaks fit).
+- Use a canvas renderer (rejected: unnecessary).
+
+**Open questions**
+- Is the misalignment in the buffer or only visually? Reproduce first; the card is done when the E2E grid assertion passes at two viewport sizes.
+
+**Acceptance criteria**
+- At 1280x900 and 700x500, every line in the xterm buffer starts at column 0 and the tracker columns line up.
+- No page errors; existing tests/web/web.spec.ts passes plus a new alignment test.
+- launch_chrome_headless screenshot confirms the header stays on row 0 with the version stamp.
+
+Item 18. The streamed xterm.js web terminal misaligns rows. Investigate and fix: set an explicit integer lineHeight (e.g. 1.0) on terminalOptions, wait for the monospace webfont to load before the first fit.fit() and refit on document.fonts.ready, ensure the server-side Ink size and the browser terminal size converge (server starts 120x32; the browser POSTs /api/resize; frames rendered before the resize can be positioned for the wrong row count), and confirm CSS (#terminal/.xterm height 100%) does not clip rows. Add a Playwright assertion that validates row/column alignment.
+
+### FEAT-153 — Build-generated version stamp: SPECTRALPRISM TRACKER vYYYYMMDD in the header
+- priority: medium
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, build, header, hc003
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Add a script-level helper that computes YYYYMMDD once per build and injects it. In SongHeader, render `SPECTRALPRISM TRACKER v{__BUILD_DATE__}` at the start of the meta row before the song name. Guard with typeof so source/dev (ts-node) does not crash. Do not add a dependency.
+
+**Architecture**
+scripts/build-tui.mjs; scripts/build-web.mjs; vite.config.web.mts; src/tui/components/SongHeader.tsx; src/shared/env.d.ts (declare); tests/setup.ts; tests for the header.
+
+**Key decisions**
+- Stamp is the build day (not runtime) and matches the requested YYYYMMDD format.
+- Rebrand display name applies here too.
+
+**Alternatives considered**
+- Use package.json version (rejected: user asked for date).
+- Compute at runtime (rejected: user asked build process).
+
+**Acceptance criteria**
+- Built TUI and web host show 'SPECTRALPRISM TRACKER v<YYYYMMDD>' before the song name.
+- Tests can read the injected value; no crash when __BUILD_DATE__ is undefined in dev.
+
+Item 21. First row of the app (same line as song info, before it) must show 'SPECTRALPRISM TRACKER vYYYYMMDD' where YYYYMMDD comes from the build date. vitest.config.mts already defines __BUILD_DATE__ (unused). Add esbuild `define: { __BUILD_DATE__: JSON.stringify(dateStamp) }` to scripts/build-tui.mjs and the host bundle in scripts/build-web.mjs, and `define` to vite.config.web.mts; provide a dev/test fallback via tests/setup.ts or a `declare const __BUILD_DATE__` with runtime guard.
+
+### FEAT-152 — User-facing rename to SpectralPrism Tracker (UI, help, web, docs)
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, rebrand, ui, docs
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Add a DISPLAY_NAME constant and import it in the TUI/web surfaces; leave internal identifiers to the internal-rebrand card. Update tests that assert 'Lantern commands' (tests/unit/tui-components.test.tsx, tests/web/web.spec.ts).
+
+**Architecture**
+src/tui/components/SongHeader.tsx; src/tui/components/HelpOverlay.tsx; src/web/index.html; src/web/main.tsx; src/web/server.tsx; package.json description; docs; KANBAN.md overview; tests.
+
+**Key decisions**
+- Display name exactly 'SpectralPrism Tracker'.
+- Header version line is handled in the version-stamp card.
+
+**Alternatives considered**
+- Only rename some surfaces (rejected: user said across the app).
+
+**Acceptance criteria**
+- No user-visible 'Lantern' string remains (internal ids excepted).
+- Web page title and shell brand read SpectralPrism Tracker.
+- Tests updated.
+
+Item 20 (display half). Replace all user-visible 'Lantern' / 'Lantern Music Player' branding with 'SpectralPrism Tracker': SongHeader loading title, HelpOverlay 'Lantern commands' header, web index.html <title>/meta/brand, server status default name, xterm error message, package description, KANBAN overview, docs/PLATFORMS.md, native crate descriptions.
+
+### FEAT-151 — Full internal rebrand: package, binary spt, SPT_* env, ~/.config/spectralprism + migration
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, rebrand, host, hc003
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Introduce a single APP_SLUG = 'spectralprism' constant and read both new and old env vars (new wins) so existing scripts/CI keep working during a transition. In node config.ts, resolve the new dir; if it has no config.json but the old dir does, migrate (copy/rename) on first run and record a one-line status. Keep reading legacy env var names for one release but mark deprecated in docs. Update control/paths.ts, package.json bin/scripts, web/server.tsx, wasm/prismNode.ts, host/node/assets.ts, tui/main.tsx.
+
+**Architecture**
+package.json; src/runtime/config.ts; src/host/node/config.ts; src/control/paths.ts; src/control/runScript.ts; src/web/server.tsx; src/wasm/prismNode.ts; src/host/node/assets.ts; src/tui/main.tsx; docs/PLATFORMS.md; .github workflows; examples/*.lmpscript env refs; tests/unit/config-autosave.test.ts, config-paths.test.ts, control.test.ts.
+
+**Key decisions**
+- APP_SLUG = 'spectralprism'.
+- New env names win; legacy LANTERN_* still honoured (deprecation note).
+- Config migration is automatic, non-destructive, and logged.
+
+**Alternatives considered**
+- Env-only rename without migration (rejected: loses user config).
+- Keep old config dir (rejected: user chose full rename).
+
+**Open questions**
+- Should the binary also be exposed as `spectralprism` for discoverability? Plan: primary `spt`, optional long alias.
+
+**Acceptance criteria**
+- `npm run build:tui` emits dist/tui/main.mjs runnable as `spt`/`spt-run`.
+- A pre-existing ~/.config/lantern/config.json is migrated to ~/.config/spectralprism on first run.
+- SPT_SOCKET/SPT_CONFIG/SPT_WEB_PORT are honoured; LANTERN_* still work.
+- All config/control tests updated and green; HC003 cross-platform checks pass.
+
+Item 20 (internal half). Rename package `lantern-music-player`→`spectralprism-tracker`; bin `lantern`→`spt`, `lantern-run`→`spt-run`; env vars `LANTERN_*`→`SPT_*` (CONFIG, ASSETS, CONTROL, SOCKET, WEB_PORT, WEB_HOST, PRISM_WASM); config dir `~/.config/lantern`→`~/.config/spectralprism` (also Windows %APPDATA%\spectralprism) with automatic migration of an existing config.json/lastProject/recentProjects; control socket/pipe name `lantern-<user>`→`spectralprism-<user>`; autosave backup filename `backup.lmpjson`→`backup.sptproj`; docs/PLATFORMS.md and KANBAN overview.
+
+### FEAT-150 — Project extension .lampjson → .sptproj (legacy still readable)
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, rebrand, project, hc003
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Add a canonical PROJECT_EXT = 'sptproj' and a LEGACY_PROJECT_EXTS = ['lampjson','lmpjson'] list, and use an acceptsProjectPath() helper in io. For the bundled default asset, either physically rename assets/lmp-default-proj.lampjson → .sptproj (update host/node/assets.ts, host/browser/assets.ts, tests/fixtures) or keep the asset filename and only change the user-facing extension — prefer renaming the asset for consistency, keeping a legacy copy if any test depends on it.
+
+**Architecture**
+src/runtime/paths.ts; src/tui/io.ts; src/tui/commands/builtins.ts; src/web/shell.ts; src/web/server.tsx; src/host/node/assets.ts; src/host/browser/assets.ts; src/shared/types.ts comments; assets/ + tests/fixtures/ + tests referencing .lampjson.
+
+**Key decisions**
+- Canonical new extension .sptproj; legacy .lampjson/.lmpjson still open (read-only compatibility).
+- Project JSON contents unchanged (version 1).
+
+**Alternatives considered**
+- Hard cutover with no legacy read (rejected: breaks existing projects).
+- Keep .lampjson and add .sptproj as an alias only (rejected: user wants the rename).
+
+**Acceptance criteria**
+- Save writes .sptproj by default; open accepts .sptproj and legacy .lampjson.
+- Web upload/download use .sptproj.
+- All extension tests updated; full test suite green.
+
+Item 20 (extension half). Rename the project file extension from `.lampjson` to `.sptproj` everywhere the app reads/writes/filters/advertises it, while still opening legacy `.lampjson` (and any `.lmpjson`) files. Update runtime/paths.ts SAVE_FILTERS, src/tui/io.ts openPath + saveProject default name, builtins /open and /save descriptions/defaults, web shell accept/download names, server MIME + Content-Disposition + upload default, bundled asset filename (or keep asset name and only change extension handling), docs and tests/fixtures.
+
+### FEAT-149 — /viewsource command opening the project README on GitHub
+- priority: medium
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, commands, host, hc003
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Extend the Host interface with `openExternal(url: string): Promise<Result<string>>`. Node implementation spawns the platform opener (xdg-open/open/cmd start) via child_process; browser implementation uses window.open. The command validates the hard-coded URL and reports success/failure; on the streamed web host it opens on the host machine (document this). Register in builtins (category general) and let /help auto-list it. No new npm dependency (HC004).
+
+**Architecture**
+src/host/types.ts; src/host/node/index.ts (+ a small openExternal helper); src/host/browser/index.ts; src/tui/commands/builtins.ts; HelpOverlay auto-lists.
+
+**Key decisions**
+- URL is a constant, not a user argument (prevents arbitrary URL opening).
+- Failure returns a clear status instead of throwing.
+
+**Alternatives considered**
+- Just print the URL (rejected: user asked to open the browser).
+- Use the 'open' npm package (rejected: HC004, extra dep).
+
+**Acceptance criteria**
+- /viewsource opens the GitHub repo on Node hosts and reports 'Opened …' / 'Could not open browser'.
+- Appears in /help.
+- No new dependency; typecheck passes.
+
+Item 22. Add a /viewsource command that opens https://github.com/johnoestmannmusic/SpectralPrismTracker in the user's browser, and list it in the help menu. Requires a host capability to open an external URL.
+
+### FEAT-148 — Help overhaul: rename View→Stepthrough Mode, list every current keybind & action
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, help, docs, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Fix the command category label in the command defs (builtins.ts stepthrough/stepexport category) or map at render time. For keys, define a KEY_SHORTCUTS array (or derive from a keymap module) next to keys.ts and render it. Because this card must reflect final keys, it depends on the clipboard, DEL/D/A, stepthrough-navigation and sampler-rename cards.
+
+**Architecture**
+src/tui/components/HelpOverlay.tsx; src/tui/commands/builtins.ts (category rename); src/tui/keys.ts (shared keymap source); src/web/shell.ts hint text optionally.
+
+**Key decisions**
+- Category display name 'Stepthrough Mode' while keeping the internal category key if tests depend on it (or update tests).
+- Help header becomes 'SpectralPrism Tracker commands' (depends on rebrand card) or a neutral 'Commands'.
+- Every slash command is already auto-listed; only the keys list needs rewriting.
+
+**Alternatives considered**
+- Auto-generate key docs from useInput handlers (not currently introspectable; note as future).
+
+**Depends on**
+- Rename Sampler to SAMPLER-CORE and mark it always-active in the instrument chain
+- Clipboard: Ctrl+C / Ctrl+V / Ctrl+X copy-paste-cut; Ctrl+C no longer quits
+- Standardise DEL=delete, D=duplicate, A=add across submenus
+- Stepthrough: 'Generating Stepthrough Recipe…' modal + Ctrl/arrow navigation
+- /viewsource command opening the project README on GitHub
+
+**Acceptance criteria**
+- Help shows a 'Stepthrough Mode' category with /stepthrough first.
+- Help key list matches the implemented bindings (no Ctrl+C Quit entry).
+- tests/unit/tui-components.test.tsx help assertion updated if it checks the header.
+
+Items 17 & 19. (17) In HelpOverlay, change the command category 'view' to 'Stepthrough Mode' and sort /stepthrough first within it. (19) The KEY_SHORTCUTS list is stale (still says Ctrl+C Quit, Ctrl+Shift+C copy) — rewrite it to cover every current binding: tracker movement/editing, block selection/copy/cut/paste/flood, undo/redo, save, play/audition, cycles toggle, ghosts, order loop, stepthrough navigation (Ctrl+Up/Down, Left/Right ±10), submenu Del/D/A, and overlay keys (z=enter, x=esc). Keep the list in one source of truth so it cannot drift again.
+
+### FEAT-147 — Fix Ctrl+Space play-from-playhead in Cycles Mode
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, transport, cycles, playhead
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Trace playFromCursor (session.ts line ~546) through the backend and compare with normal play(). The cycles scheduler uses per-channel clocks and channelPlayheads(); playFromCursor likely computes a single order/row offset that the polymeter scheduler ignores. Add a cycles-aware seek/start path and a Session method (e.g. playFromPlayhead()) that uses the current playhead/channel clocks.
+
+**Architecture**
+src/tui/session.ts (playFromCursor, play, channelPlayheads); src/audio/webAudioBackend.ts; src/core/timing.ts; tests/unit/scheduler-loop.test.ts / cycles tests.
+
+**Key decisions**
+- Ctrl+Space in cycles mode starts all channel clocks from the current sequence positions rather than a single row.
+- Space (pattern/whole-song) behaviour is unchanged.
+
+**Alternatives considered**
+- Disable Ctrl+Space in cycles mode (rejected: user wants it to work).
+
+**Open questions**
+- What exactly counts as 'the playhead' when stopped? Plan: the viewed order/row and each channel's derived position.
+
+**Acceptance criteria**
+- With cyclesMode on, stopping mid-song and pressing Ctrl+Space resumes from the displayed playhead, not from the start.
+- Add a scheduler/unit test asserting the start position.
+
+Item 16. Ctrl+Space maps to session.playFromCursor() (App.tsx). In Cycles Mode it does not play from the playhead. Investigate the cycles scheduler path in src/audio/webAudioBackend.ts / core/timing.ts to find why playFromCursor is a no-op or seeks the wrong position when per-channel polymeter/phase is active; make it start from the current viewed/played position consistently.
+
+### FEAT-146 — Standardise DEL=delete, D=duplicate, A=add across submenus
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, keybinds, menus, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Apply the convention in each component's useInput: handle key.delete for removal, 'd'/'D' for duplicate, 'a'/'A' for add. Update the ActionMenu key hints so the displayed accelerator matches. Keep r as an optional remove alias only if already documented, but Del is canonical.
+
+**Architecture**
+src/tui/components/InstrumentsOverlay.tsx; src/tui/components/PatternsOverlay.tsx; src/tui/components/SamplesOverlay.tsx; src/tui/contextActions.ts; src/tui/App.tsx hints; HelpOverlay.
+
+**Key decisions**
+- Del = delete/remove; D = duplicate; A = add.
+- Confirmation prompts still guard destructive deletes.
+
+**Alternatives considered**
+- Leaving per-menu keys and only documenting them (rejected: user wants consistency).
+
+**Acceptance criteria**
+- In every submenu, Del deletes/removes, D duplicates, A adds.
+- Hints and ActionMenu keys agree.
+- Tests assert the new bindings.
+
+Item 15. Make the destructive/creation keys consistent across the instrument list, pattern manager, samples list and nested editors: Del deletes/removes, d duplicates, a adds. Currently InstrumentsOverlay uses a=add, d=delete (and key.delete); PatternsOverlay uses a=add, d=duplicate, r/Del=remove. Change Instruments d→duplicate (add session.duplicateInstrument wiring + contextAction), Del→delete; Patterns keep d duplicate and make Del (not just r) remove; Samples get an explicit add/import binding. Update every hint string and contextActions keys[] metadata, plus HelpOverlay.
+
+### FEAT-145 — Clipboard: Ctrl+C / Ctrl+V / Ctrl+X copy-paste-cut; Ctrl+C no longer quits
+- priority: critical
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, clipboard, keybinds
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Delete the top-level `useInput((_char,key)=>{ if(key.ctrl&&_char==='c') requestQuit(); })`. Keep requestQuit() as a callback used only by the /quit command path and the unsaved-changes prompt. In the tracker handler, make `key.ctrl && char==='c'` copy, `key.ctrl && char==='x'` cut, `key.ctrl && char==='v'` paste, before the plain c/v/x handlers (which keep note-off / instrument / clear semantics).
+
+**Architecture**
+src/tui/App.tsx (global useInput, tracker handler, requestQuit); src/tui/components/PatternsOverlay.tsx (Ctrl+C/V/X); HelpOverlay.tsx.
+
+**Key decisions**
+- Ctrl+C copies when there is a selection; otherwise it is a no-op/status message (never quits).
+- Plain c/v/x keep their existing tracker meanings.
+- Desktop main.tsx already passes exitOnCtrlC:false; Server host also false.
+
+**Alternatives considered**
+- Keep Ctrl+C quit and add Ctrl+Shift+C only (rejected: user explicitly wants Ctrl+C to copy).
+- Double-press Ctrl+C to quit (rejected: user wants /quit or /exit).
+
+**Acceptance criteria**
+- Ctrl+C copies a selected block and does NOT exit the app.
+- Ctrl+X cuts, Ctrl+V pastes; status messages unchanged.
+- Only /quit and /exit terminate; help text updated.
+- Tests cover copy-not-quit via Session methods and an App render test if feasible.
+
+Item 14. App.tsx still installs a global useInput that calls requestQuit() on Ctrl+C, and tracker mode maps Ctrl+X/Ctrl+V only via the ctrlShift helper plus ctrl fallbacks. Remove the global Ctrl+C→quit handler so Ctrl+C is free; wire Ctrl+C=copy, Ctrl+X=cut, Ctrl+V=paste in tracker mode (and the pattern manager), preserving the Ctrl+Shift variants. Quitting becomes /quit or /exit only (Ctrl+C must not exit). Update HelpOverlay (which still says 'Ctrl+C Quit').
+
+### FEAT-144 — Stepthrough: 'Generating Stepthrough Recipe…' modal + Ctrl/arrow navigation
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, stepthrough, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Add a `stepBuilding` state; on command, set it and schedule `setTimeout(() => { build steps; setStepMode; setStepBuilding(false) }, 0)` so Ink paints the modal first. For keys, add ctrl+arrow handling and left/right ±10 to the stepthrough useInput block. Update menuContext hint and HelpOverlay.
+
+**Architecture**
+src/tui/App.tsx (startStepthrough, stepthrough useInput, menuContext); src/core/stepthrough.ts unchanged; tests/unit/stepthrough.test.ts or a new App-level test.
+
+**Key decisions**
+- Category = the step id prefix (song/sample/instrument/mixer/fx/pattern), same as jumpChapter.
+- Left/Right = ∓10 steps clamped 0..len-1.
+- Keep Home/End first/last.
+
+**Alternatives considered**
+- Web Worker for buildSteps (overkill now; note as future if recipes grow).
+- PgUp/PgDn for 10 steps (rejected: user asked Left/Right).
+
+**Acceptance criteria**
+- Large project shows the generating modal before the recipe list appears; UI stays responsive.
+- Ctrl+Up/Down jumps category; Left/Right moves 10 steps.
+- Hint text documents the keys.
+
+Items 12 & 13. (12) startStepthrough currently calls buildSteps(final) synchronously and freezes the UI; make it show a modal 'Generating Stepthrough Recipe…' while the recipe is built (yield to the event loop, setStepMode after), then clear the modal. (13) In /stepthrough mode: Ctrl+Up/Down jumps to the previous/next category (jumpChapter already exists); Left/Right moves back/forward 10 steps; plain Up/Down stays 1 step; PgUp/PgDn and [ ] may keep category jumps or be retired — document the final map in the help/hint.
+
+### FEAT-143 — Move channel phase / speed / drift into /fx as a Channel Phasing category
+- priority: medium
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, fx, cycles, phasing, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Create a `channelPhasingGroups(session)` helper in editors.tsx (or extend masterFxGroups) that returns one group 'Channel Phasing' with 4×4 params calling session.setChannelPhaseOffset/setChannelSpeed/setChannelDetuneDrift/setChannelDetuneRate. masterFxGroups currently takes only masterFx; switch it to also receive session (it already does) and append the group. Show the group always, with an explain note that values only affect Cycles playback; alternatively gate on cyclesMode — decide in implementation and document.
+
+**Architecture**
+src/tui/editors.tsx; src/tui/App.tsx editorTitle/menuContext; src/tui/components/MixerOverlay.tsx (remove phase/speed/drift rows); src/core/stepthrough.ts (fx chapter ids if affected); explainer text.
+
+**Key decisions**
+- /fx is the single home for master FX + channel phasing.
+- Existing session setters already record undo mementos (FEAT-119), so no session change needed.
+
+**Alternatives considered**
+- Keep both surfaces (rejected: user said move).
+- Put phasing in a new /phasing command (rejected: user said /fx, and HC002 favours fewer top-level commands).
+
+**Open questions**
+- Always visible, or only when cyclesMode is on? Plan: always visible with an explanatory note, so users can pre-configure.
+
+**Acceptance criteria**
+- /fx lists Delay, Reverb, Channel Phasing (phase/speed/drift/drift-hz for CH1-4).
+- Mixer no longer lists those rows.
+- Values adjust and are undoable.
+- Stepthrough still lands on /fx when the recipe reaches master-fx/phasing.
+
+Item 11. Channel phase, speed and detune drift currently live only in MixerOverlay when cyclesMode is on. Add a 'Channel Phasing' group to the /fx ParamEditorOverlay, placed underneath Reverb, with per-channel Phase (rows), Speed (x), Drift (cents) and Drift Hz. Remove (or clearly de-emphasise) them from the Mixer view so there is one home. Update the stepthrough fx chapter mapping so existing fx.* steps still resolve to the /fx editor highlights.
+
+### FEAT-142 — Slash command: Enter runs the top suggestion when it takes no required args
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, commands, autocomplete
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Extend CommandRegistry.enterAction to return 'complete' | 'run' | 'complete-and-run', or add a helper `topSuggestion(input)` returning the CommandDef. In App's palette Enter handler, when the choice is completion, check `def.args?.some(a => a.required)` and if none, immediately runCommand(`/${def.name}`) instead of applySuggestion + second Enter.
+
+**Architecture**
+src/tui/commands/registry.ts; src/tui/App.tsx palette useInput Enter branch; tests/unit/tui-commands.test.ts.
+
+**Key decisions**
+- A command with only optional args (e.g. /info, /stepthrough [state]) runs immediately.
+- Ambiguous prefix where the resolved command name is not the top suggestion keeps current conflict handling.
+
+**Alternatives considered**
+- Always run on Enter even with missing required args (rejected: would error).
+- Tab still only completes (keep).
+
+**Acceptance criteria**
+- /in + Enter runs /info (palette closes, Song Info opens).
+- /e + Enter only completes to /export and waits for <format>.
+- Existing enterAction tests updated.
+
+Item 10. Today pressing Enter on an unfinished command only completes it (registry.enterAction); the user must press Enter twice. Change it so that when the top-ranked suggestion is an exact completion of what was typed AND that command has no required args, Enter completes and executes it in one press (e.g. `/in` + Enter → runs /info). When the top suggestion has required args (e.g. /export <format>, /save <path>), keep completing only.
+
+### FEAT-141 — Instrument Enter menu lists every current option (Chord, MicroTextures, …)
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, instrument, contextactions, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Extend instrumentActions with entries whose command is `/chord <i>` and `/microtextures <i>`; add keys ['4']/['5']. Keep ordering: core stage first, then optional stages, then name/mute/preview/sample/delete. Add a unit test that the returned ids include chord + microtextures.
+
+**Architecture**
+src/tui/contextActions.ts; src/tui/components/InstrumentsOverlay.tsx (hint + number shortcuts 4/5); src/tui/App.tsx menuContext hint; tests/unit/tui-ux-pass.test.ts.
+
+**Key decisions**
+- Follow the existing tab order Sampler-core → Spectral → Percussion → Chord → MicroTextures.
+- Number shortcuts 1-5 map to those tabs.
+
+**Alternatives considered**
+- Generate the menu from the editor registry (nicer, but larger refactor; note as a follow-up).
+
+**Acceptance criteria**
+- Enter on an instrument shows Edit Chord and Edit MicroTextures.
+- Pressing 4/5 opens those editors.
+- tui-ux-pass test extended.
+
+Item 9. contextActions.instrumentActions() currently lists sampler/spectral/percussion/rename/duplicate/mute/preview/sample/delete but not Chord or MicroTextures, even though those editors exist. Add 'Edit Chord' (key 4) and 'Edit MicroTextures' (key 5), and audit for any other editor surfaces added since (e.g. open sample, choke). Update the InstrumentsOverlay hint line and App menuContext hint to mention 4/5.
+
+### FEAT-140 — Rename Sampler to SAMPLER-CORE and mark it always-active in the instrument chain
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, instrument, naming, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Define the label string in one place (e.g. src/tui/labels.ts or a constant near instrumentTabFor) and import it. Change the `editorTabs.highlight` first element from false to true. Display-only rename; command IDs stay.
+
+**Architecture**
+src/tui/App.tsx (editorTitle, editorTabs, menuContext hints); src/tui/contextActions.ts; src/tui/commands/builtins.ts; src/tui/explainer.ts; src/tui/components/InstrumentsOverlay.tsx; src/tui/editors.tsx; docs + tests that assert 'Sampler'.
+
+**Key decisions**
+- Command contract (`/sampler`) unchanged; only display text changes.
+- Tab highlight[0] is always true.
+
+**Alternatives considered**
+- Rename the command too (rejected: breaks scripts/aliases and HC002 muscle memory).
+- Add a separate CORE tab (rejected: it is the base stage, not a peer tab).
+
+**Acceptance criteria**
+- All UI shows SAMPLER-CORE; `/sampler 0` still works.
+- Instrument chain tab 1 is bold/colour at all times.
+- Tests asserting old label updated.
+
+Items 7 & 8. Rename the user-facing 'Sampler' label to 'SAMPLER-CORE' everywhere it is displayed: editor title (App.tsx `Sampler — ...`), the instrument-chain tab labels (['Sampler','Spectral',...]), contextActions label 'Edit Sampler', builtins ok message `Sampler ${index}`, HelpOverlay/Explainer text, MixerOverlay descriptions, docs. Keep the slash command name `/sampler` (and alias) for compatibility; optionally add `/samplercore` alias. Make the SAMPLER-CORE tab always highlighted/bold in ParamEditorOverlay tabs (highlight[0] = true) because the core stage is always active, matching how Spectral/Percussion/etc bold when enabled.
+
+### FEAT-139 — Explainer: coloured calculated values/variable names + hover coverage of every menu row
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, explainer, colour, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Introduce a tiny `spans()` builder in explainer.ts and migrate the highest-value strings first (note frequency, BPM/row duration, effect code/value, volume %, instrument name). The ExplainerPanel renders segments when present, else body. For menus, pass an onExplain callback from App into ActionMenu and derive each action's explanation from its command/description.
+
+**Architecture**
+src/tui/explainer.ts; src/tui/components/ExplainerPanel.tsx; src/tui/components/ActionMenu.tsx; src/tui/App.tsx (wire onExplain for action/order/recent menus); tests/unit/tui-explainer.test.tsx.
+
+**Key decisions**
+- Palette: cyan = calculated value, yellow = variable/name, green = raw/source value, dim = static prose.
+- Plain body remains the contract for the control socket / non-TUI consumers.
+
+**Alternatives considered**
+- ANSI colour codes inside body (rejected: fragile, not testable).
+- Skip menu coverage (rejected: user explicitly asked that everything hoverable is explained).
+
+**Acceptance criteria**
+- ExplainerPanel renders coloured spans for a note cell (freq), an FX cell (code/value) and an instrument name.
+- Highlighting an ActionMenu row updates the explainer panel.
+- Existing tui-explainer tests still pass; add a span test.
+
+Item 6. Two parts. (a) Extend ExplainerText so its body can carry coloured spans; keep the plain `body: string` for tests/back-compat and add `segments?: Array<{ text: string; color?: string; bold?: boolean }>`. Update explainer.ts (cellExplain, instrumentExplain, patternsExplain, rowExplain, channelExplain) to colour calculated values (Hz, seconds, percentages, hex codes) and variable names (instrument names, sample names, effect labels). (b) Make EVERY menu update the explainer: ActionMenu.tsx currently does not call onExplain (nor do OrderPicker / HelpOverlay rows beyond a static block) — add per-row explanation plumbing so anything highlightable is explained.
+
+### FEAT-138 — Duller grey playhead for channels with no instrument colour
+- priority: medium
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, patternview, colour, cycles
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Centralise the playhead colour choice in a helper next to instrumentTint() that takes (hasColour, isPlayheadRow) and returns a Text colour/background. Replace the inline ternaries at the two render sites.
+
+**Architecture**
+src/tui/components/PatternView.tsx (instrumentTint, normal render ~line 474-573, cycles render ~line 339-431).
+
+**Key decisions**
+- No-colour playhead = grey; coloured playhead keeps the instrument tint.
+- Cursor (edit) highlight is unchanged.
+
+**Alternatives considered**
+- Dim the whole channel column (rejected: hides note data).
+- Keep white (rejected: the reported problem).
+
+**Acceptance criteria**
+- Uncoloured channels show a grey playhead row; coloured channels keep their tint.
+- Screenshot/render test in tests/unit/tui-components.test.tsx or a new patternview test.
+
+Item 5. In PatternView.tsx the playhead row currently uses white/green regardless of whether the channel's instrument has a colour; that draws attention away from coloured channels. Use a dull grey playhead tint when the channel has no instrument colour (instrumentTint returns no tint / heldInfo has no colorRgb), keeping the brighter treatment when it does. Apply to both the normal and Cycles centred-playhead render paths.
+
+### FEAT-137 — Advisory popup when the terminal is too narrow for the Explainer
+- priority: medium
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, explainer, hc001
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Add showExplainerAdvisory state set on mount (and when width first becomes <84 before dismissal). Render via the existing ActionMenu-style modal or a small Box, so no new chrome is introduced. Optionally persist 'explainerAdvisoryDismissed' in LanternConfig, with a /config toggle.
+
+**Architecture**
+src/tui/App.tsx (mount effect + render branch); optionally src/host/types.ts LanternConfig + node/browser config hosts.
+
+**Key decisions**
+- Threshold stays 84 columns (matches current showExplainer).
+- Advisory is informational, never blocks commands.
+
+**Alternatives considered**
+- Log a status line only (rejected: too easy to miss).
+- Block until resized (rejected: hostile and fails small screens).
+
+**Acceptance criteria**
+- Launching with columns<84 shows the advisory; pressing x/Esc/z/Enter hides it.
+- Resizing to >=84 hides the explainer-absent state.
+- Launching at >=84 shows no advisory.
+- HC001 check (src/tui/App.tsx exists) unaffected.
+
+Item 4. App.tsx gates the explainer on columns >= 84 (showExplainer). On launch, if columns < 84, show a dismissible TUI modal explaining that the Explainer needs a wider window and that the app still works, with the current/needed columns. Dismiss with z/Enter/x/Esc; do not show again for the session after dismissal. Must remain inside the Ink TUI (HC001).
+
+### FEAT-136 — Shared marquee for any text truncated with an ellipsis
+- priority: medium
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, marquee
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+A MarqueeText component measures the available width (prop) and, when text.length > width, renders a moving window (text + gap, wrap-around) driven by a shared 130ms tick; when it fits, renders plain <Text>. Avoid per-row intervals by using one interval in a provider/hook.
+
+**Architecture**
+src/tui/components/Marquee.tsx (new); src/tui/hooks.ts (useMarqueeTick); refactor StepPanel to import it; call sites listed above.
+
+**Key decisions**
+- Use '…' only as the static fallback where animation is undesirable; default to marquee.
+- Keep monospace column fixation so the layout never reflows while scrolling.
+
+**Alternatives considered**
+- Animate every truncated string independently (rejected: timer churn).
+- Disable truncation and allow wrapping (rejected: breaks fixed tracker columns).
+
+**Acceptance criteria**
+- A long command description in /help scrolls horizontally instead of ending in '…'.
+- A long instrument name in ActionMenu title scrolls.
+- No layout shift / no extra rows appear.
+- Test with ink-testing-library asserting the rendered window changes over ticks.
+
+Item 3. Promote the existing StepPanel.marquee() helper (src/tui/components/StepPanel.tsx) into a reusable Marquee/MarqueeText component + a single shared tick. Apply it to every surface that currently uses wrap="truncate-end" or otherwise ellipsises: HelpOverlay command rows, ActionMenu labels, CommandBar suggestions, ParamEditorOverlay hint/filter rows, SongHeader subtitle, PatternsOverlay/SamplesOverlay hints, StatusBar.
+
+### FEAT-135 — Universal undo/redo: cover every mutating action (cycles mode, view toggles, settings)
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, undo, session
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+Extend the existing HistoryGroup memento mechanism rather than a parallel system. For view-only toggles (follow/ghosting/colour) decide whether to record: the user asked for ALL actions, so record cycles mode and WAV settings; view toggles are cheap mementos and should also be undoable. Add an optional `historySuspended` wrapper around composite ops so one logical action = one undo step.
+
+**Architecture**
+src/tui/session.ts (captureMemento/recordMemento/restoreMemento, setCyclesMode, toggleCyclesMode, setWavExport, setFollow, setColorInstruments, setGhosting); src/tui/App.tsx; src/tui/components/*Overlay.tsx for Ctrl+Z/Y.
+
+**Key decisions**
+- Undo/redo restores the full SessionMemento and re-syncs the engine (existing restoreMemento).
+- cyclesMode is persisted config today; undo must not fight the config write — persist on undo/redo as well.
+
+**Alternatives considered**
+- Only add missing structural edits (rejected: user explicitly wants arbitrary actions undoable).
+- Command-level undo log (rejected: mementos already work and are simpler).
+
+**Open questions**
+- Should undo of cyclesMode also revert the persisted config, or just in-session state? Plan: revert both.
+
+**Acceptance criteria**
+- session.toggleCyclesMode(); session.undo(); state.cyclesMode restored; redo re-applies.
+- Instrument delete, instrument duplicate, pattern duplicate/remove, wavExport change all undo and redo.
+- Ctrl+Z/Y works while any overlay is focused.
+- tests/unit/tui-ux-pass.test.ts and tui-tracker-ops.test.ts extended.
+
+Item 2. Audit src/tui/session.ts for mutators that do not call captureMemento()/recordMemento(): setCyclesMode/toggleCyclesMode (line ~471/492), setWavExport, setFollow, setColorInstruments, setGhosting, setReference, setProject/setProjectPath. Delete/duplicate instrument and order/pattern ops already record, but add regression tests that prove delete/duplicate of instruments and patterns undo/redo. Also wire Ctrl+Z / Ctrl+Y into every overlay, not just tracker + PatternsOverlay.
+
+### FEAT-134 — Keybind parity: Z confirms (Enter) and X cancels (Esc) in every menu
+- priority: high
+- tags: plan-ux-polish-pass-2, ux, tui, plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand, keybinds, hc002
+- created: 2026-09-18
+- updated: 2026-09-18
+- plan: ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand
+- kind: card
+- parent: FEAT-133
+
+**Plan:** UX Polish Pass 2 — keybinds, undo/redo, explainer, help & rebrand _(#plan-ux-polish-pass-2-keybinds-undo-redo-explainer-help-rebrand)_
+
+**Plan summary**
+22 UX refinements requested in one batch. Constraints that shape the plan: HC001 (small-terminal advisory and all feedback must stay inside the Ink TUI, no DOM chrome), HC002 (new /fx phasing group, help entries and rebrand must not add navigation depth — reachability test must keep passing), HC003 (extension rename, openExternal, config migration and the version stamp must work on the desktop Node host and the streamed web host), HC004 (prefer zero new npm deps; if one is added, run security_package_validate), SC001 (TypeScript only). Ordering: foundational keybind/undo/clipboard first, then content surfaces (explainer, sampler rename, /fx, stepthrough), then the help overhaul (which must reflect all new keys), then the rebrand/extension/version/web-alignment workstreams which touch many files. Every card must end with constraints_validate + constraints_run_tests before moving to Implemented; update tests/unit/reachability.test.ts when the command surface changes.
+
+**Approach**
+One shared predicate module, imported everywhere, so Track/Help behaviour can never drift again. Keep existing q aliases only where they already exist; do not add new ones.
+
+**Architecture**
+src/tui/keys.ts (new); all src/tui/components/*.tsx; src/tui/App.tsx tracker handler uses x already for clear-cell so only overlay surfaces change.
+
+**Key decisions**
+- Confirm = Enter or z/Z; cancel = Esc or x/X.
+- z already confirms in Instruments/ParamEditor/Samples/Patterns — this makes it universal and adds it to ActionMenu/OrderPicker/SongInfoPanel.
+
+**Alternatives considered**
+- Per-component duplication (rejected: drifts).
+- A global keymap interceptor in App (rejected: overlays own their keys and App cannot know which action to fire).
+
+**Acceptance criteria**
+- Every overlay closes on x and Esc and activates on z and Enter.
+- Existing tests in tests/unit/tui-components.test.tsx and tui-instruments.test.ts still pass; add one assertion per overlay for z/x.
+- HC002 reachability test still passes.
+
+Item 1. Add src/tui/keys.ts with isConfirm(char,key) (key.return || char==='z' || char==='Z') and isCancel(char,key) (key.escape || char==='x' || char==='X'). Replace the ad-hoc checks in ActionMenu.tsx, HelpOverlay.tsx, InstrumentsOverlay.tsx, PatternsOverlay.tsx, SamplesOverlay.tsx, MixerOverlay.tsx, ParamEditorOverlay.tsx, OrderPicker.tsx and SongInfoPanel.tsx. ActionMenu currently closes on key.ctrl — keep that. HelpOverlay currently closes on q/x but has no z-confirm (nothing to confirm) so just use isCancel.
 
 ### FEAT-114 — CYCLES MODE — Glitch Ambient workspace
 - priority: critical

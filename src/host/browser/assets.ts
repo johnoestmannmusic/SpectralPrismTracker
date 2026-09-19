@@ -40,7 +40,7 @@ export async function listSourceSamples(): Promise<SourceSampleAsset[]> {
 export async function loadDefaultSong(): Promise<
   LoadedSong | { error: string }
 > {
-  const project = await fetchText("lmp-default-proj.lampjson");
+  const project = await fetchText("lmp-default-proj.sptproj");
   if (project === null) {
     return {
       error: `Cannot find the bundled project assets at ${assetUrl("")}`,

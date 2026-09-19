@@ -49,11 +49,11 @@ export const SHELL_BUTTONS: ShellButton[] = [
   {
     id: "open",
     label: "Open",
-    title: "Open a .lampjson project",
+    title: "Open a .sptproj project",
     run: async ({ command }) => {
       const input = document.createElement("input");
       input.type = "file";
-      input.accept = ".lampjson,application/json";
+      input.accept = ".sptproj,.lampjson,application/json";
       const file = await new Promise<File | null>((resolve) => {
         input.onchange = () => resolve(input.files?.[0] ?? null);
         input.click();
@@ -78,7 +78,7 @@ export const SHELL_BUTTONS: ShellButton[] = [
         command("/save");
         return;
       }
-      downloadBlob(await response.blob(), "project.lampjson");
+      downloadBlob(await response.blob(), "project.sptproj");
     },
   },
   {
@@ -91,7 +91,7 @@ export const SHELL_BUTTONS: ShellButton[] = [
         command("/save");
         return;
       }
-      downloadBlob(await response.blob(), "project.lampjson");
+      downloadBlob(await response.blob(), "project.sptproj");
     },
   },
   {

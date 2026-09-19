@@ -15,6 +15,10 @@ const src = path.join(projectRoot, "src");
 const outDir = path.join(projectRoot, "dist", "web");
 const hostDir = path.join(projectRoot, "dist", "web-host");
 
+const d = new Date();
+const buildDate = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+const define = { __BUILD_DATE__: JSON.stringify(buildDate) };
+
 // 1. Static client.
 await viteBuild({
   configFile: path.join(projectRoot, "vite.config.web.mts"),
@@ -31,6 +35,7 @@ await esbuild({
   sourcemap: true,
   jsx: "automatic",
   alias: { "@": src },
+  define,
   external: [
     "node-web-audio-api",
     "react-devtools-core",

@@ -1,5 +1,5 @@
 import { getHost } from "@/host";
-import { extensionOf } from "@/runtime/paths";
+import { ensureExtension, extensionOf } from "@/runtime/paths";
 import { contextActions, type ContextTarget } from "../contextActions";
 import {
   exportCoverPng,
@@ -43,7 +43,30 @@ function arg(args: ParsedArgs, name: string): string | undefined {
   return args.values[name];
 }
 
+export const PROJECT_URL =
+  "https://github.com/johnoestmannmusic/SpectralPrismTracker";
+
 export const builtinCommands: CommandDef[] = [
+  {
+    id: "viewsource",
+    name: "viewsource",
+    aliases: ["source", "repo"],
+    description:
+      "Open the SpectralPrismTracker source repository in your browser",
+    category: "general",
+    run: async () => {
+      const host = getHost();
+      if (!host.openExternal) {
+        return fail(
+          `Opening a browser is not supported on this host. Visit ${PROJECT_URL}`,
+        );
+      }
+      const result = await host.openExternal(PROJECT_URL);
+      return result.ok
+        ? ok(`Opened ${PROJECT_URL}`)
+        : fail(`Could not open browser: ${result.error}`);
+    },
+  },
   {
     id: "help",
     name: "help",
@@ -67,8 +90,18 @@ export const builtinCommands: CommandDef[] = [
   {
     id: "quit",
     name: "quit",
-    aliases: ["exit", "q"],
-    description: "Exit the terminal player",
+    aliases: ["q"],
+    description: "Exit the tracker (prompts when there are unsaved changes)",
+    category: "general",
+    run: (_args, ctx) => {
+      ctx.exit?.();
+      return ok("Bye");
+    },
+  },
+  {
+    id: "exit",
+    name: "exit",
+    description: "Exit the tracker (same as /quit)",
     category: "general",
     run: (_args, ctx) => {
       ctx.exit?.();
@@ -630,7 +663,7 @@ export const builtinCommands: CommandDef[] = [
           : ctx.session.getState().cursor.channel;
       if (!Number.isFinite(index)) return fail("instrument must be a number");
       ctx.openOverlay?.("sampler", index);
-      return ok(`Sampler ${index}`);
+      return ok(`SAMPLER-CORE ${index}`);
     },
   },
   {
@@ -1002,7 +1035,7 @@ export const builtinCommands: CommandDef[] = [
     name: "stepthrough",
     aliases: ["walkthrough", "steps"],
     description: "Guided step-by-step rebuild of the loaded project",
-    category: "view",
+    category: "Stepthrough Mode",
     args: [{ name: "state", type: "enum", choices: ["on", "off"] }],
     run: (args, ctx) => {
       if (arg(args, "state") === "off") {
@@ -1018,7 +1051,7 @@ export const builtinCommands: CommandDef[] = [
     name: "stepexport",
     aliases: ["steprecipe"],
     description: "Export the stepthrough rebuild recipe as JSON",
-    category: "view",
+    category: "Stepthrough Mode",
     args: [pathArg],
     run: async (args, ctx) => {
       const target = arg(args, "path");
@@ -1092,12 +1125,17 @@ export const builtinCommands: CommandDef[] = [
     id: "open",
     name: "open",
     aliases: ["load"],
-    description: "Open a .lampjson project file",
+    description:
+      "Open a project (no path opens the file picker; legacy .lampjson also works)",
     category: "file",
     args: [pathArg],
     run: async (args, ctx) => {
       const target = arg(args, "path");
-      if (!target) return fail("/open requires a file path");
+      if (!target) {
+        // No path: open the TUI project picker (FEAT-155).
+        ctx.openOverlay?.("filepicker");
+        return ok("Choose a project…");
+      }
       const result = await openPath(ctx.session, target);
       return result.ok
         ? ok(result.message)
@@ -1118,11 +1156,14 @@ export const builtinCommands: CommandDef[] = [
     id: "save",
     name: "save",
     aliases: ["write"],
-    description: "Save the project as .lampjson",
+    description: "Save the project as .sptproj",
     category: "file",
     args: [pathArg],
     run: async (args, ctx) => {
-      const target = arg(args, "path") ?? "project.lampjson";
+      const target = ensureExtension(
+        arg(args, "path") ?? "project.sptproj",
+        "sptproj",
+      );
       const result = await saveProject(ctx.session, target);
       return result.ok
         ? ok(result.message, { path: result.path })
@@ -1257,13 +1298,18 @@ export const builtinCommands: CommandDef[] = [
           ctx.openOverlay("wav");
           return ok("WAV export options");
         }
-        const result = await exportWav(ctx.session, target, {
-          loops: Number.isFinite(loops) ? loops : 0,
-          fadeInMs: Number.isFinite(fadeInMs) ? fadeInMs : 0,
-          fadeOutMs: Number.isFinite(fadeOutMs) ? fadeOutMs : 0,
-          lengthSeconds: Number.isFinite(lengthSeconds) ? lengthSeconds : 0,
-          normalize,
-        });
+        const result = await exportWav(
+          ctx.session,
+          target,
+          {
+            loops: Number.isFinite(loops) ? loops : 0,
+            fadeInMs: Number.isFinite(fadeInMs) ? fadeInMs : 0,
+            fadeOutMs: Number.isFinite(fadeOutMs) ? fadeOutMs : 0,
+            lengthSeconds: Number.isFinite(lengthSeconds) ? lengthSeconds : 0,
+            normalize,
+          },
+          ctx.onProgress,
+        );
         return result.ok
           ? ok(result.message, { path: result.path })
           : fail(result.error ?? "Export failed");

@@ -39,7 +39,7 @@ function scriptDir(): string {
 }
 
 export function findPrismWasmPath(): string | null {
-  const env = process.env.LANTERN_PRISM_WASM;
+  const env = process.env.SPT_PRISM_WASM ?? process.env.LANTERN_PRISM_WASM;
   const base = scriptDir();
   const candidates = [
     env,
@@ -88,6 +88,9 @@ class ThreadsWorkerAdapter implements WorkerLike {
   }
 }
 
+/** The live worker client, kept so the worker can be terminated on quit. */
+let activeWorker: PrismWorkerClient | null = null;
+
 /**
  * Starts the prism worker thread and registers it as the spectral renderer.
  * Returns false (without registering) when the worker bundle or WASM is missing.
@@ -102,11 +105,22 @@ export async function initPrismWasmWorker(
     const worker = new Worker(workerUrl, { workerData: { wasmPath } });
     const client = new PrismWorkerClient(new ThreadsWorkerAdapter(worker));
     await client.ping(timeoutMs);
+    activeWorker = client;
     registerPrismWasmWorker(client);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Terminates the prism worker thread. A live `worker_threads.Worker` keeps the
+ * Node event loop alive, so without this the TUI unmounts but the process hangs
+ * and the shell prompt never returns (BUG-36).
+ */
+export function disposePrismWasm(): void {
+  activeWorker?.terminate();
+  activeWorker = null;
 }
 
 /** Prefers the worker thread; falls back to a synchronous in-process render. */
