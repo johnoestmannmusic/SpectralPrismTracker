@@ -54,7 +54,10 @@ export async function applyMasterFxOffline(
     // No bus FX, but the end-of-chain downsample may still apply.
     onProgress?.(1);
     return settings.downsample.enabled
-      ? downsampleClip(clip, settings.downsample.rateHz)
+      ? downsampleClip(clip, settings.downsample.rateHz, {
+          lowpassEnabled: settings.downsample.lowpassEnabled,
+          lowpassHz: settings.downsample.lowpassHz,
+        })
       : clip;
   }
 
@@ -120,6 +123,9 @@ export async function applyMasterFxOffline(
   // End of the chain: deterministic sample-rate reduction for export.
   const result = { channels, sampleRate: rendered.sampleRate };
   return settings.downsample.enabled
-    ? downsampleClip(result, settings.downsample.rateHz)
+    ? downsampleClip(result, settings.downsample.rateHz, {
+        lowpassEnabled: settings.downsample.lowpassEnabled,
+        lowpassHz: settings.downsample.lowpassHz,
+      })
     : result;
 }

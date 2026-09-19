@@ -423,6 +423,12 @@
       "enabled": true,
       "decaySec": 2,
       "mix": 0.6300000000000003
+    },
+    "downsample": {
+      "enabled": true,
+      "rateHz": 8025,
+      "lowpassEnabled": false,
+      "lowpassHz": 8000
     }
   },
   "instrumentNames": [

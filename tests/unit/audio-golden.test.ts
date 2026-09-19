@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyMasterFxOffline } from "@/audio/offline";
+import { createMasterFxGraph } from "@/audio/masterFxGraph";
+import {
+  DOWNSAMPLE_WORKLET_NAME,
+  DOWNSAMPLE_WORKLET_URL,
+} from "@/audio/downsampleWorklet";
 import { defaultMasterFx, masterFxFromJson } from "@/core/masterFx";
 import { audioClip, downsampleClip } from "@/core/dsp";
 import { installWebAudioGlobals } from "@/runtime/audio";
@@ -95,11 +100,41 @@ describe("master FX downsample (GBA)", () => {
     expect(defaultMasterFx().downsample).toEqual({
       enabled: false,
       rateHz: 11_025,
+      lowpassEnabled: false,
+      lowpassHz: 8000,
     });
     expect(
-      masterFxFromJson({ downsample: { enabled: true, rateHz: 9000 } })
-        .downsample,
-    ).toEqual({ enabled: true, rateHz: 9000 });
+      masterFxFromJson({
+        downsample: {
+          enabled: true,
+          rateHz: 9000,
+          lowpassEnabled: true,
+          lowpassHz: 6000,
+        },
+      }).downsample,
+    ).toEqual({
+      enabled: true,
+      rateHz: 9000,
+      lowpassEnabled: true,
+      lowpassHz: 6000,
+    });
+  });
+
+  it("applies an optional post low-pass", () => {
+    const rate = 44_100;
+    const frames = 8192;
+    const data = new Float32Array(frames);
+    for (let i = 0; i < frames; i++)
+      data[i] = Math.sin((2 * Math.PI * 2000 * i) / rate);
+    const clip = audioClip([data], rate);
+    const dry = downsampleClip(clip, 11_025, { lowpassEnabled: false });
+    const wet = downsampleClip(clip, 11_025, {
+      lowpassEnabled: true,
+      lowpassHz: 1000,
+    });
+    const rms = (c: Float32Array) =>
+      Math.sqrt(c.reduce((sum, v) => sum + v * v, 0) / c.length);
+    expect(rms(wet.channels[0]!)).toBeLessThan(rms(dry.channels[0]!));
   });
 
   it("holds samples at the target rate and is a no-op above it", () => {
@@ -117,6 +152,69 @@ describe("master FX downsample (GBA)", () => {
     expect(downsampleClip(clip, 44_100)).toBe(clip);
   });
 
+  it("loads the worklet processor and holds samples", async () => {
+    installWebAudioGlobals();
+    const rate = 44_100;
+    const frames = 2048;
+    const ctx = new OfflineAudioContext(1, frames, rate);
+    await ctx.audioWorklet.addModule(DOWNSAMPLE_WORKLET_URL);
+    const node = new AudioWorkletNode(ctx, DOWNSAMPLE_WORKLET_NAME, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    node.parameters.get("rateHz")!.value = 11_025;
+    const buffer = ctx.createBuffer(1, frames, rate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frames; i++)
+      data[i] = Math.sin((2 * Math.PI * 4000 * i) / rate);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(node);
+    node.connect(ctx.destination);
+    source.start(0);
+    const out = (await ctx.startRendering()).getChannelData(0);
+    // 11025/44100 = 1/4: each held value repeats four times.
+    expect(out[1]).toBe(out[0]);
+    expect(out[2]).toBe(out[0]);
+    expect(out[4]).not.toBe(out[0]);
+  }, 30_000);
+
+  it("true-bypasses the realtime downsampler when disabled (BUG-39)", async () => {
+    installWebAudioGlobals();
+    const base = defaultMasterFx();
+    const settings = {
+      ...base,
+      delay: { ...base.delay, enabled: false },
+      reverb: { ...base.reverb, enabled: false },
+      downsample: {
+        enabled: false,
+        rateHz: 11_025,
+        lowpassEnabled: false,
+        lowpassHz: 8000,
+      },
+    };
+    const render = async (realtimeDownsample: boolean) => {
+      const rate = 44_100;
+      const frames = 2048;
+      const ctx = new OfflineAudioContext(1, frames, rate);
+      const graph = createMasterFxGraph(ctx, settings, { realtimeDownsample });
+      const buffer = ctx.createBuffer(1, frames, rate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < frames; i++) data[i] = Math.sin(i / 8);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(graph.input);
+      graph.output.connect(ctx.destination);
+      source.start(0);
+      const rendered = await ctx.startRendering();
+      return Array.from(rendered.getChannelData(0));
+    };
+    // With the effect off, no ScriptProcessorNode is created, so the render is
+    // byte-identical to a graph without the option at all.
+    expect(await render(true)).toEqual(await render(false));
+  }, 30_000);
+
   it("applies at the end of the offline render when enabled", async () => {
     installWebAudioGlobals();
     const base = defaultMasterFx();
@@ -124,7 +222,12 @@ describe("master FX downsample (GBA)", () => {
       ...base,
       delay: { ...base.delay, enabled: false },
       reverb: { ...base.reverb, enabled: false },
-      downsample: { enabled: true, rateHz: 4_410 },
+      downsample: {
+        enabled: true,
+        rateHz: 4_410,
+        lowpassEnabled: false,
+        lowpassHz: 8000,
+      },
     };
     const out = await applyMasterFxOffline(fixtureClip(), settings);
     const data = out.channels[0]!;

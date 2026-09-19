@@ -25,6 +25,10 @@ export interface DownsampleFxSettings {
   enabled: boolean;
   /** Target sample rate in Hz. Lower = crunchier (GBA is roughly 8–11 kHz). */
   rateHz: number;
+  /** Optional one-pole low-pass after the hold, to tame the crunch. */
+  lowpassEnabled: boolean;
+  /** Post low-pass cutoff in Hz (used when `lowpassEnabled`). */
+  lowpassHz: number;
 }
 
 export interface MasterFxSettings {
@@ -37,6 +41,15 @@ export interface MasterFxSettings {
 /** GBA-ish default target; disabled until switched on. */
 export const DEFAULT_DOWNSAMPLE_HZ = 11_025;
 
+function defaultDownsample(): DownsampleFxSettings {
+  return {
+    enabled: false,
+    rateHz: DEFAULT_DOWNSAMPLE_HZ,
+    lowpassEnabled: false,
+    lowpassHz: 8000,
+  };
+}
+
 export function defaultMasterFx(): MasterFxSettings {
   return {
     delay: {
@@ -47,7 +60,7 @@ export function defaultMasterFx(): MasterFxSettings {
       mix: 0.35,
     },
     reverb: { enabled: false, decaySec: 2.0, mix: 0.25 },
-    downsample: { enabled: false, rateHz: DEFAULT_DOWNSAMPLE_HZ },
+    downsample: defaultDownsample(),
   };
 }
 
@@ -62,7 +75,7 @@ export function ps1EchoPreset(): MasterFxSettings {
       mix: 0.4,
     },
     reverb: { enabled: false, decaySec: 2.0, mix: 0.25 },
-    downsample: { enabled: false, rateHz: DEFAULT_DOWNSAMPLE_HZ },
+    downsample: defaultDownsample(),
   };
 }
 
@@ -93,6 +106,15 @@ export function masterFxFromJson(value: unknown): MasterFxSettings {
     downsample: {
       enabled: bool(downsampleRaw, "enabled", d.downsample.enabled),
       rateHz: Math.max(1000, num(downsampleRaw, "rateHz", d.downsample.rateHz)),
+      lowpassEnabled: bool(
+        downsampleRaw,
+        "lowpassEnabled",
+        d.downsample.lowpassEnabled,
+      ),
+      lowpassHz: Math.max(
+        200,
+        num(downsampleRaw, "lowpassHz", d.downsample.lowpassHz),
+      ),
     },
   };
 }

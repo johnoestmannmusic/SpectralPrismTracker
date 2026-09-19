@@ -22,20 +22,43 @@ export function clipLen(clip: AudioClip): number {
 }
 
 /**
- * Sample-and-hold sample-rate reduction (GBA-style decimation). Deterministic
- * and applied as the very last master stage; `rateHz >= sampleRate` is a no-op.
- * The live ScriptProcessor uses the same phase-accumulator algorithm.
+ * Sample-and-hold sample-rate reduction (GBA-style decimation), matching the
+ * MicroTextures lo-fi stage: a one-pole low-pass at the target Nyquist to tame
+ * aliasing, then an integer sample-and-hold. Deterministic and applied as the
+ * very last master stage; `rateHz >= sampleRate` is a no-op.
  */
-export function downsampleClip(clip: AudioClip, rateHz: number): AudioClip {
+/** One-pole low-pass coefficient for a given cutoff and sample step. */
+function onePoleCoeff(cutoff: number, dt: number): number {
+  const rc = 1 / (2 * Math.PI * Math.max(cutoff, 1));
+  return dt / (rc + dt);
+}
+
+export function downsampleClip(
+  clip: AudioClip,
+  rateHz: number,
+  options: { lowpassEnabled?: boolean; lowpassHz?: number } = {},
+): AudioClip {
   const inputRate = clip.sampleRate;
   if (!(rateHz > 0) || rateHz >= inputRate || clipIsEmpty(clip)) return clip;
-  const ratio = rateHz / inputRate; // < 1
+  const factor = Math.max(1, Math.round(inputRate / rateHz));
+  const dt = 1 / inputRate;
+  const preCoeff = onePoleCoeff(Math.min(rateHz * 0.5, inputRate * 0.45), dt);
+  const postOn = !!options.lowpassEnabled;
+  const postCoeff = onePoleCoeff(options.lowpassHz ?? rateHz, dt);
   const channels = clip.channels.map((data) => {
     const out = new Float32Array(data.length);
-    const last = data.length - 1;
+    let pre = 0;
+    let hold = 0;
+    let post = 0;
     for (let i = 0; i < data.length; i++) {
-      const source = Math.min(Math.floor(i * ratio), last);
-      out[i] = data[source] ?? 0;
+      pre += preCoeff * (data[i]! - pre);
+      if (i % factor === 0) hold = pre;
+      let sample = hold;
+      if (postOn) {
+        post += postCoeff * (sample - post);
+        sample = post;
+      }
+      out[i] = sample;
     }
     return out;
   });

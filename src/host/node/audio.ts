@@ -16,6 +16,8 @@ const GLOBAL_NAMES = [
   "AudioBuffer",
   "AudioNode",
   "AudioParam",
+  "AudioWorklet",
+  "AudioWorkletNode",
   "AnalyserNode",
   "AudioBufferSourceNode",
   "BiquadFilterNode",

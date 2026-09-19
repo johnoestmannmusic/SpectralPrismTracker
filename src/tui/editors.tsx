@@ -1259,6 +1259,23 @@ export function masterFxGroups(
               "Very last stage: sample-and-hold decimation for a GBA-ish crunch. 8000–11025 Hz is the classic range; lower is grittier. Off by default.",
           },
         ),
+        bool("Low-pass", downsample.lowpassEnabled, (v) =>
+          setDownsample({ lowpassEnabled: !!v }),
+        ),
+        num(
+          "Low-pass Hz",
+          downsample.lowpassHz,
+          (v) => setDownsample({ lowpassHz: v as number }),
+          {
+            min: 200,
+            max: 20000,
+            step: 100,
+            integer: true,
+            unit: " Hz",
+            explain:
+              "Optional one-pole low-pass after the hold, to tame the crunch. Lower = darker; off = raw.",
+          },
+        ),
       ],
     },
     ...channelPhasingGroups(session),

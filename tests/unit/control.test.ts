@@ -63,7 +63,15 @@ describe("control socket", () => {
   it("streams subscribed events", async () => {
     await client.subscribe(["transport", "meters"]);
     await client.command("/play");
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Poll instead of a fixed wait: under load the transport event can arrive
+    // after 200 ms, which made this test flaky.
+    const deadline = Date.now() + 3000;
+    while (
+      !events.some((entry) => entry.event === "transport") &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     await client.command("/stop");
     expect(events.some((entry) => entry.event === "transport")).toBe(true);
   });

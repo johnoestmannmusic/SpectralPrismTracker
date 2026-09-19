@@ -1,4 +1,8 @@
 import type { MasterFxSettings } from "@/core/masterFx";
+import {
+  DOWNSAMPLE_WORKLET_NAME,
+  DOWNSAMPLE_WORKLET_URL,
+} from "./downsampleWorklet";
 
 export interface MasterFxGraph {
   input: AudioNode;
@@ -7,14 +11,12 @@ export interface MasterFxGraph {
 }
 
 const DEFAULT_IR_DECAY = 2.0;
-/** ScriptProcessor block size for the realtime downsampler. */
-const DOWNSAMPLE_BUFFER = 256;
 
 export interface MasterFxGraphOptions {
   /**
-   * Insert a realtime sample-and-hold downsampler at the end of the chain. The
+   * Build the end-of-chain downsampler as an AudioWorklet (live playback). The
    * offline export applies the same algorithm as a deterministic buffer pass
-   * instead (a `ScriptProcessorNode` rendered offline is not reproducible).
+   * instead, because a worklet rendered offline is not reproducible.
    */
   realtimeDownsample?: boolean;
 }
@@ -55,55 +57,93 @@ export function createMasterFxGraph(
 
   let current = initial;
 
-  if (options.realtimeDownsample) {
-    // Always present in the live chain; when disabled it holds every sample,
-    // i.e. passes through unchanged.
-    try {
-      const downsample = ctx.createScriptProcessor(DOWNSAMPLE_BUFFER, 2, 2);
-      // Per-channel sample-and-hold state, carried across blocks. Mirrors the
-      // deterministic offline `downsampleClip` (hold index = floor(n * ratio)).
-      const held = [0, 0];
-      const lastSource = [-1, -1];
-      const count = [0, 0];
-      downsample.onaudioprocess = (event) => {
-        const inBuffer = event.inputBuffer;
-        const outBuffer = event.outputBuffer;
-        const inChannels = inBuffer.numberOfChannels;
-        const target = current.downsample.enabled
-          ? current.downsample.rateHz
-          : ctx.sampleRate;
-        const ratio = Math.min(1, Math.max(0.0001, target / ctx.sampleRate));
-        for (let c = 0; c < outBuffer.numberOfChannels; c++) {
-          const outData = outBuffer.getChannelData(c);
-          if (inChannels === 0) {
-            outData.fill(0);
-            continue;
-          }
-          const inData = inBuffer.getChannelData(Math.min(c, inChannels - 1));
-          let hold = held[c] ?? 0;
-          let source = lastSource[c] ?? -1;
-          let n = count[c] ?? 0;
-          for (let i = 0; i < outData.length; i++) {
-            const wanted = Math.floor(n * ratio);
-            if (wanted !== source || n === 0) {
-              hold = inData[i] ?? hold;
-              source = wanted;
-            }
-            outData[i] = hold;
-            n++;
-          }
-          held[c] = hold;
-          lastSource[c] = source;
-          count[c] = n;
-        }
-      };
-      mix.connect(downsample);
-      downsample.connect(output);
-    } catch {
-      mix.connect(output);
+  // Direct path until (and unless) the downsampler is switched on. The stage is
+  // a worklet (audio thread) followed by an optional native low-pass; a disabled
+  // effect is a true bypass (BUG-39).
+  mix.connect(output);
+  let worklet: AudioWorkletNode | null = null;
+  let lowpass: BiquadFilterNode | null = null;
+  let stageReady = false;
+  let stageWired = false;
+
+  const applyDownsampleParams = () => {
+    if (worklet) {
+      const now = ctx.currentTime;
+      worklet.parameters
+        .get("rateHz")
+        ?.setValueAtTime(current.downsample.rateHz, now);
+      worklet.parameters
+        .get("lowpassOn")
+        ?.setValueAtTime(current.downsample.lowpassEnabled ? 1 : 0, now);
+      worklet.parameters
+        .get("lowpassHz")
+        ?.setValueAtTime(current.downsample.lowpassHz, now);
     }
-  } else {
-    mix.connect(output);
+    if (lowpass) {
+      lowpass.frequency.setValueAtTime(
+        current.downsample.lowpassEnabled
+          ? current.downsample.lowpassHz
+          : ctx.sampleRate * 0.499,
+        ctx.currentTime,
+      );
+    }
+  };
+
+  const wireStage = () => {
+    if (!stageReady || !worklet || !lowpass) return;
+    const want = current.downsample.enabled;
+    if (want === stageWired) return;
+    if (want) {
+      try {
+        mix.disconnect(output);
+      } catch {
+        /* not connected */
+      }
+      mix.connect(worklet);
+      worklet.connect(lowpass);
+      lowpass.connect(output);
+      stageWired = true;
+    } else {
+      try {
+        mix.disconnect(worklet);
+      } catch {
+        /* not connected */
+      }
+      try {
+        worklet.disconnect();
+      } catch {
+        /* not connected */
+      }
+      try {
+        lowpass.disconnect();
+      } catch {
+        /* not connected */
+      }
+      mix.connect(output);
+      stageWired = false;
+    }
+  };
+
+  if (options.realtimeDownsample) {
+    void (async () => {
+      try {
+        await ctx.audioWorklet.addModule(DOWNSAMPLE_WORKLET_URL);
+        worklet = new AudioWorkletNode(ctx, DOWNSAMPLE_WORKLET_NAME, {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+        });
+        lowpass = ctx.createBiquadFilter();
+        lowpass.type = "lowpass";
+        lowpass.Q.value = 0.707;
+        stageReady = true;
+        applyDownsampleParams();
+        wireStage();
+      } catch {
+        // Leave the effect bypassed if the worklet cannot load.
+        stageReady = false;
+      }
+    })();
   }
 
   let lastDecay = -1;
@@ -151,6 +191,10 @@ export function createMasterFxGraph(
       now,
     );
     regenerateImpulse();
+    if (options.realtimeDownsample) {
+      applyDownsampleParams();
+      wireStage();
+    }
   };
 
   update(initial);

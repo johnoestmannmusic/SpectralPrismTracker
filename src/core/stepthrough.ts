@@ -1003,7 +1003,12 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
       mix: "Mix",
     },
     reverb: { enabled: "Enabled", decaySec: "Decay", mix: "Mix" },
-    downsample: { enabled: "Enabled", rateHz: "Rate" },
+    downsample: {
+      enabled: "Enabled",
+      rateHz: "Rate",
+      lowpassEnabled: "Low-pass",
+      lowpassHz: "Low-pass Hz",
+    },
   };
   (["delay", "reverb", "downsample"] as const).forEach((targetName) => {
     const fx = target.masterFx[targetName];
