@@ -44,7 +44,7 @@ test("loads the web TUI frame with no page errors", async ({ page }) => {
 
   await page.goto("/");
   await expect(page.locator("#terminal .xterm")).toBeVisible();
-  await expect(page.locator("#shell-buttons button")).toHaveCount(9);
+  await expect(page.locator("#shell-buttons button")).toHaveCount(6);
   await waitForSong(page);
 
   expect(errors).toEqual([]);
@@ -91,6 +91,18 @@ test("renders aligned terminal rows with the version header", async ({
     .filter((value): value is string => value !== null);
   expect(trackerSeparators.length).toBeGreaterThan(2);
   expect(new Set(trackerSeparators).size).toBe(1);
+});
+
+test("blocks filesystem commands with the web notice", async ({ page }) => {
+  await loadAndSettle(page);
+  await page.keyboard.type("/open");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => screenText(page), { timeout: 10_000 })
+    .toContain("Not available in the web version");
+  await expect(screenText(page)).resolves.toContain(
+    "github.com/johnoestmannmusic/SpectralPrismTracker",
+  );
 });
 
 test("reflows on resize", async ({ page }) => {

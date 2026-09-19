@@ -2,7 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { installShellButtons, type ShellClient } from "./shell";
+import { downloadBlob, installShellButtons, type ShellClient } from "./shell";
 
 /**
  * Web entrypoint (HC003).
@@ -63,11 +63,25 @@ function main(): void {
     for (const char of text) enqueue(char);
   };
 
+  const client: ShellClient = {
+    send: sendInput,
+    command: (command) => sendInput(`${command}\r`),
+    downloadWav: () => void downloadWav(),
+    focus: () => terminal.focus(),
+  };
+
+  terminal.onData((data) => sendInput(data));
+
   // Fit and tell the host our size. Re-fit once the monospace webfont has
-  // loaded: measuring before the font settles picks the wrong cell height and
-  // every Ink row drifts (FEAT-154).
+  // loaded and whenever the container's layout changes, otherwise the host
+  // keeps its initial row count and the TUI leaves blank rows (FEAT-161).
+  // De-duplicate so a re-fit that does not change the size is a no-op.
+  let lastSize = "";
   const syncSize = (): void => {
     fit.fit();
+    const key = `${terminal.cols}x${terminal.rows}`;
+    if (key === lastSize) return;
+    lastSize = key;
     enqueue(
       JSON.stringify({ cols: terminal.cols, rows: terminal.rows }),
       "/api/resize",
@@ -77,16 +91,11 @@ function main(): void {
   if (typeof document !== "undefined" && document.fonts?.ready) {
     void document.fonts.ready.then(() => syncSize());
   }
-
-  const client: ShellClient = {
-    send: sendInput,
-    command: (command) => sendInput(`${command}\r`),
-  };
-
-  terminal.onData((data) => sendInput(data));
-  terminal.onResize(({ cols, rows }) => {
-    enqueue(JSON.stringify({ cols, rows }), "/api/resize");
-  });
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(() => syncSize());
+    observer.observe(container);
+  }
+  requestAnimationFrame(() => syncSize());
   window.addEventListener("resize", () => syncSize());
 
   // Stream the TUI output from the host.
@@ -100,7 +109,7 @@ function main(): void {
     );
   };
 
-  installShellButtons(client);
+  const shell = installShellButtons(client);
 
   // Test/debug hook: exposes the rendered screen text for E2E assertions.
   (window as unknown as Record<string, unknown>).__lanternScreenText = () => {
@@ -113,6 +122,7 @@ function main(): void {
   };
 
   const statusElement = document.getElementById("shell-status");
+  const licenseElement = document.getElementById("shell-licenses");
   const poll = async (): Promise<void> => {
     try {
       const response = await fetch("/api/status");
@@ -123,9 +133,20 @@ function main(): void {
           time: number;
           duration: number;
           dirty: boolean;
+          stepthrough?: boolean;
+          musicLicense?: string;
+          codeLicense?: string;
         };
         const icon = state.playing ? "▶" : "■";
         statusElement.textContent = `${icon} ${state.name} · ${formatClock(state.time)} / ${formatClock(state.duration)}${state.dirty ? " · ●" : ""}`;
+        shell.setStepthrough(!!state.stepthrough);
+        shell.setPlaying(!!state.playing);
+        if (licenseElement) {
+          const parts: string[] = [];
+          if (state.musicLicense) parts.push(`Music: ${state.musicLicense}`);
+          if (state.codeLicense) parts.push(`Code: ${state.codeLicense}`);
+          licenseElement.textContent = parts.join(" · ");
+        }
       }
     } catch {
       if (statusElement) statusElement.textContent = "host offline";
@@ -135,6 +156,19 @@ function main(): void {
   setInterval(() => void poll(), 1000);
 
   terminal.focus();
+}
+
+/** Downloads the bundled demo WAV from the host (web has no filesystem). */
+async function downloadWav(): Promise<void> {
+  try {
+    const response = await fetch("/api/download-wav");
+    if (!response.ok) return;
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "demo.wav";
+    downloadBlob(await response.blob(), name);
+  } catch {
+    /* ignore: the status bar keeps working */
+  }
 }
 
 function formatClock(seconds: number): string {

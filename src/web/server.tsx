@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,9 +8,7 @@ import { nodeHost } from "@/host/node";
 import { initPrismWasm } from "@/wasm/prismNode";
 import { saveBackup } from "@/tui/autosave";
 import { App } from "@/tui/App";
-import { openPath } from "@/tui/io";
 import { Session } from "@/tui/session";
-import { resolveStartupProject } from "@/tui/startup";
 import { createTerminalStreams } from "./terminalStreams";
 
 /**
@@ -93,12 +91,9 @@ async function main(): Promise<void> {
   });
   await session.init();
 
-  const config = await nodeHost.config.read();
-  const startup = resolveStartupProject(config);
-  if (startup) {
-    const opened = await openPath(session, startup);
-    if (!opened.ok) session.setError(`Cannot open ${startup}`);
-  }
+  // Web always starts from the bundled default project: there is no
+  // filesystem, and the last-opened path from a desktop config is meaningless.
+  session.setWebMode(true);
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${HOST}:${PORT}`);
@@ -158,9 +153,36 @@ async function main(): Promise<void> {
           time: state.time,
           duration: state.duration,
           dirty: state.dirty,
+          stepthrough: state.stepthrough,
+          musicLicense: state.project?.musicLicense ?? "",
+          codeLicense: state.project?.codeLicense ?? "",
           projectPath: state.projectPath,
         }),
       );
+      return;
+    }
+
+    if (url.pathname === "/api/download-wav") {
+      // Serve the bundled demo WAV supplied in `assets/WAVExport` (web has no
+      // filesystem, so this is the only WAV download).
+      const wavDir = path.join(distWeb, "assets", "WAVExport");
+      try {
+        const files = (await readdir(wavDir)).filter((name) =>
+          name.toLowerCase().endsWith(".wav"),
+        );
+        if (files.length === 0) {
+          response.writeHead(404).end("No bundled WAV");
+          return;
+        }
+        const bytes = await readFile(path.join(wavDir, files[0]!));
+        response.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Content-Disposition": `attachment; filename="${files[0]}"`,
+        });
+        response.end(bytes);
+      } catch {
+        response.writeHead(404).end("No bundled WAV");
+      }
       return;
     }
 

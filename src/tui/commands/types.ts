@@ -72,6 +72,7 @@ export type OverlayName =
   | "microtextures"
   | "wav"
   | "filepicker"
+  | "webblocked"
   | "fx";
 
 export interface CommandDef {
@@ -82,6 +83,11 @@ export interface CommandDef {
   aliases?: string[];
   description: string;
   category: string;
+  /**
+   * True for commands that read/write the local filesystem. Blocked with a
+   * modal on the web deployment, which has no filesystem access (FEAT-163).
+   */
+  fs?: boolean;
   args?: CommandArg[];
   /** Example invocations shown in the palette's detail line. */
   examples?: string[];

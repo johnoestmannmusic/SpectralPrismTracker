@@ -156,6 +156,10 @@ export interface SessionState {
   commandHistory: string[];
   /** Unix-socket path of the live control server (null when disabled). */
   controlPath: string | null;
+  /** True when running the streamed web deployment (filesystem is blocked). */
+  webMode: boolean;
+  /** True while the guided stepthrough overlay is active (web button label). */
+  stepthrough: boolean;
 }
 
 interface HistoryEntry {
@@ -245,6 +249,8 @@ function initialState(): SessionState {
     commandHistory: [],
     controlPath: null,
     projectPath: null,
+    webMode: false,
+    stepthrough: false,
   };
 }
 
@@ -2484,10 +2490,9 @@ export class Session {
     // Pattern steps preview the whole row: held/cell note, volume and the
     // 01/02 pitch-slide effect, through the fused render when Spectral is on.
     if (action.kind === "patternCell") {
-      if (
-        spectralRenderEnabled(settings.spectral) &&
-        !engine.fusionReady(instrument)
-      ) {
+      // Always re-render: re-renders are non-destructive, and a stale clip may
+      // still be marked ready from before this step.
+      if (spectralRenderEnabled(settings.spectral)) {
         engine.renderFusion(instrument);
         const deadline = Date.now() + 8000;
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2535,6 +2540,8 @@ export class Session {
   restoreStepAudio(): void {
     const { song, project, settings } = this.state;
     if (!song || !project) return;
+    this.previewToken += 1;
+    this.engine?.stopPreview();
     this.syncEngineToTarget({
       project,
       song,
@@ -2763,6 +2770,16 @@ export class Session {
 
   setControlPath(controlPath: string | null): void {
     this.patch({ controlPath });
+  }
+
+  /** Marks this session as the streamed web deployment (filesystem blocked). */
+  setWebMode(webMode: boolean): void {
+    this.patch({ webMode });
+  }
+
+  /** Reflects whether the stepthrough overlay is active (for `/api/status`). */
+  setStepthrough(stepthrough: boolean): void {
+    this.patch({ stepthrough });
   }
 
   markWasmReady(): void {

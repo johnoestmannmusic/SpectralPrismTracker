@@ -2,15 +2,21 @@
  * Non-TUI chrome for the web deployment (HC001/HC003).
  *
  * The TUI itself runs in the Node host and is streamed over `/api/stream`; the
- * buttons here post the equivalent slash commands to `/api/input`, so they
- * share the exact command surface the terminal uses.
+ * buttons here post the equivalent slash commands to `/api/input` (or fetch a
+ * download), so they share the exact command surface the terminal uses.
  */
+
+import { PROJECT_URL } from "@/shared/links";
 
 export interface ShellClient {
   /** Sends raw terminal input (keystrokes or a slash command). */
   send: (input: string) => void;
   /** Sends a slash command followed by Enter. */
   command: (command: string) => void;
+  /** Downloads the bundled demo WAV (no filesystem access on web). */
+  downloadWav: () => void;
+  /** Focuses the xterm terminal so keyboard input reaches the TUI. */
+  focus: () => void;
 }
 
 export interface ShellButton {
@@ -20,8 +26,14 @@ export interface ShellButton {
   run: (client: ShellClient) => void | Promise<void>;
 }
 
+/** Lets the status poll keep the Play/Stop and Stepthrough labels in sync. */
+export interface ShellController {
+  setStepthrough(active: boolean): void;
+  setPlaying(active: boolean): void;
+}
+
 /** Triggers a browser download for a URL or Blob. */
-function downloadBlob(blob: Blob, filename: string): void {
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -31,89 +43,45 @@ function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-let muted = false;
+let stepthroughActive = false;
+let playingActive = false;
 
 export const SHELL_BUTTONS: ShellButton[] = [
   {
     id: "toggle",
-    label: "▶ / ■",
+    label: "Play",
     title: "Play or stop",
-    run: ({ command }) => command("/toggle"),
-  },
-  {
-    id: "stop",
-    label: "Stop",
-    title: "Stop playback",
-    run: ({ command }) => command("/stop"),
-  },
-  {
-    id: "open",
-    label: "Open",
-    title: "Open a .sptproj project",
-    run: async ({ command }) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".sptproj,.lampjson,application/json";
-      const file = await new Promise<File | null>((resolve) => {
-        input.onchange = () => resolve(input.files?.[0] ?? null);
-        input.click();
-      });
-      if (!file) return;
-      const response = await fetch(
-        `/api/upload?name=${encodeURIComponent(file.name)}`,
-        { method: "POST", body: file },
-      );
-      if (!response.ok) return;
-      const data = (await response.json()) as { path?: string };
-      if (data.path) command(`/open ${data.path}`);
+    run: () => {
+      /* handled specially so the label can follow playback state */
     },
   },
   {
-    id: "save",
-    label: "Save",
-    title: "Download the current project",
-    run: async ({ command }) => {
-      const response = await fetch("/api/project");
-      if (!response.ok) {
-        command("/save");
-        return;
-      }
-      downloadBlob(await response.blob(), "project.sptproj");
+    id: "stepthrough",
+    label: "Stepthrough",
+    title: "Start or exit the project stepthrough",
+    run: () => {
+      /* handled specially so the label can toggle and Esc can exit */
     },
   },
   {
-    id: "download",
-    label: "Download",
-    title: "Download the current project",
-    run: async ({ command }) => {
-      const response = await fetch("/api/project");
-      if (!response.ok) {
-        command("/save");
-        return;
-      }
-      downloadBlob(await response.blob(), "project.sptproj");
-    },
-  },
-  {
-    id: "restore",
-    label: "Restore",
-    title: "Restore the autosaved backup",
-    run: ({ command }) => command("/restore"),
-  },
-  {
-    id: "mute",
-    label: "Mute",
-    title: "Toggle master mute",
-    run: ({ command }) => {
-      muted = !muted;
-      command(`/mastervol ${muted ? 0 : 1}`);
-    },
+    id: "download-wav",
+    label: "Download WAV",
+    title: "Download the bundled demo WAV",
+    run: ({ downloadWav }) => downloadWav(),
   },
   {
     id: "help",
     label: "Help",
     title: "Show the command list",
     run: ({ command }) => command("/help"),
+  },
+  {
+    id: "view-source",
+    label: "View Source",
+    title: "Open the source repository in a new tab",
+    run: () => {
+      window.open(PROJECT_URL, "_blank", "noopener,noreferrer");
+    },
   },
   {
     id: "fullscreen",
@@ -127,9 +95,29 @@ export const SHELL_BUTTONS: ShellButton[] = [
 ];
 
 /** Renders the buttons and wires them to the shared command surface. */
-export function installShellButtons(client: ShellClient): void {
+export function installShellButtons(client: ShellClient): ShellController {
   const host = document.getElementById("shell-buttons");
-  if (!host) return;
+  const elements = new Map<string, HTMLButtonElement>();
+  if (!host) return { setStepthrough: () => {}, setPlaying: () => {} };
+
+  const setStepthrough = (active: boolean): void => {
+    stepthroughActive = active;
+    const element = elements.get("stepthrough");
+    if (element) {
+      element.textContent = active ? "Exit Stepthrough" : "Stepthrough";
+      element.dataset.active = active ? "true" : "false";
+    }
+  };
+
+  const setPlaying = (active: boolean): void => {
+    playingActive = active;
+    const element = elements.get("toggle");
+    if (element) {
+      element.textContent = active ? "Stop" : "Play";
+      element.dataset.active = active ? "true" : "false";
+    }
+  };
+
   for (const button of SHELL_BUTTONS) {
     const element = document.createElement("button");
     element.type = "button";
@@ -137,9 +125,33 @@ export function installShellButtons(client: ShellClient): void {
     element.title = button.title;
     element.dataset.command = button.id;
     element.addEventListener("click", () => {
-      void button.run(client);
-      document.getElementById("terminal")?.focus();
+      if (button.id === "toggle") {
+        // One button: Play when stopped, Stop while playing.
+        if (playingActive) {
+          client.command("/stop");
+          setPlaying(false);
+        } else {
+          client.command("/play");
+          setPlaying(true);
+        }
+      } else if (button.id === "stepthrough") {
+        if (stepthroughActive) {
+          // Stepthrough mode captures input, so send Esc to leave it.
+          client.send("\x1b");
+          setStepthrough(false);
+        } else {
+          client.command("/stepthrough");
+          setStepthrough(true);
+        }
+      } else {
+        void button.run(client);
+      }
+      client.focus();
     });
+    elements.set(button.id, element);
     host.append(element);
   }
+  setStepthrough(false);
+  setPlaying(false);
+  return { setStepthrough, setPlaying };
 }

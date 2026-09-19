@@ -106,7 +106,7 @@
         "detuneCents": 0,
         "strumSec": 0,
         "panSpread": 0.3,
-        "voiceCap": 8
+        "voiceCap": 12
       }
     },
     {
@@ -150,7 +150,7 @@
         "percussion": {
           "enabled": true,
           "noiseAmount": 51,
-          "noiseColor": "band-limited",
+          "noiseColor": "white",
           "noiseDecay": 0.07,
           "transientAmount": 75,
           "transientDecay": 0.0025,
@@ -249,24 +249,24 @@
         "modulation": [],
         "percussion": {
           "enabled": false,
-          "noiseAmount": 92,
-          "noiseColor": "band-limited",
-          "noiseDecay": 0.07,
-          "transientAmount": 55,
-          "transientDecay": 0.0025,
-          "transientFrequency": 8500,
-          "pitchStart": 0,
-          "pitchEnd": 0,
-          "pitchDecay": 0.05,
-          "ampDecay": 0.09,
-          "bodyAmount": 20,
-          "partialCount": 8,
-          "partialDecay": 0.05,
+          "noiseAmount": 8,
+          "noiseColor": "white",
+          "noiseDecay": 0.04,
+          "transientAmount": 60,
+          "transientDecay": 0.005,
+          "transientFrequency": 2000,
+          "pitchStart": 30,
+          "pitchEnd": -28,
+          "pitchDecay": 0.04,
+          "ampDecay": 0.3,
+          "bodyAmount": 100,
+          "partialCount": 12,
+          "partialDecay": 0.35,
           "digitalAmount": 0,
           "driveAmount": 0,
           "compressAmount": 0,
-          "stereoWidth": 50,
-          "lengthSeconds": 0.18
+          "stereoWidth": 20,
+          "lengthSeconds": 0.6
         },
         "microTextures": {
           "enabled": true,
@@ -295,7 +295,7 @@
       },
       "chord": {
         "enabled": false,
-        "preset": "minor7",
+        "preset": "major",
         "intervals": [
           0,
           4,
@@ -304,8 +304,8 @@
         "inversion": 0,
         "octaves": 1,
         "detuneCents": 0,
-        "strumSec": 0.025000000000000005,
-        "panSpread": 0.49999999999999994,
+        "strumSec": 0,
+        "panSpread": 0.3,
         "voiceCap": 12
       }
     },
@@ -349,44 +349,44 @@
         "modulation": [],
         "percussion": {
           "enabled": false,
-          "noiseAmount": 92,
-          "noiseColor": "band-limited",
-          "noiseDecay": 0.07,
-          "transientAmount": 55,
-          "transientDecay": 0.0025,
-          "transientFrequency": 8500,
-          "pitchStart": 0,
-          "pitchEnd": 0,
-          "pitchDecay": 0.05,
-          "ampDecay": 0.09,
-          "bodyAmount": 20,
-          "partialCount": 8,
-          "partialDecay": 0.05,
+          "noiseAmount": 8,
+          "noiseColor": "white",
+          "noiseDecay": 0.04,
+          "transientAmount": 60,
+          "transientDecay": 0.005,
+          "transientFrequency": 2000,
+          "pitchStart": 30,
+          "pitchEnd": -28,
+          "pitchDecay": 0.04,
+          "ampDecay": 0.3,
+          "bodyAmount": 100,
+          "partialCount": 12,
+          "partialDecay": 0.35,
           "digitalAmount": 0,
           "driveAmount": 0,
           "compressAmount": 0,
-          "stereoWidth": 50,
-          "lengthSeconds": 0.18
+          "stereoWidth": 20,
+          "lengthSeconds": 0.6
         },
         "microTextures": {
           "enabled": false,
-          "grainSeconds": 0.049999999999999996,
-          "densityHz": 10,
-          "jitter": 0.4500000000000001,
-          "reverseProbability": 0.6000000000000001,
+          "grainSeconds": 0.08,
+          "densityHz": 12,
+          "jitter": 0.25,
+          "reverseProbability": 0.2,
           "pitchScatter": 0,
           "panScatter": 0.4,
           "volumeVariance": 0.3,
-          "densityModRate": 0.20000000000000007,
-          "densityModDepth": 0.42000000000000004,
-          "grainChaos": 0.4000000000000001,
+          "densityModRate": 0.5,
+          "densityModDepth": 0,
+          "grainChaos": 0,
           "retriggerHz": 8,
-          "retriggerAmount": 0.4000000000000001,
+          "retriggerAmount": 0,
           "bitDepth": 16,
-          "downsample": 11,
-          "formantShift": 4,
-          "formantResonance": 0.20000000000000007,
-          "formantMix": 1
+          "downsample": 1,
+          "formantShift": 0,
+          "formantResonance": 0.4,
+          "formantMix": 0.5
         },
         "oneShot": true,
         "savedStartSec": 0,
@@ -24409,48 +24409,6 @@
             [
               [
                 0,
-                {
-                  "note": "Off",
-                  "instrument": null,
-                  "volume": null,
-                  "effects": [
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    },
-                    {
-                      "effect": null,
-                      "value": null
-                    }
-                  ]
-                }
-              ],
-              [
-                6,
                 {
                   "note": "Off",
                   "instrument": null,

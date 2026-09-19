@@ -158,6 +158,15 @@ export class ControlServer {
     }
     if (request.subscribe) {
       for (const event of request.subscribe) client.events.add(event);
+      // Send the current value of each newly subscribed event immediately, so a
+      // subscriber does not have to wait for the next change (and a transport
+      // that never changes still yields a snapshot).
+      const payloads = this.eventPayloads();
+      for (const event of request.subscribe) {
+        if (payloads[event] !== undefined) {
+          this.send(client, { type: "event", event, data: payloads[event] });
+        }
+      }
       this.send(client, {
         id: request.id,
         ok: true,
@@ -210,9 +219,10 @@ export class ControlServer {
     }
   }
 
-  private pollEvents(): void {
+  /** Current payload for every event key, used by the poller and subscribe. */
+  private eventPayloads(): Record<string, unknown> {
     const snapshot = this.session.snapshot();
-    const payloads: Record<string, unknown> = {
+    return {
       song: snapshot.song,
       transport: snapshot.transport,
       tracker: snapshot.tracker,
@@ -221,6 +231,11 @@ export class ControlServer {
       samples: snapshot.samples,
       meters: snapshot.meters,
     };
+  }
+
+  private pollEvents(): void {
+    const snapshot = this.session.snapshot();
+    const payloads = this.eventPayloads();
     for (const key of EVENT_KEYS) {
       const serialised = JSON.stringify(payloads[key]);
       if (this.last.get(key) === serialised) continue;

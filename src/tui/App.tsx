@@ -24,6 +24,7 @@ import {
 import { PatternsOverlay } from "./components/PatternsOverlay";
 import { StepPanel } from "./components/StepPanel";
 import { FilePicker } from "./components/FilePicker";
+import { WebBlockedModal } from "./components/WebBlockedModal";
 import { ProgressModal } from "./components/ProgressModal";
 import { SongInfoPanel } from "./components/SongInfoPanel";
 import { ExplainerPanel } from "./components/ExplainerPanel";
@@ -136,6 +137,7 @@ type Overlay =
   | "microtextures"
   | "wav"
   | "filepicker"
+  | "webblocked"
   | "fx";
 
 interface Props {
@@ -201,30 +203,63 @@ export function App({ session }: Props) {
   const suggestionsRef = useRef(suggestions);
   suggestionsRef.current = suggestions;
 
+  /** Snapshot the stepthrough will rebuild from, held until the modal paints. */
+  const stepBuildTarget = useRef<BuildTarget | null>(null);
   const startStepthrough = useCallback(() => {
     const final = session.snapshotTarget();
     if (!final) return;
     setHelpOpen(false);
-    // Building the recipe can take a moment on large projects, so paint a
-    // modal first and yield to the event loop (FEAT-144) rather than freezing.
+    // Show the "Generating…" modal first and let it paint; the actual recipe
+    // build runs from a passive effect (below) so it can never race ahead of the
+    // first paint (FEAT-144 / BUG-42).
+    stepBuildTarget.current = final;
     setStepBuilding(true);
-    setTimeout(() => {
-      const steps = buildSteps(final);
-      if (steps.length === 0) {
-        setStepBuilding(false);
-        session.setStatus("Nothing to rebuild — project is already empty");
-        return;
-      }
-      // Start from a blank project and build it up step by step.
-      setStepMode({ steps, base: blankTargetFrom(final), index: 0 });
-      setStepBuilding(false);
-      session.setStatus(`Stepthrough: ${steps.length} steps`);
-    }, 20);
   }, [session]);
+
+  // Runs after the modal has been committed and painted. `setTimeout(0)` defers
+  // to the next macrotask so a heavy `buildSteps` cannot block the paint.
+  useEffect(() => {
+    if (!stepBuilding) return;
+    const final = stepBuildTarget.current;
+    if (!final) {
+      setStepBuilding(false);
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // In a browser, wait one animation frame so the "Generating…" modal has
+    // definitely painted before the (potentially slow) recipe build starts. In
+    // Node (the TUI) requestAnimationFrame does not exist, so defer a tick.
+    const build = () => {
+      timer = setTimeout(() => {
+        const steps = buildSteps(final);
+        if (steps.length === 0) {
+          setStepBuilding(false);
+          session.setStatus("Nothing to rebuild — project is already empty");
+          return;
+        }
+        // Start from a blank project and build it up step by step.
+        setStepMode({ steps, base: blankTargetFrom(final), index: 0 });
+        session.setStepthrough(true);
+        setStepBuilding(false);
+        session.setStatus(`Stepthrough: ${steps.length} steps`);
+      }, 0);
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(build);
+      return () => {
+        if (timer !== null) clearTimeout(timer);
+      };
+    }
+    build();
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [stepBuilding, session]);
 
   const stopStepthrough = useCallback(() => {
     setStepMode(null);
     setStepBuilding(false);
+    session.setStepthrough(false);
     session.restoreStepAudio();
     session.setStatus("Stepthrough off");
   }, [session]);
@@ -328,11 +363,15 @@ export function App({ session }: Props) {
       // Guard destructive commands behind an unsaved-changes prompt (FEAT-93).
       const name = raw.trim().replace(/^\//, "").split(/\s+/)[0] ?? "";
       const def = registry.get(name);
-      if (def?.id === "recent") {
+      // Filesystem commands short-circuit to the web-blocked modal in the
+      // registry, so skip the local pickers/unsaved prompts on web (FEAT-163).
+      const webFsBlocked = !!def?.fs && session.getState().webMode;
+      if (!webFsBlocked && def?.id === "recent") {
         void openRecentPicker();
         return;
       }
       if (
+        !webFsBlocked &&
         def &&
         ["new", "open", "restore", "quit", "exit"].includes(def.id) &&
         session.getState().dirty &&
@@ -1289,27 +1328,32 @@ export function App({ session }: Props) {
                     title: "Choose output file",
                     hint: "↑↓ select · enter open dir/overwrite · ←/backspace up · n name · s save · x/esc cancel",
                   }
-                : activeOverlay === "filepicker"
+                : activeOverlay === "webblocked"
                   ? {
-                      title: "Open project",
-                      hint: "↑↓ select · enter/→ open · ←/backspace up · z open · x/esc cancel",
+                      title: "Not available in the web version",
+                      hint: "x/esc close · download the desktop version from the link",
                     }
-                  : activeOverlay === "samples"
+                  : activeOverlay === "filepicker"
                     ? {
-                        title: "Source Samples",
-                        hint: "↑↓ select · p preview · enter edit info · esc close",
+                        title: "Open project",
+                        hint: "↑↓ select · enter/→ open · ←/backspace up · z open · x/esc cancel",
                       }
-                    : activeOverlay === "instruments"
+                    : activeOverlay === "samples"
                       ? {
-                          title: "Instruments",
-                          hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
+                          title: "Source Samples",
+                          hint: "↑↓ select · p preview · enter edit info · esc close",
                         }
-                      : activeOverlay === "patterns"
+                      : activeOverlay === "instruments"
                         ? {
-                            title: "Pattern Manager",
-                            hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · del remove · e number · enter/z settings · g jump · esc close",
+                            title: "Instruments",
+                            hint: "↑↓ select · 1/2/3 sampler/spectral/percussion · enter sampler · m mute · p preview · esc close",
                           }
-                        : null;
+                        : activeOverlay === "patterns"
+                          ? {
+                              title: "Pattern Manager",
+                              hint: "↑↓ select · shift+↑↓/J/K move · a add · d duplicate · del remove · e number · enter/z settings · g jump · esc close",
+                            }
+                          : null;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -1533,6 +1577,11 @@ export function App({ session }: Props) {
               onExplain={setMenuExplainer}
               state={stepMode ? state : undefined}
               highlightRow={highlightMixerRow}
+            />
+          ) : activeOverlay === "webblocked" ? (
+            <WebBlockedModal
+              width={contentWidth}
+              onClose={() => setOverlay("none")}
             />
           ) : activeOverlay === "filepicker" ? (
             <FilePicker

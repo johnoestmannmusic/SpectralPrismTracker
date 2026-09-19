@@ -1,4 +1,5 @@
 import { getHost } from "@/host";
+import { PROJECT_URL } from "@/shared/links";
 import { ensureExtension, extensionOf } from "@/runtime/paths";
 import { contextActions, type ContextTarget } from "../contextActions";
 import {
@@ -43,8 +44,7 @@ function arg(args: ParsedArgs, name: string): string | undefined {
   return args.values[name];
 }
 
-export const PROJECT_URL =
-  "https://github.com/johnoestmannmusic/SpectralPrismTracker";
+export { PROJECT_URL };
 
 export const builtinCommands: CommandDef[] = [
   {
@@ -834,6 +834,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "importsample",
+    fs: true,
     name: "importsample",
     aliases: ["loadsample", "importaudio"],
     description: "Import a WAV/OGG/MP3 into a source-sample slot (0-5)",
@@ -1048,6 +1049,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "stepexport",
+    fs: true,
     name: "stepexport",
     aliases: ["steprecipe"],
     description: "Export the stepthrough rebuild recipe as JSON",
@@ -1123,6 +1125,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "open",
+    fs: true,
     name: "open",
     aliases: ["load"],
     description:
@@ -1154,6 +1157,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "save",
+    fs: true,
     name: "save",
     aliases: ["write"],
     description: "Save the project as .sptproj",
@@ -1172,6 +1176,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "save-as",
+    fs: true,
     name: "save-as",
     aliases: ["saveas", "writeas"],
     description: "Save the project to a new path (Save As)",
@@ -1188,6 +1193,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "recent",
+    fs: true,
     name: "recent",
     aliases: ["recentprojects"],
     description: "List recently opened projects",
@@ -1205,6 +1211,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "restore",
+    fs: true,
     name: "restore",
     description: "Reload the autosaved backup (default backup.lmpjson)",
     category: "file",
@@ -1219,6 +1226,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "default-open-override",
+    fs: true,
     name: "default-open-override",
     aliases: ["defaultopen", "startup"],
     description: "Set the startup file (path), or 'off' / 'last'",
@@ -1253,6 +1261,7 @@ export const builtinCommands: CommandDef[] = [
   },
   {
     id: "export",
+    fs: true,
     name: "export",
     description: "Export the song (wav | mid | zip | png)",
     category: "file",

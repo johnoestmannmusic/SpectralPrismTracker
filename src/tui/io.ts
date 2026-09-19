@@ -340,14 +340,18 @@ async function waitForFusion(
   const deadline = Date.now() + 30_000;
   const graceUntil = Date.now() + 1500;
   while (Date.now() < deadline) {
-    const notReady = relevant.filter((i) => !engine.fusionReady(i));
-    if (notReady.length === 0) return;
-    const rendering = notReady.filter((i) => engine.fusionRendering(i));
-    // Nothing is actively rendering and the grace period has passed: the
-    // render failed or was never scheduled, so do not wait on it.
-    if (rendering.length === 0 && Date.now() > graceUntil) return;
+    // Wait for renders that are actually in flight, even when an older clip is
+    // still ready (re-renders are non-destructive, so `fusionReady` can be true
+    // while a newer render is running).
+    const rendering = relevant.filter((i) => engine.fusionRendering(i));
+    if (rendering.length === 0) {
+      const notReady = relevant.filter((i) => !engine.fusionReady(i));
+      // Nothing is rendering and the grace period has passed: the render
+      // failed or was never scheduled, so do not wait on it.
+      if (notReady.length === 0 || Date.now() > graceUntil) return;
+    }
     onProgress?.(
-      `Rendering Spectral instruments (${relevant.length - notReady.length}/${relevant.length})`,
+      `Rendering Spectral instruments (${relevant.length - rendering.length}/${relevant.length})`,
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

@@ -389,7 +389,10 @@ export class SamplerEngine {
   }
 
   setSettingsVec(settings: SamplerSettings[]): void {
-    this.settings = settings;
+    // Copy the array: `updateSettings` replaces entries in place, and the
+    // caller (the Session) keeps its own settings array. Aliasing them let
+    // stepthrough previews overwrite the live project settings (BUG-40).
+    this.settings = [...settings];
   }
 
   /**
@@ -500,11 +503,17 @@ export class SamplerEngine {
     if (!s) return;
     this.ensureSize(instrument + 1);
     const generation = ++this.renderGeneration[instrument]!;
-    this.fused[instrument] = null;
-    this.fusedClips[instrument] = null;
-    this.fusedWaveforms[instrument] = [];
-    this.loops[instrument] = null;
-    if (!spectralRenderEnabled(s.spectral)) return;
+    if (!spectralRenderEnabled(s.spectral)) {
+      // Spectral is off, so `spectralActive` already makes `effectiveClip`
+      // fall back to the plain sample. Keep any fused clip as a cache instead
+      // of clearing it: the stepthrough previews temporarily set blank
+      // (spectral-off) settings, and clearing here left the live instruments
+      // silent after exiting (BUG-40).
+      return;
+    }
+    // Keep the previous fused clip audible while the new render runs; it is
+    // replaced on success. Nulling it here left instruments silent during every
+    // re-render (e.g. on stepthrough exit — BUG-40).
     this.rendering[instrument] = true;
     try {
       const source = s.sourceIndex;

@@ -251,6 +251,52 @@ describe("WAV export action + progress (FEAT-156)", () => {
   });
 });
 
+describe("web filesystem guard (FEAT-163)", () => {
+  it("blocks fs commands and opens the notice", async () => {
+    const registry = createRegistry();
+    session.setWebMode(true);
+    try {
+      let opened: string | undefined;
+      const result = await registry.execute("/open", {
+        session,
+        openOverlay: (name) => {
+          opened = name;
+        },
+      });
+      expect(result.ok).toBe(true);
+      expect(opened).toBe("webblocked");
+    } finally {
+      session.setWebMode(false);
+    }
+  });
+
+  it("still runs non-filesystem commands on web", async () => {
+    const registry = createRegistry();
+    session.setWebMode(true);
+    try {
+      const result = await registry.execute("/info", { session });
+      expect(result.ok).toBe(true);
+    } finally {
+      session.setWebMode(false);
+    }
+  });
+});
+
+describe("web shell buttons (FEAT-162)", () => {
+  it("keeps only the requested controls", async () => {
+    const { SHELL_BUTTONS } = await import("@/web/shell");
+    expect(SHELL_BUTTONS.map((button) => button.id)).toEqual([
+      "toggle",
+      "stepthrough",
+      "download-wav",
+      "help",
+      "view-source",
+      "fullscreen",
+    ]);
+    expect(SHELL_BUTTONS[0]?.label).toBe("Play");
+  });
+});
+
 describe("build stamp (FEAT-153)", () => {
   it("renders SPECTRALPRISM TRACKER vYYYYMMDD", () => {
     expect(versionStamp()).toMatch(/^SPECTRALPRISM TRACKER v\d{8}$/);

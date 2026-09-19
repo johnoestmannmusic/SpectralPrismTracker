@@ -185,6 +185,12 @@ export class CommandRegistry {
           : `Unknown command /${name}`,
       };
     }
+    // Web has no filesystem: surface a modal pointing at the desktop download
+    // instead of attempting the command (FEAT-163).
+    if (def.fs && ctx.session.getState().webMode) {
+      ctx.openOverlay?.("webblocked");
+      return { ok: true, message: "Not available in the web version" };
+    }
     const args = this.parse(def, tokens.slice(1));
     for (const arg of def.args ?? []) {
       if (arg.required && args.values[arg.name] === undefined) {
