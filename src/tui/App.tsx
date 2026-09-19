@@ -303,15 +303,22 @@ export function App({ session }: Props) {
   // The Explainer panel is chrome around the TUI (HC001); the pattern grid is
   // the product and must never be squeezed narrower than it needs. Ink does not
   // clip an overflowing row, so a pattern wider than its column overruns the
-  // panel and leaves the blank "gap rows" reported in the web build. Compute
-  // the grid's natural width and hide the panel when it would not fit.
-  const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
+  // panel and leaves the blank "gap rows" reported in the web build. Rather
+  // than hide the panel whenever it does not fit at its preferred width, shrink
+  // it down to a usable minimum so typical laptop terminals still show it.
   const trackerChannels = Math.min(state.song?.channels.length ?? 0, 4);
   const patternWidth = state.song
     ? patternGridWidth(state.song, trackerChannels, state.cyclesMode)
     : 0;
-  // The panel needs about 84 columns; it also may not crowd out the pattern.
-  const showExplainer = columns >= 84 && columns - panelWidth >= patternWidth;
+  const PANEL_MIN_WIDTH = 24;
+  const preferredPanelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
+  const spareForPanel = columns - patternWidth;
+  const panelWidth = Math.max(
+    PANEL_MIN_WIDTH,
+    Math.min(preferredPanelWidth, spareForPanel),
+  );
+  // Panel needs ~84 columns total and must leave the pattern its full width.
+  const showExplainer = columns >= 84 && spareForPanel >= PANEL_MIN_WIDTH;
   const showWidthAdvisory =
     !widthAdvisoryDismissed && (columns < 84 || columns < patternWidth);
 

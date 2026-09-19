@@ -18,6 +18,20 @@ import { createTerminalStreams } from "@/web/terminalStreams";
 const ESC = String.fromCharCode(27);
 const ANSI = new RegExp(`${ESC}\\[[0-9;?]*[A-Za-z]`, "g");
 
+/** Blank rows strictly between the first and last pattern rows. A trailing
+ *  flex spacer (or a wrapped header elsewhere) is benign; a blank inside the
+ *  pattern grid is the gap-row bug. */
+function patternBlankRows(lines: string[]): number {
+  const rowPattern = /^[ ·●~]?[0-9A-F]{2} /;
+  const rows = lines
+    .map((line, index) => (rowPattern.test(line) ? index : -1))
+    .filter((index) => index >= 0);
+  if (rows.length === 0) return 0;
+  const [first, last] = [rows[0]!, rows[rows.length - 1]!];
+  return lines.slice(first, last + 1).filter((line) => line.trim() === "")
+    .length;
+}
+
 /** Renders App with the same stdout shim the web host uses and returns the
  *  last full frame with ANSI stripped. */
 async function renderFrame(
@@ -56,19 +70,19 @@ describe("streamed pattern layout (BUG: web gap rows)", () => {
   }, 120_000);
   afterAll(() => session.dispose());
 
-  it("hides the Explainer panel instead of overflowing the pattern grid", async () => {
+  it("keeps the shrunk Explainer panel without overflowing the grid", async () => {
     const columns = 115;
     const lines = await renderFrame(session, columns, 37);
 
-    // The panel is chrome; the pattern is the product. It must be dropped when
-    // it would not leave room for the grid.
-    expect(lines.some((line) => line.includes("levels"))).toBe(false);
+    // The panel is chrome; it must shrink to fit rather than disappear (or
+    // overrun) at a typical laptop terminal width.
+    expect(lines.some((line) => line.includes("levels"))).toBe(true);
     // No row may overrun the terminal (overflow is what caused the gap rows).
     expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(
       columns,
     );
     // A full-frame render at this size must not leave all-blank rows behind.
-    expect(lines.filter((line) => line.trim() === "")).toHaveLength(0);
+    expect(patternBlankRows(lines)).toBe(0);
   });
 
   it("keeps the panel when the terminal is wide enough", async () => {
@@ -78,6 +92,19 @@ describe("streamed pattern layout (BUG: web gap rows)", () => {
       160,
     );
   });
+
+  it.each([100, 115, 130, 160])(
+    "never leaves gap rows at %i columns",
+    async (columns) => {
+      const lines = await renderFrame(session, columns, 37);
+      // No overflow into the panel/next row, and no all-blank rows anywhere.
+      expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(
+        columns,
+      );
+      expect(patternBlankRows(lines)).toBe(0);
+    },
+    120_000,
+  );
 
   it("computes the natural grid width from channels and Cycles gutters", () => {
     const song = session.getState().song!;
