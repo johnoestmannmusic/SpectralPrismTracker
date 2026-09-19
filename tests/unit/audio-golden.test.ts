@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyMasterFxOffline } from "@/audio/offline";
-import { defaultMasterFx } from "@/core/masterFx";
-import { audioClip } from "@/core/dsp";
+import { defaultMasterFx, masterFxFromJson } from "@/core/masterFx";
+import { audioClip, downsampleClip } from "@/core/dsp";
 import { installWebAudioGlobals } from "@/runtime/audio";
 
 /**
@@ -87,5 +87,50 @@ describe("offline master FX render (golden PCM)", () => {
     const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
     expect(a.hash).toBe(golden.hash);
     expect(a.frames).toBe(golden.frames);
+  }, 30_000);
+});
+
+describe("master FX downsample (GBA)", () => {
+  it("defaults to off and round-trips through project JSON", () => {
+    expect(defaultMasterFx().downsample).toEqual({
+      enabled: false,
+      rateHz: 11_025,
+    });
+    expect(
+      masterFxFromJson({ downsample: { enabled: true, rateHz: 9000 } })
+        .downsample,
+    ).toEqual({ enabled: true, rateHz: 9000 });
+  });
+
+  it("holds samples at the target rate and is a no-op above it", () => {
+    const data = new Float32Array(64);
+    for (let i = 0; i < data.length; i++) data[i] = i % 2 ? -1 : 1;
+    const clip = audioClip([data], 44_100);
+    // 11025/44100 = 1/4, so the alternating wave becomes runs of four.
+    const held = downsampleClip(clip, 11_025).channels[0]!;
+    expect(new Set(held.slice(0, 4)).size).toBe(1);
+    expect(new Set(held.slice(4, 8)).size).toBe(1);
+    let flips = 0;
+    for (let i = 1; i < held.length; i++)
+      if (Math.sign(held[i]!) !== Math.sign(held[i - 1]!)) flips++;
+    expect(flips).toBeLessThan(20);
+    expect(downsampleClip(clip, 44_100)).toBe(clip);
+  });
+
+  it("applies at the end of the offline render when enabled", async () => {
+    installWebAudioGlobals();
+    const base = defaultMasterFx();
+    const settings = {
+      ...base,
+      delay: { ...base.delay, enabled: false },
+      reverb: { ...base.reverb, enabled: false },
+      downsample: { enabled: true, rateHz: 4_410 },
+    };
+    const out = await applyMasterFxOffline(fixtureClip(), settings);
+    const data = out.channels[0]!;
+    let changes = 0;
+    for (let i = 1; i < data.length; i++)
+      if (data[i] !== data[i - 1]) changes++;
+    expect(changes).toBeLessThan(data.length / 5);
   }, 30_000);
 });

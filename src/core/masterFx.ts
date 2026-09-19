@@ -1,4 +1,5 @@
-/** Master output effects: one delay (PS1-style echo) and one reverb. */
+/** Master output effects: one delay (PS1-style echo), one reverb, and an
+ * end-of-chain sample-rate downsample (GBA-style lo-fi). */
 
 export interface DelayFxSettings {
   enabled: boolean;
@@ -20,10 +21,21 @@ export interface ReverbFxSettings {
   mix: number;
 }
 
+export interface DownsampleFxSettings {
+  enabled: boolean;
+  /** Target sample rate in Hz. Lower = crunchier (GBA is roughly 8–11 kHz). */
+  rateHz: number;
+}
+
 export interface MasterFxSettings {
   delay: DelayFxSettings;
   reverb: ReverbFxSettings;
+  /** Sample-and-hold decimation applied as the very last stage. */
+  downsample: DownsampleFxSettings;
 }
+
+/** GBA-ish default target; disabled until switched on. */
+export const DEFAULT_DOWNSAMPLE_HZ = 11_025;
 
 export function defaultMasterFx(): MasterFxSettings {
   return {
@@ -35,6 +47,7 @@ export function defaultMasterFx(): MasterFxSettings {
       mix: 0.35,
     },
     reverb: { enabled: false, decaySec: 2.0, mix: 0.25 },
+    downsample: { enabled: false, rateHz: DEFAULT_DOWNSAMPLE_HZ },
   };
 }
 
@@ -49,6 +62,7 @@ export function ps1EchoPreset(): MasterFxSettings {
       mix: 0.4,
     },
     reverb: { enabled: false, decaySec: 2.0, mix: 0.25 },
+    downsample: { enabled: false, rateHz: DEFAULT_DOWNSAMPLE_HZ },
   };
 }
 
@@ -58,6 +72,7 @@ export function masterFxFromJson(value: unknown): MasterFxSettings {
   const obj = value as Record<string, unknown>;
   const delayRaw = (obj.delay ?? {}) as Record<string, unknown>;
   const reverbRaw = (obj.reverb ?? {}) as Record<string, unknown>;
+  const downsampleRaw = (obj.downsample ?? {}) as Record<string, unknown>;
   const num = (o: Record<string, unknown>, k: string, fallback: number) =>
     typeof o[k] === "number" ? (o[k] as number) : fallback;
   const bool = (o: Record<string, unknown>, k: string, fallback: boolean) =>
@@ -74,6 +89,10 @@ export function masterFxFromJson(value: unknown): MasterFxSettings {
       enabled: bool(reverbRaw, "enabled", d.reverb.enabled),
       decaySec: num(reverbRaw, "decaySec", d.reverb.decaySec),
       mix: num(reverbRaw, "mix", d.reverb.mix),
+    },
+    downsample: {
+      enabled: bool(downsampleRaw, "enabled", d.downsample.enabled),
+      rateHz: Math.max(1000, num(downsampleRaw, "rateHz", d.downsample.rateHz)),
     },
   };
 }

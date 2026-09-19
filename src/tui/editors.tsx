@@ -1195,10 +1195,13 @@ export function masterFxGroups(
   const fx = fxOverride ?? session.getState().masterFx;
   const delay = fx.delay;
   const reverb = fx.reverb;
+  const downsample = fx.downsample;
   const setDelay = (patch: Partial<typeof delay>) =>
     session.patchMasterFx({ delay: { ...delay, ...patch } });
   const setReverb = (patch: Partial<typeof reverb>) =>
     session.patchMasterFx({ reverb: { ...reverb, ...patch } });
+  const setDownsample = (patch: Partial<typeof downsample>) =>
+    session.patchMasterFx({ downsample: { ...downsample, ...patch } });
 
   return [
     {
@@ -1234,6 +1237,28 @@ export function masterFxGroups(
           { min: 0.1, max: 8, step: 0.1, unit: "s" },
         ),
         unit01("Mix", reverb.mix, (v) => setReverb({ mix: v as number })),
+      ],
+    },
+    {
+      title: "Downsample",
+      params: [
+        bool("Enabled", downsample.enabled, (v) =>
+          setDownsample({ enabled: !!v }),
+        ),
+        num(
+          "Rate",
+          downsample.rateHz,
+          (v) => setDownsample({ rateHz: v as number }),
+          {
+            min: 4000,
+            max: 24000,
+            step: 100,
+            integer: true,
+            unit: " Hz",
+            explain:
+              "Very last stage: sample-and-hold decimation for a GBA-ish crunch. 8000–11025 Hz is the classic range; lower is grittier. Off by default.",
+          },
+        ),
       ],
     },
     ...channelPhasingGroups(session),

@@ -95,9 +95,12 @@ export class WebAudioBackend implements AudioBackend {
     const masterAnalyser = ctx.createAnalyser();
     masterAnalyser.fftSize = 512;
     master.gain.value = this.masterVolume;
-    // Master FX bus: dry + delay + reverb sum into the analyser/destination.
-    // Shares the exact graph used for offline WAV export.
-    const fx = createMasterFxGraph(ctx, this.masterFx);
+    // Master FX bus: dry + delay + reverb + end-of-chain downsample sum into
+    // the analyser/destination. Offline export applies the same downsample as a
+    // deterministic buffer pass instead (see offline.ts).
+    const fx = createMasterFxGraph(ctx, this.masterFx, {
+      realtimeDownsample: true,
+    });
     master.connect(fx.input);
     fx.output.connect(masterAnalyser);
     masterAnalyser.connect(ctx.destination);

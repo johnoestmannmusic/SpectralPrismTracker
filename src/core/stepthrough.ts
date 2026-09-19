@@ -115,7 +115,7 @@ export type StepAction =
   | { kind: "masterVolume"; value: number }
   | {
       kind: "masterFx";
-      target: "delay" | "reverb";
+      target: "delay" | "reverb" | "downsample";
       field: string;
       value: number | boolean;
     }
@@ -991,7 +991,10 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
 
   // ---- 6. Master FX --------------------------------------------------------
   const fxDefaults = defaultMasterFx();
-  const FX_LABELS: Record<"delay" | "reverb", Record<string, string>> = {
+  const FX_LABELS: Record<
+    "delay" | "reverb" | "downsample",
+    Record<string, string>
+  > = {
     delay: {
       enabled: "Enabled",
       timeSec: "Time",
@@ -1000,11 +1003,17 @@ export function buildSteps(target: BuildTarget): BuildStep[] {
       mix: "Mix",
     },
     reverb: { enabled: "Enabled", decaySec: "Decay", mix: "Mix" },
+    downsample: { enabled: "Enabled", rateHz: "Rate" },
   };
-  (["delay", "reverb"] as const).forEach((targetName) => {
+  (["delay", "reverb", "downsample"] as const).forEach((targetName) => {
     const fx = target.masterFx[targetName];
     const base = fxDefaults[targetName];
-    const group = targetName === "delay" ? "Delay" : "Reverb";
+    const group =
+      targetName === "delay"
+        ? "Delay"
+        : targetName === "reverb"
+          ? "Reverb"
+          : "Downsample";
     if (fx.enabled !== base.enabled) {
       push({
         id: `fx.${targetName}.enabled`,

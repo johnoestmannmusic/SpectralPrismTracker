@@ -112,6 +112,30 @@ export function MixerOverlay({
       }),
     getEnabled: () => masterFx.reverb.enabled,
   });
+  rows.push({
+    label: `DOWNSAMPLE${masterFx.downsample.enabled ? "" : " (off)"}`,
+    group: "downsample",
+    explain:
+      "End-of-chain sample-rate reduction (GBA crunch). ←→ sets the target Hz; m toggles it.",
+    get: () => masterFx.downsample.rateHz,
+    set: (value) =>
+      session.setMasterFx({
+        ...masterFx,
+        downsample: { ...masterFx.downsample, rateHz: Math.round(value) },
+      }),
+    toggle: () =>
+      session.setMasterFx({
+        ...masterFx,
+        downsample: {
+          ...masterFx.downsample,
+          enabled: !masterFx.downsample.enabled,
+        },
+      }),
+    getEnabled: () => masterFx.downsample.enabled,
+    step: 100,
+    noBar: true,
+    format: (value) => `${Math.round(value)}Hz`,
+  });
 
   const selected = Math.min(index, rows.length - 1);
   const meters = session.meterLevels();

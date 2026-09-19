@@ -77,18 +77,20 @@ test("renders aligned terminal rows with the version header", async ({
   const text = await screenText(page);
   const lines = text.split("\n");
   expect(lines[0]).toContain("SPECTRALPRISM TRACKER v");
-  // Every tracker body line must place its `│` separators in the same columns,
-  // i.e. no row drifted by a partial cell (FEAT-154).
-  const separatorColumns = lines
-    .filter((line) => line.includes("│"))
-    .map((line) =>
-      [...line]
+  // Every tracker body row must place its channel separators in the same
+  // columns, i.e. no row drifted by a partial cell (FEAT-154). Use the first
+  // three `│` so the Explainer panel's border columns don't interfere.
+  const trackerSeparators = lines
+    .map((line) => {
+      const positions = [...line]
         .map((char, index) => (char === "│" ? index : -1))
         .filter((index) => index >= 0)
-        .join(","),
-    );
-  expect(separatorColumns.length).toBeGreaterThan(2);
-  expect(new Set(separatorColumns).size).toBe(1);
+        .slice(0, 3);
+      return positions.length === 3 ? positions.join(",") : null;
+    })
+    .filter((value): value is string => value !== null);
+  expect(trackerSeparators.length).toBeGreaterThan(2);
+  expect(new Set(trackerSeparators).size).toBe(1);
 });
 
 test("reflows on resize", async ({ page }) => {

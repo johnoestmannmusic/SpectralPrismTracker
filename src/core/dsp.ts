@@ -21,6 +21,27 @@ export function clipLen(clip: AudioClip): number {
   return clip.channels[0]?.length ?? 0;
 }
 
+/**
+ * Sample-and-hold sample-rate reduction (GBA-style decimation). Deterministic
+ * and applied as the very last master stage; `rateHz >= sampleRate` is a no-op.
+ * The live ScriptProcessor uses the same phase-accumulator algorithm.
+ */
+export function downsampleClip(clip: AudioClip, rateHz: number): AudioClip {
+  const inputRate = clip.sampleRate;
+  if (!(rateHz > 0) || rateHz >= inputRate || clipIsEmpty(clip)) return clip;
+  const ratio = rateHz / inputRate; // < 1
+  const channels = clip.channels.map((data) => {
+    const out = new Float32Array(data.length);
+    const last = data.length - 1;
+    for (let i = 0; i < data.length; i++) {
+      const source = Math.min(Math.floor(i * ratio), last);
+      out[i] = data[source] ?? 0;
+    }
+    return out;
+  });
+  return audioClip(channels, inputRate);
+}
+
 export function clipIsEmpty(clip: AudioClip): boolean {
   return (
     clipLen(clip) === 0 || clip.channels.length === 0 || clip.sampleRate === 0

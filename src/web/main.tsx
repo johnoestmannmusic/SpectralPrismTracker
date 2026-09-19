@@ -15,7 +15,10 @@ import { installShellButtons, type ShellClient } from "./shell";
 
 function terminalOptions() {
   return {
-    convertEol: false,
+    // Ink emits full frames as lines joined by `\n` and relies on the terminal
+    // doing a carriage return (a real TTY's ONLCR). xterm.js only does that
+    // with convertEol, so without it every streamed row drifts right (FEAT-154).
+    convertEol: true,
     cursorBlink: true,
     fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
     fontSize: 15,

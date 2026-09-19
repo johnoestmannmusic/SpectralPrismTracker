@@ -1,5 +1,5 @@
 import type { AudioClip } from "@/core/dsp";
-import { clipLen } from "@/core/dsp";
+import { clipLen, downsampleClip } from "@/core/dsp";
 import type { MasterFxSettings } from "@/core/masterFx";
 import { createMasterFxGraph } from "./masterFxGraph";
 
@@ -46,9 +46,16 @@ export async function applyMasterFxOffline(
   onProgress?: (fraction: number) => void,
 ): Promise<AudioClip> {
   const frames = clipLen(clip);
-  if (frames === 0 || (!settings.delay.enabled && !settings.reverb.enabled)) {
+  if (frames === 0) {
     onProgress?.(1);
     return clip;
+  }
+  if (!settings.delay.enabled && !settings.reverb.enabled) {
+    // No bus FX, but the end-of-chain downsample may still apply.
+    onProgress?.(1);
+    return settings.downsample.enabled
+      ? downsampleClip(clip, settings.downsample.rateHz)
+      : clip;
   }
 
   const rate = clip.sampleRate;
@@ -110,5 +117,9 @@ export async function applyMasterFxOffline(
   for (let c = 0; c < rendered.numberOfChannels; c++) {
     channels.push(new Float32Array(rendered.getChannelData(c)));
   }
-  return { channels, sampleRate: rendered.sampleRate };
+  // End of the chain: deterministic sample-rate reduction for export.
+  const result = { channels, sampleRate: rendered.sampleRate };
+  return settings.downsample.enabled
+    ? downsampleClip(result, settings.downsample.rateHz)
+    : result;
 }
