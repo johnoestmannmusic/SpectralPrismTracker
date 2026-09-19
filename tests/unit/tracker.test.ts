@@ -16,6 +16,7 @@ import {
   recordLastValue,
   reassignInstrument,
   remapInstrumentsAfterDelete,
+  remapInstrumentsAfterInsert,
   removePatternAt,
   removePatternInChannel,
   selectionRect,
@@ -167,6 +168,25 @@ describe("tracker helpers", () => {
     )![1];
     expect(rows[0]!.instrument).toBe(3); // 4 shifts down to 3
     expect(rows[1]!.instrument).toBe(2); // 3 shifts down to 2
+  });
+
+  it("remaps INS cells when an instrument is inserted", () => {
+    const song = fixture();
+    const patternIndex = song.channels[0]!.orderList[0]!;
+    const pattern = song.channels[0]!.patterns.get(patternIndex)!;
+    // References below the insertion point stay; that slot and above shift up.
+    pattern.rows[0]!.instrument = 0;
+    pattern.rows[1]!.instrument = 1;
+    pattern.rows[2]!.instrument = 3;
+
+    const snap = patternSnapshot(song);
+    remapInstrumentsAfterInsert(snap, 2);
+    const rows = snap.channels[0]!.patterns.find(
+      ([index]) => index === patternIndex,
+    )![1];
+    expect(rows[0]!.instrument).toBe(0);
+    expect(rows[1]!.instrument).toBe(1);
+    expect(rows[2]!.instrument).toBe(4); // shifted up from 3
   });
 
   it("inserts, removes and clears patterns in a snapshot", () => {

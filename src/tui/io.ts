@@ -455,12 +455,20 @@ export async function exportWav(
   const keepFrames = countLimited
     ? Math.min(clipLen(wet), Math.round(effectiveLength * wet.sampleRate))
     : clipLen(arranged);
-  const trimmed =
-    countLimited || params.fadeOutMs > 0 ? clipSlice(wet, keepFrames) : wet;
+  // Always trim the master-FX render back to the intended song length. Live
+  // playback loops continuously, so the delay/reverb tail that
+  // `applyMasterFxOffline` captures must not extend the file past the song
+  // (Peak Normalize then made that tail audible, so exports "seemed longer"
+  // than the TUI). A requested fade-out is applied inside `arranged` below.
+  const trimmed = clipSlice(wet, keepFrames);
 
   report(0.82, "Applying envelope");
   await paint();
-  const final = applyExportEnvelope(trimmed, params);
+  // When no fade-out is requested, still apply a few ms of de-click fade: the
+  // reverb/delay tail that used to mask the cut is now trimmed away.
+  const envelopeParams =
+    params.fadeOutMs > 0 ? params : { ...params, fadeOutMs: 5 };
+  const final = applyExportEnvelope(trimmed, envelopeParams);
 
   report(0.88, "Encoding WAV");
   await paint();

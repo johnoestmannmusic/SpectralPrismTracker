@@ -313,6 +313,23 @@ describe("tracker block operations", () => {
     session.undo();
   });
 
+  it("keeps pattern INS references aligned when duplicating an instrument", () => {
+    const song = session.song!;
+    expect(song.instruments.length).toBeGreaterThanOrEqual(2);
+    const channel = song.channels[0]!;
+    const pattern = channel.patterns.get(channel.orderList[0]!)!;
+    // 0 stays on the source; 1 sits above the clone and must shift to 2.
+    pattern.rows[0]!.instrument = 0;
+    pattern.rows[1]!.instrument = 1;
+
+    const index = session.duplicateInstrument(0);
+    expect(index).toBe(1);
+    const after = channel.patterns.get(channel.orderList[0]!)!;
+    expect(after.rows[0]!.instrument).toBe(0);
+    expect(after.rows[1]!.instrument).toBe(2);
+    session.undo();
+  });
+
   it("sets an FX code from the picker", () => {
     session.setCursor({ channel: 0, order: 0, row: 0, column: 3 });
     expect(session.setEffectCode(0x09)).toBe(true);

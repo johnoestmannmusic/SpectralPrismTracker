@@ -67,6 +67,7 @@ import {
   readValue,
   recordLastValue,
   remapInstrumentsAfterDelete,
+  remapInstrumentsAfterInsert,
   removePatternAt as removePatternAtSnapshot,
   removePatternInChannel as removePatternInChannelSnapshot,
   selectionRect,
@@ -2125,6 +2126,12 @@ export class Session {
     song.instruments.forEach((instrument, i) => {
       instrument.colorRgb = instrumentColor(i);
     });
+    // Inserting the clone at `insertAt` shifts every instrument from there up
+    // by one, so pattern INS cells must follow them or the copy would silently
+    // steal the notes of the instrument above it.
+    const snapshot = patternSnapshot(song);
+    remapInstrumentsAfterInsert(snapshot, insertAt);
+    applySnapshot(song, snapshot);
     const project = this.state.project;
     let nextProject = project;
     if (project) {

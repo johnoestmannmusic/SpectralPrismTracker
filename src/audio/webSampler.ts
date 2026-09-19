@@ -106,11 +106,18 @@ export class Voice {
     const param = this.gain.gain as AudioParam & {
       cancelAndHoldAtTime?: (cancelTime: number) => void;
     };
+    // Snapshot the in-flight envelope at `t` first. node-web-audio-api
+    // mis-schedules a ramp added straight after a hold (same issue `release`
+    // works around), which retroactively dropped the gain *before* the cut
+    // instead of holding it — so a choked voice faded early and the TUI did
+    // not match the (correct) hard cut in the WAV export.
+    const held = this.levelAt(t);
     if (typeof param.cancelAndHoldAtTime === "function") {
       param.cancelAndHoldAtTime(t);
+      param.linearRampToValueAtTime(held, t);
     } else {
       param.cancelScheduledValues(t);
-      param.setValueAtTime(0, t);
+      param.setValueAtTime(held, t);
     }
     param.linearRampToValueAtTime(0, t + 0.003);
     try {
@@ -206,6 +213,7 @@ export function buildVoice(
   reverse = false,
   detuneCents = 0,
   hold = false,
+  panRandom = 0,
 ): Voice {
   const source = ctx.createBufferSource();
   const gain = ctx.createGain();
@@ -241,12 +249,11 @@ export function buildVoice(
   gain.gain.linearRampToValueAtTime(level * sustain, when + attack + decay);
 
   const panCentre = Math.min(Math.max(settings.pan, -1), 1);
-  const panWidth = Math.min(Math.max(settings.panRandomRange, 0), 1);
   pan.pan.value = Math.min(
     Math.max(
       panCentre +
         Math.min(Math.max(panOffset, -1), 1) +
-        (Math.random() * 2 - 1) * panWidth,
+        Math.min(Math.max(panRandom, -1), 1),
       -1,
     ),
     1,
@@ -739,6 +746,7 @@ export class SamplerEngine {
         event.reverse ?? false,
         event.detuneCents ?? 0,
         event.hold ?? false,
+        event.panRandom ?? 0,
       );
       this.voices.push(voice);
     } catch (e) {

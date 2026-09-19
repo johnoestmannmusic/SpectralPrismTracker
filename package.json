@@ -12,6 +12,8 @@
     "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
     "build:tui": "node scripts/build-tui.mjs",
     "build:web": "node scripts/build-web.mjs",
+    "build:dist": "node scripts/build-dist.mjs",
+    "build:dist:archive": "node scripts/build-dist.mjs --archive",
     "dev:tui": "node scripts/build-tui.mjs && node dist/tui/main.mjs",
     "start:tui": "node dist/tui/main.mjs",
     "serve:web": "node dist/web-host/server.mjs",

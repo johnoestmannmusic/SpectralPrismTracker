@@ -644,6 +644,27 @@ export function reassignInstrument(
   }
 }
 
+/**
+ * Re-targets every INS cell after a new instrument is inserted at
+ * `insertedIndex`: references to that slot and above shift up by one so they
+ * keep pointing at the same instrument. The instrument the copy was cloned
+ * from sits below the insertion point, so its references are left untouched.
+ */
+export function remapInstrumentsAfterInsert(
+  snapshot: PatternSnapshot,
+  insertedIndex: number,
+): void {
+  for (const channel of snapshot.channels) {
+    for (const [, rows] of channel.patterns) {
+      for (const cell of rows) {
+        if (cell.instrument !== null && cell.instrument >= insertedIndex) {
+          cell.instrument += 1;
+        }
+      }
+    }
+  }
+}
+
 export function clearPatternsSnapshot(
   snapshot: PatternSnapshot,
   patternLength: number,

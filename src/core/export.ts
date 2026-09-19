@@ -317,7 +317,6 @@ export function finalizeExport(
 // ---- Offline sampler mixdown (ports lantern-core::export::render_sampler_mix) ----
 
 const OUTPUT_RATE = 44_100;
-const RENDER_PRNG_SEED = 0x4c414e5445524e01n;
 
 interface RateRamp {
   start: number;
@@ -417,17 +416,6 @@ function cutVoice(voice: RenderVoice, time: number): void {
   voice.stolen = true;
 }
 
-function makePrng(seed: bigint): () => number {
-  let state = seed & 0xffffffffffffffffn;
-  return () => {
-    state ^= (state << 13n) & 0xffffffffffffffffn;
-    state ^= state >> 7n;
-    state ^= (state << 17n) & 0xffffffffffffffffn;
-    state &= 0xffffffffffffffffn;
-    return Number((state >> 32n) & 0xffffffffn);
-  };
-}
-
 /**
  * Renders the current sampler sequence offline to a stereo AudioClip,
  * applying per-instrument trim/loop/ADSR/transpose/pan, stage release and
@@ -452,7 +440,6 @@ export function renderSamplerMix(
     maxSeconds > 0 ? Math.min(fullDuration, maxSeconds) : fullDuration;
   const voices: RenderVoice[] = [];
   const lastByChannel: Array<RenderVoice | null> = [null, null, null, null];
-  const random = makePrng(RENDER_PRNG_SEED);
 
   for (let row = 0; row < sequence.rows.length; row++) {
     const time = sequence.rowTimes[row] ?? 0;
@@ -532,11 +519,10 @@ export function renderSamplerMix(
       }
 
       const panCentre = clamp(setting.pan, -1, 1);
-      const panWidth = clamp(setting.panRandomRange, 0, 1);
       const pan = clamp(
         panCentre +
           clamp(event.panOffset ?? 0, -1, 1) +
-          ((random() / 0xffffffff) * 2 - 1) * panWidth,
+          clamp(event.panRandom ?? 0, -1, 1),
         -1,
         1,
       );
@@ -643,10 +629,22 @@ export function renderSamplerMix(
         left[frame] = left[frame]! + s * Math.cos(angle) * gain;
         right[frame] = right[frame]! + s * Math.sin(angle) * gain;
       } else {
-        left[frame] =
-          left[frame]! + sample(0) * (1 - Math.max(voice.pan, 0)) * gain;
-        right[frame] =
-          right[frame]! + sample(1) * (1 + Math.min(voice.pan, 0)) * gain;
+        // Match the live StereoPannerNode exactly. For a stereo input the
+        // panner folds opposite-channel content with equal-power gains rather
+        // than simply attenuating, which the old `L*(1-pan)` law did not.
+        const l = sample(0);
+        const r = sample(1);
+        const p = clamp(voice.pan, -1, 1);
+        const x = p <= 0 ? p + 1 : p;
+        const gainL = Math.cos((x * Math.PI) / 2);
+        const gainR = Math.sin((x * Math.PI) / 2);
+        if (p <= 0) {
+          left[frame] = left[frame]! + (l + r * gainL) * gain;
+          right[frame] = right[frame]! + r * gainR * gain;
+        } else {
+          left[frame] = left[frame]! + l * gainL * gain;
+          right[frame] = right[frame]! + (r + l * gainR) * gain;
+        }
       }
     }
   }

@@ -331,6 +331,12 @@ export type SamplerEvent =
       voiceGroup?: number;
       /** Stereo pan offset added to the instrument pan (-1..1). */
       panOffset?: number;
+      /**
+       * Deterministic random pan spread for this note (-1..1), baked at
+       * sequence-build time so live playback and WAV export place every voice
+       * identically (the live engine used to call Math.random() per voice).
+       */
+      panRandom?: number;
       /** Strum/roll delay in seconds before this voice starts. */
       delaySec?: number;
       /** Start position within the trimmed region, 0..1. */
@@ -363,6 +369,27 @@ export function rowRoll(globalRow: number, channel: number): number {
   x = (x ^ (x << 13)) >>> 0;
   x = (x ^ (x >>> 17)) >>> 0;
   x = (x ^ (x << 5)) >>> 0;
+  return x / 4294967296;
+}
+
+/**
+ * Deterministic 0..1 pan roll per (row, channel, voice) used for an
+ * instrument's `panRandomRange` spread. Both the live sampler and the offline
+ * export read the baked value from the event, so the stereo image is stable
+ * across playbacks and identical in the exported WAV.
+ */
+export function rowPanRoll(
+  globalRow: number,
+  channel: number,
+  voice: number,
+): number {
+  let x =
+    Math.imul(globalRow, 2654435761) +
+    Math.imul(channel + 1, 40503) +
+    Math.imul(voice + 1, 2246822519);
+  x = (x ^ (x >>> 15)) >>> 0;
+  x = Math.imul(x, 2246822519) >>> 0;
+  x = (x ^ (x >>> 13)) >>> 0;
   return x / 4294967296;
 }
 
@@ -452,12 +479,20 @@ export function sequenceFromSong(
                       (song.rowTimes[globalRow] ?? 0) +
                       (channel + 1) * 1.7,
                   );
+            // Deterministic pan spread, baked per voice so playback and export
+            // place the note in exactly the same stereo position.
+            const panWidth = Math.min(
+              Math.max(settings?.[instrument]?.panRandomRange ?? 0, 0),
+              1,
+            );
+            const randomPan = (voice: number): number =>
+              (rowPanRoll(globalRow, channel, voice) * 2 - 1) * panWidth;
             const base: Extract<SamplerEvent, { type: "note" }>[] = [];
             if (chord?.enabled) {
               // Expand the root note into its chord voices, sharing one group so
               // a note-off releases the whole chord together.
               const group = (globalRow % 65536) * 4 + channel;
-              for (const voice of chordVoices(chord)) {
+              chordVoices(chord).forEach((voice, voiceIndex) => {
                 base.push({
                   type: "note",
                   channel,
@@ -466,13 +501,14 @@ export function sequenceFromSong(
                   volume: level * voice.gain,
                   voiceGroup: group,
                   panOffset: voice.pan,
+                  panRandom: randomPan(voiceIndex),
                   delaySec: voice.delaySec,
                   offsetFraction,
                   reverse,
                   detuneCents,
                   hold,
                 });
-              }
+              });
             } else {
               base.push({
                 type: "note",
@@ -480,6 +516,7 @@ export function sequenceFromSong(
                 instrument,
                 rate,
                 volume: level,
+                panRandom: randomPan(0),
                 offsetFraction,
                 reverse,
                 detuneCents,

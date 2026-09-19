@@ -322,3 +322,45 @@ describe("Voice.release envelope", () => {
     expect(at(0.62)).toBeCloseTo(0, 2);
   });
 });
+
+describe("Voice.cut envelope (choke)", () => {
+  it("holds the envelope before the cut and silences after it", async () => {
+    installWebAudioGlobals();
+    const sr = 44_100;
+    const ctx = new OfflineAudioContext(2, sr, sr);
+    const buffer = ctx.createBuffer(1, sr, sr);
+    buffer.getChannelData(0).fill(1);
+
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.attack = 0.005;
+    settings.decay = 0.83;
+    settings.sustain = 0;
+    settings.looping = true;
+    settings.pan = -1; // full left, so channel 0 is the raw envelope
+
+    const voice = buildVoice(
+      ctx,
+      buffer,
+      settings,
+      0,
+      0,
+      1,
+      1,
+      0,
+      ctx.destination,
+    );
+    voice.cut(0.6);
+
+    const out = await ctx.startRendering();
+    const d = out.getChannelData(0);
+    const at = (t: number) => d[Math.floor(t * sr)]!;
+    // node-web-audio-api mis-schedules a ramp after cancelAndHoldAtTime; the
+    // choke cut must NOT retroactively drop the gain before the cut time.
+    expect(at(0.3)).toBeCloseTo(0.645, 2);
+    expect(at(0.5)).toBeCloseTo(0.404, 2);
+    // Hard cut: silenced within the ~3 ms de-click ramp.
+    expect(at(0.61)).toBeCloseTo(0, 2);
+    expect(at(0.62)).toBeCloseTo(0, 2);
+  });
+});

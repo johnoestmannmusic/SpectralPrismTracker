@@ -426,4 +426,48 @@ describe("offline sampler mixdown", () => {
     const released = Array.from(render(false).channels[0]!);
     expect(choked).not.toEqual(released);
   });
+
+  it("respects the Choke setting on a note-off", () => {
+    const clip = makeClip([new Array(44_100).fill(1)], 44_100);
+    const settings = defaultSamplerSettings();
+    settings.sourceIndex = 0;
+    settings.startSec = 0;
+    settings.endSec = 1;
+    settings.attack = 0.003;
+    settings.decay = 0;
+    settings.sustain = 1;
+    settings.release = 0.3;
+    const sequence = {
+      tuning: 440,
+      rowTimes: [0, 0.1, 1],
+      rows: [
+        [
+          {
+            type: "note" as const,
+            channel: 0,
+            instrument: 0,
+            rate: 1,
+            volume: 1,
+          },
+        ],
+        [{ type: "off" as const, channel: 0 }],
+        [],
+      ],
+    };
+    const render = (choke: boolean) =>
+      renderSamplerMix(
+        sequence,
+        [{ ...settings, choke }],
+        [clip],
+        [1, 1, 1, 1],
+        [false, false, false, false],
+        1,
+      ).channels[0]!;
+    const at = (choke: boolean, t: number) =>
+      Math.abs(render(choke)[Math.floor(t * 44_100)]!);
+    // Choke hard-cuts at the OFF; without it the voice releases over 0.3 s.
+    expect(at(true, 0.15)).toBeCloseTo(0, 3);
+    expect(at(false, 0.15)).toBeCloseTo(0.833 * 0.7071, 2);
+    expect(at(false, 0.5)).toBeCloseTo(0, 3);
+  });
 });

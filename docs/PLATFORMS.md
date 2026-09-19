@@ -32,6 +32,19 @@ new directory automatically. Covered by `tests/unit/config-paths.test.ts`.
 - **CI**: `.github/workflows/ci.yml` runs typecheck, unit tests, lint, format
   and both builds on `ubuntu-latest`, `macos-latest` and `windows-latest`.
 
+## Folder distribution (desktop)
+
+`npm run build:dist` (`scripts/build-dist.mjs`) assembles
+`dist/spectralprism-tracker/`: `dist/tui/*` plus the production dependency
+closure of the runtime externals (`ink`, `react`, `node-web-audio-api`) and
+`spt` / `spt.cmd` launchers. It is a **folder**, not a single-file binary —
+Node ≥ 22 must be on PATH, and the native audio module + `assets/` + WASM stay
+beside `main.mjs` because that is where the app resolves them. The whole
+`node-web-audio-api` package (all platform prebuilds) is copied, so one folder
+runs on macOS, Linux and Windows. `--archive` (or `npm run build:dist:archive`)
+also emits a `.tar.gz`. The build verifies every external resolves from inside
+the assembled folder and fails otherwise.
+
 ## Web host
 
 `npm run build:web` produces `dist/web` (static xterm client) and
