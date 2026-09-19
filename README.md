@@ -1,7 +1,10 @@
 # SpectralPrism Tracker
 
+<img width="2550" height="1420" alt="image" src="https://github.com/user-attachments/assets/82a8212f-aed7-4936-8cc9-230190765370" />
+
+
 A four-channel terminal-based music tracker, bespoke for my workflow. 
-It plays and edits sample-based instruments with an optional Spectral / Percussion / Chord / MicroTextures chain, a mixer with master delay, reverb and optional GBA-style downsampler.
+It plays and edits sample-based instruments with an optional Spectral / Percussion / Chord / MicroTextures chain, a mixer with master delay, reverb and optional GBA-style downsampler. A `/cycles` mode is available for de-synced channels, for polymetric fun!
 
 It ships as two front ends built from one code base:
 
