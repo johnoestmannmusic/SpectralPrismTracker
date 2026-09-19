@@ -42,15 +42,11 @@ Build and launch in one step:
 npm run dev:tui
 ```
 
-Or build once and start it separately:
+Or build into an executable bundle:
 
 ```bash
-npm run build:tui
-npm run start:tui
+npm run build:dist
 ```
-
-To get a global `spt` command, run `npm link` after building, then start it with
-`spt`.
 
 Once it is running, press `/` for the command palette, `?` for help, `Space` to
 play, and `/quit` (or `/exit`) to leave.
