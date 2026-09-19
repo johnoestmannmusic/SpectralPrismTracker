@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -174,10 +174,22 @@ async function main(): Promise<void> {
           response.writeHead(404).end("No bundled WAV");
           return;
         }
-        const bytes = await readFile(path.join(wavDir, files[0]!));
+        // If several WAVs are bundled, serve the most recently replaced one so
+        // editing a file in `assets/WAVExport` always wins over stale copies.
+        const candidates = await Promise.all(
+          files.map(async (name) => ({
+            name,
+            mtime: (await stat(path.join(wavDir, name))).mtimeMs,
+          })),
+        );
+        candidates.sort(
+          (a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name),
+        );
+        const chosen = candidates[0]!;
+        const bytes = await readFile(path.join(wavDir, chosen.name));
         response.writeHead(200, {
           "Content-Type": "audio/wav",
-          "Content-Disposition": `attachment; filename="${files[0]}"`,
+          "Content-Disposition": `attachment; filename="${chosen.name}"`,
         });
         response.end(bytes);
       } catch {

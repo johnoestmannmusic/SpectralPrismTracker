@@ -62,6 +62,7 @@ import {
 } from "./editors";
 import { useSession } from "./hooks";
 import { basename, dirname } from "@/runtime/paths";
+import { patternGridWidth } from "@/core/tracker";
 import type { Session, SessionState } from "./session";
 
 /** "N rows × M cols" for the current block selection, or null when none. */
@@ -196,8 +197,6 @@ export function App({ session }: Props) {
   } | null>(null);
   /** Tree-view picker for the WAV output path (FEAT-158). */
   const [outputPickerOpen, setOutputPickerOpen] = useState(false);
-  const showExplainer = columns >= 84;
-  const showWidthAdvisory = !showExplainer && !widthAdvisoryDismissed;
   const inputRef = useRef(input);
   inputRef.current = input;
   const suggestionsRef = useRef(suggestions);
@@ -300,6 +299,21 @@ export function App({ session }: Props) {
       },
     };
   }, [liveState, stepTarget, currentStep]);
+
+  // The Explainer panel is chrome around the TUI (HC001); the pattern grid is
+  // the product and must never be squeezed narrower than it needs. Ink does not
+  // clip an overflowing row, so a pattern wider than its column overruns the
+  // panel and leaves the blank "gap rows" reported in the web build. Compute
+  // the grid's natural width and hide the panel when it would not fit.
+  const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
+  const trackerChannels = Math.min(state.song?.channels.length ?? 0, 4);
+  const patternWidth = state.song
+    ? patternGridWidth(state.song, trackerChannels, state.cyclesMode)
+    : 0;
+  // The panel needs about 84 columns; it also may not crowd out the pattern.
+  const showExplainer = columns >= 84 && columns - panelWidth >= patternWidth;
+  const showWidthAdvisory =
+    !widthAdvisoryDismissed && (columns < 84 || columns < patternWidth);
 
   const ctx = useMemo<CommandContext>(
     () => ({
@@ -1181,7 +1195,6 @@ export function App({ session }: Props) {
   useInput(() => setWidthAdvisoryDismissed(true), {
     isActive: showWidthAdvisory,
   });
-  const panelWidth = columns >= 140 ? 48 : columns >= 110 ? 40 : 30;
   const contentHeight = viewportRows + 2;
   // The explainer reserves the bottom ~6 rows for the channel/master meters.
   const explainerHeight = Math.max(6, contentHeight - 6);
@@ -1380,9 +1393,9 @@ export function App({ session }: Props) {
                 Terminal is a bit narrow
               </Text>
               <Text wrap="wrap">
-                The Explainer panel needs about 84 columns and is hidden at{" "}
-                {columns}. Widen the window to bring it back — the tracker below
-                still works normally.
+                The pattern grid needs about {patternWidth} columns for this
+                song and the Explainer panel about 84. Widen the window to fit
+                the full tracker — nothing is hidden behind this notice.
               </Text>
               <Text dimColor>press any key to continue</Text>
             </Box>

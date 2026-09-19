@@ -120,6 +120,40 @@ export function flatColumnsForChannel(
   return columns;
 }
 
+/**
+ * Fixed cell width of one channel's edit columns, including the single-space
+ * separators between columns. Mirrors how PatternView lays out a row.
+ */
+export function channelGridWidth(song: SongModel, channel: number): number {
+  return flatColumnsForChannel(song, channel).reduce((sum, column, index) => {
+    const width = column.kind === "fx" ? 4 : column.kind === "note" ? 3 : 2;
+    return sum + width + (index > 0 ? 1 : 0);
+  }, 0);
+}
+
+/**
+ * Natural width of the pattern grid in the tracker, used to decide whether the
+ * right-hand Explainer panel still leaves room for the pattern.
+ *
+ * Tracker rows always show the row-number gutter once (4 cols). Cycles Mode
+ * gives every channel its own gutter, so it is wider by 4 per extra channel.
+ * Channels are joined by a 3-wide ` \u2502 ` separator.
+ */
+export function patternGridWidth(
+  song: SongModel,
+  channelCount: number,
+  cycles = false,
+): number {
+  const count = Math.max(0, Math.min(channelCount, song.channels.length));
+  let width = cycles ? 0 : 4;
+  for (let channel = 0; channel < count; channel++) {
+    if (channel > 0) width += 3;
+    if (cycles) width += 4;
+    width += channelGridWidth(song, channel);
+  }
+  return width;
+}
+
 export function columnIndex(
   song: SongModel,
   channel: number,

@@ -6,7 +6,11 @@ import {
   orderRowLength,
   patternRowLength,
 } from "@/core/layout";
-import { flatColumnsForChannel, globalColumnIndex } from "@/core/tracker";
+import {
+  channelGridWidth as channelWidth,
+  flatColumnsForChannel,
+  globalColumnIndex,
+} from "@/core/tracker";
 import {
   formatEffect,
   formatInstrument,
@@ -83,16 +87,6 @@ function segmentsFor(
     }
   });
   return segments;
-}
-
-function channelWidth(
-  song: NonNullable<SessionState["song"]>,
-  channel: number,
-): number {
-  return flatColumnsForChannel(song, channel).reduce((sum, column, index) => {
-    const width = column.kind === "fx" ? 4 : column.kind === "note" ? 3 : 2;
-    return sum + width + (index > 0 ? 1 : 0);
-  }, 0);
 }
 
 export function PatternView({

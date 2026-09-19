@@ -1,6 +1,6 @@
 import { build as viteBuild } from "vite";
 import { build as esbuild } from "esbuild";
-import { copyFile, cp, mkdir } from "node:fs/promises";
+import { copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -47,8 +47,18 @@ await esbuild({
   logLevel: "warning",
 });
 
-// 3. Bundled song/samples (skip the large optional mix WAV).
-await cp(path.join(projectRoot, "assets"), path.join(outDir, "assets"), {
+// 3. Bundled song/samples (skip the large optional mix WAV). `cp` merges, so a
+// sample removed from `assets/` would otherwise linger in `dist/` and still be
+// served (BUG: Download WAV kept serving the previous, replaced file). Clear
+// only the entries that come from `assets/` first: Vite's hashed client bundle
+// lives in the same `dist/web/assets/` folder and must survive.
+const assetsSrc = path.join(projectRoot, "assets");
+const assetsDest = path.join(outDir, "assets");
+await mkdir(assetsDest, { recursive: true });
+for (const entry of await readdir(assetsSrc)) {
+  await rm(path.join(assetsDest, entry), { recursive: true, force: true });
+}
+await cp(assetsSrc, assetsDest, {
   recursive: true,
   filter: (source) => !source.endsWith("flight_school_night_shift.wav"),
 });
