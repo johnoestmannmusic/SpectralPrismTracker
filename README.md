@@ -9,12 +9,6 @@ It plays and edits sample-based instruments with an optional Spectral / Percussi
 
 --
 
-It ships as two front ends built from one code base:
-
-- a **desktop TUI** (the main app), and
-
-Projects are `.sptproj` files.
-
 ## Requirements
 
 - [Node.js](https://nodejs.org/) **22 or newer** (includes `npm`)
