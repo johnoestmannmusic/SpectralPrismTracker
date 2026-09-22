@@ -20,19 +20,19 @@ import { fileURLToPath } from "node:url";
 export const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  ".hg",
-  ".svn",
-  "dist",
-  "build",
-  "out",
-  "coverage",
-  ".next",
-  ".nuxt",
-  ".cache",
-  "vendor",
-  "target",
+	"node_modules",
+	".git",
+	".hg",
+	".svn",
+	"dist",
+	"build",
+	"out",
+	"coverage",
+	".next",
+	".nuxt",
+	".cache",
+	"vendor",
+	"target",
 ]);
 
 const MAX_FILES = 50000;
@@ -40,12 +40,12 @@ const MAX_SCAN_BYTES = 2 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 120000;
 
 export function toPosix(path) {
-  return path.split("\\").join("/");
+	return path.split("\\").join("/");
 }
 
 /** Escape one literal character for use inside a regular expression source. */
 function escapeLiteral(ch) {
-  return "^$.*+?()[]{}|\\".includes(ch) ? "\\" + ch : ch;
+	return "^$.*+?()[]{}|\\".includes(ch) ? "\\" + ch : ch;
 }
 
 /**
@@ -56,242 +56,208 @@ function escapeLiteral(ch) {
  *   {a,b}   alternatives
  */
 export function globToRegExp(glob) {
-  const posix = toPosix(glob);
-  let source = "^";
-  for (let i = 0; i < posix.length; i += 1) {
-    const ch = posix[i];
-    if (ch === "*") {
-      if (posix[i + 1] === "*") {
-        i += 1;
-        if (posix[i + 1] === "/") {
-          i += 1;
-          source += "(?:.*/)?";
-        } else {
-          source += ".*";
-        }
-      } else {
-        source += "[^/]*";
-      }
-      continue;
-    }
-    if (ch === "?") {
-      source += "[^/]";
-      continue;
-    }
-    if (ch === "{") {
-      const end = posix.indexOf("}", i);
-      if (end > i) {
-        const alternatives = posix
-          .slice(i + 1, end)
-          .split(",")
-          .map((part) => part.split("").map(escapeLiteral).join(""));
-        source += "(?:" + alternatives.join("|") + ")";
-        i = end;
-        continue;
-      }
-    }
-    source += escapeLiteral(ch);
-  }
-  return new RegExp(source + "$");
+	const posix = toPosix(glob);
+	let source = "^";
+	for (let i = 0; i < posix.length; i += 1) {
+		const ch = posix[i];
+		if (ch === "*") {
+			if (posix[i + 1] === "*") {
+				i += 1;
+				if (posix[i + 1] === "/") {
+					i += 1;
+					source += "(?:.*/)?";
+				} else {
+					source += ".*";
+				}
+			} else {
+				source += "[^/]*";
+			}
+			continue;
+		}
+		if (ch === "?") {
+			source += "[^/]";
+			continue;
+		}
+		if (ch === "{") {
+			const end = posix.indexOf("}", i);
+			if (end > i) {
+				const alternatives = posix
+					.slice(i + 1, end)
+					.split(",")
+					.map((part) => part.split("").map(escapeLiteral).join(""));
+				source += "(?:" + alternatives.join("|") + ")";
+				i = end;
+				continue;
+			}
+		}
+		source += escapeLiteral(ch);
+	}
+	return new RegExp(source + "$");
 }
 
 export function matchesAny(relPath, globs) {
-  if (!globs || globs.length === 0) return false;
-  return globs.some((glob) => {
-    try {
-      return globToRegExp(glob).test(relPath);
-    } catch {
-      return false;
-    }
-  });
+	if (!globs || globs.length === 0) return false;
+	return globs.some((glob) => {
+		try {
+			return globToRegExp(glob).test(relPath);
+		} catch {
+			return false;
+		}
+	});
 }
 
 let filesPromise;
 
 /** Every file in the repository, relative to ROOT, with build dirs skipped. */
 export function listFiles() {
-  if (!filesPromise) {
-    filesPromise = (async () => {
-      const results = [];
-      async function walk(dir, rel) {
-        if (results.length >= MAX_FILES) return;
-        let entries;
-        try {
-          entries = await readdir(dir, { withFileTypes: true });
-        } catch {
-          return;
-        }
-        for (const entry of entries) {
-          if (results.length >= MAX_FILES) return;
-          const nextRel = rel ? rel + "/" + entry.name : entry.name;
-          if (entry.isDirectory()) {
-            if (SKIP_DIRS.has(entry.name)) continue;
-            await walk(join(dir, entry.name), nextRel);
-          } else if (entry.isFile()) {
-            results.push(nextRel);
-          }
-        }
-      }
-      await walk(ROOT, "");
-      return results;
-    })();
-  }
-  return filesPromise;
+	if (!filesPromise) {
+		filesPromise = (async () => {
+			const results = [];
+			async function walk(dir, rel) {
+				if (results.length >= MAX_FILES) return;
+				let entries;
+				try {
+					entries = await readdir(dir, { withFileTypes: true });
+				} catch {
+					return;
+				}
+				for (const entry of entries) {
+					if (results.length >= MAX_FILES) return;
+					const nextRel = rel ? rel + "/" + entry.name : entry.name;
+					if (entry.isDirectory()) {
+						if (SKIP_DIRS.has(entry.name)) continue;
+						await walk(join(dir, entry.name), nextRel);
+					} else if (entry.isFile()) {
+						results.push(nextRel);
+					}
+				}
+			}
+			await walk(ROOT, "");
+			return results;
+		})();
+	}
+	return filesPromise;
 }
 
 /** Files matching the scope glob, minus the except glob. */
 export async function inScope(globs, exceptGlobs) {
-  const all = await listFiles();
-  return all.filter(
-    (file) => matchesAny(file, globs) && !matchesAny(file, exceptGlobs),
-  );
+	const all = await listFiles();
+	return all.filter((file) => matchesAny(file, globs) && !matchesAny(file, exceptGlobs));
 }
 
 /** Read a repository file as UTF-8, or undefined when unreadable/oversized. */
 export async function readText(rel) {
-  try {
-    const text = await readFile(join(ROOT, rel), "utf8");
-    return text.length > MAX_SCAN_BYTES ? undefined : text;
-  } catch {
-    return undefined;
-  }
+	try {
+		const text = await readFile(join(ROOT, rel), "utf8");
+		return text.length > MAX_SCAN_BYTES ? undefined : text;
+	} catch {
+		return undefined;
+	}
 }
 
 /** Plain text matches literally; /pattern/flags opts into a regular expression. */
 export function compileMatcher(pattern) {
-  const asRegex = pattern.match(/^\/([\s\S]*)\/([a-z]*)$/);
-  if (asRegex) {
-    try {
-      const regex = new RegExp(asRegex[1], asRegex[2]);
-      return (text) => regex.test(text);
-    } catch {
-      return undefined;
-    }
-  }
-  return (text) => text.includes(pattern);
+	const asRegex = pattern.match(/^\/([\s\S]*)\/([a-z]*)$/);
+	if (asRegex) {
+		try {
+			const regex = new RegExp(asRegex[1], asRegex[2]);
+			return (text) => regex.test(text);
+		} catch {
+			return undefined;
+		}
+	}
+	return (text) => text.includes(pattern);
 }
 
 /** Run a shell command in ROOT and resolve with its exit code and output. */
 export function runShell(command) {
-  return new Promise((resolve) => {
-    exec(
-      command,
-      { cwd: ROOT, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        let code = 0;
-        if (error)
-          code =
-            typeof error.code === "number"
-              ? error.code
-              : error.killed
-                ? 124
-                : 1;
-        resolve({ code, stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
-  });
+	return new Promise((resolve) => {
+		exec(command, { cwd: ROOT, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
+			let code = 0;
+			if (error) code = typeof error.code === "number" ? error.code : error.killed ? 124 : 1;
+			resolve({ code, stdout: String(stdout), stderr: String(stderr) });
+		});
+	});
 }
 
 function describeScope(globs, exceptGlobs) {
-  const scope = globs && globs.length ? globs.join(", ") : "all files";
-  return exceptGlobs && exceptGlobs.length
-    ? scope + " (except " + exceptGlobs.join(", ") + ")"
-    : scope;
+	const scope = globs && globs.length ? globs.join(", ") : "all files";
+	return exceptGlobs && exceptGlobs.length ? scope + " (except " + exceptGlobs.join(", ") + ")" : scope;
 }
 
 export async function assertNoForbiddenContent(pattern, globs, exceptGlobs) {
-  const matcher = compileMatcher(pattern);
-  if (!matcher) throw new Error("could not understand pattern: " + pattern);
-  const files = await inScope(globs, exceptGlobs);
-  const hits = [];
-  for (const file of files) {
-    const text = await readText(file);
-    if (text === undefined) continue;
-    const lines = text.split(/\r?\n/);
-    for (let i = 0; i < lines.length; i += 1) {
-      if (matcher(lines[i])) {
-        hits.push(file + ":" + (i + 1) + ": " + lines[i].trim().slice(0, 200));
-        if (hits.length >= 20) break;
-      }
-    }
-    if (hits.length >= 20) break;
-  }
-  assert.equal(
-    hits.length,
-    0,
-    "forbidden content " +
-      JSON.stringify(pattern) +
-      " found in " +
-      describeScope(globs, exceptGlobs) +
-      (hits.length ? ":\n" + hits.join("\n") : ""),
-  );
+	const matcher = compileMatcher(pattern);
+	if (!matcher) throw new Error("could not understand pattern: " + pattern);
+	const files = await inScope(globs, exceptGlobs);
+	const hits = [];
+	for (const file of files) {
+		const text = await readText(file);
+		if (text === undefined) continue;
+		const lines = text.split(/\r?\n/);
+		for (let i = 0; i < lines.length; i += 1) {
+			if (matcher(lines[i])) {
+				hits.push(file + ":" + (i + 1) + ": " + lines[i].trim().slice(0, 200));
+				if (hits.length >= 20) break;
+			}
+		}
+		if (hits.length >= 20) break;
+	}
+	assert.equal(
+		hits.length,
+		0,
+		"forbidden content " +
+			JSON.stringify(pattern) +
+			" found in " +
+			describeScope(globs, exceptGlobs) +
+			(hits.length ? ":\n" + hits.join("\n") : ""),
+	);
 }
 
 export async function assertRequiredContent(pattern, globs, perFile) {
-  const matcher = compileMatcher(pattern);
-  if (!matcher) throw new Error("could not understand pattern: " + pattern);
-  const files = await inScope(globs, undefined);
-  if (files.length === 0)
-    assert.fail("no files in scope: " + describeScope(globs, undefined));
+	const matcher = compileMatcher(pattern);
+	if (!matcher) throw new Error("could not understand pattern: " + pattern);
+	const files = await inScope(globs, undefined);
+	if (files.length === 0) assert.fail("no files in scope: " + describeScope(globs, undefined));
 
-  const missing = [];
-  for (const file of files) {
-    const text = await readText(file);
-    if (text === undefined || !matcher(text)) missing.push(file);
-  }
-  if (perFile) {
-    assert.equal(
-      missing.length,
-      0,
-      "required content " +
-        JSON.stringify(pattern) +
-        " is missing from:\n" +
-        missing.slice(0, 20).join("\n"),
-    );
-  } else {
-    assert.ok(
-      missing.length < files.length,
-      "required content " +
-        JSON.stringify(pattern) +
-        " was not found in any of the " +
-        files.length +
-        " file(s) in scope",
-    );
-  }
+	const missing = [];
+	for (const file of files) {
+		const text = await readText(file);
+		if (text === undefined || !matcher(text)) missing.push(file);
+	}
+	if (perFile) {
+		assert.equal(
+			missing.length,
+			0,
+			"required content " + JSON.stringify(pattern) + " is missing from:\n" + missing.slice(0, 20).join("\n"),
+		);
+	} else {
+		assert.ok(
+			missing.length < files.length,
+			"required content " + JSON.stringify(pattern) + " was not found in any of the " + files.length + " file(s) in scope",
+		);
+	}
 }
 
 export async function assertNoMatchingFiles(globs) {
-  const files = await inScope(globs, undefined);
-  assert.equal(
-    files.length,
-    0,
-    "forbidden file(s) matched " +
-      describeScope(globs, undefined) +
-      ":\n" +
-      files.slice(0, 20).join("\n"),
-  );
+	const files = await inScope(globs, undefined);
+	assert.equal(
+		files.length,
+		0,
+		"forbidden file(s) matched " + describeScope(globs, undefined) + ":\n" + files.slice(0, 20).join("\n"),
+	);
 }
 
 export async function assertMatchingFilesExist(globs) {
-  const files = await inScope(globs, undefined);
-  assert.ok(
-    files.length > 0,
-    "no file matched " + describeScope(globs, undefined),
-  );
+	const files = await inScope(globs, undefined);
+	assert.ok(files.length > 0, "no file matched " + describeScope(globs, undefined));
 }
 
 export async function assertCommandExit(command, expectExit) {
-  const result = await runShell(command);
-  const output = (result.stdout + "\n" + result.stderr).trim().slice(-2000);
-  assert.equal(
-    result.code,
-    expectExit,
-    "expected `" +
-      command +
-      "` to exit " +
-      expectExit +
-      ", got " +
-      result.code +
-      (output ? "\n" + output : ""),
-  );
+	const result = await runShell(command);
+	const output = (result.stdout + "\n" + result.stderr).trim().slice(-2000);
+	assert.equal(
+		result.code,
+		expectExit,
+		"expected `" + command + "` to exit " + expectExit + ", got " + result.code + (output ? "\n" + output : ""),
+	);
 }

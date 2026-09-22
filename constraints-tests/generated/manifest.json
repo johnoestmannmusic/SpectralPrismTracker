@@ -1,7 +1,7 @@
 {
   "generatorVersion": 1,
   "constraintsFile": "CONSTRAINTS.md",
-  "constraintsHash": "f8bd167a85d77f81758bf616b38a7329e9ac5b288c5b64692b58429860b6e2a7",
+  "constraintsHash": "98922ca249d65bbd6aa909c65cc5fd1dc8756e5e5d33f91842a8d772e7293c57",
   "testsDir": "constraints-tests",
   "tests": [
     {
@@ -47,10 +47,9 @@
       "file": "generated/HC003.test.mjs",
       "checks": [
         "must exist: src/web/main.tsx",
-        "must exist: src/web/server.tsx",
         "run `npm run build:web` (must exit 0)"
       ],
-      "rationale": "The same TUI ships as the `lantern` desktop binary and as the streamed web host + xterm frame."
+      "rationale": "The same product ships as the `spt` desktop binary and as a static client-side web app built from shared code."
     },
     {
       "id": "HC004",
@@ -59,8 +58,27 @@
       "category": "hard",
       "kind": "auto",
       "file": "generated/HC004.test.mjs",
-      "checks": ["run `npm run audit:deps -- --offline` (must exit 0)"],
+      "checks": [
+        "run `npm run audit:deps -- --offline` (must exit 0)"
+      ],
       "rationale": "Slopsquatting is the main supply-chain risk for an AI-assisted project."
+    },
+    {
+      "id": "HC005",
+      "title": "The web-hosted version must be a static client-side webpage. No shared terminal.",
+      "severity": "blocking",
+      "category": "hard",
+      "kind": "auto",
+      "file": "generated/HC005.test.mjs",
+      "checks": [
+        "must not exist: src/web/server.tsx",
+        "must not contain node:http in src/web/**",
+        "must not contain createServer in src/web/**",
+        "must not contain setHost(nodeHost) in src/web/**",
+        "must contain browserHost in src/web/**",
+        "run `npm run test:web` (must exit 0)"
+      ],
+      "rationale": "multiple people need to be able to access the site and experience it individually, and we need to prevent security issues of shared access. Fate is per-visitor: no server process owns a Session, no signal crosses visitors."
     },
     {
       "id": "SC001",
@@ -70,10 +88,10 @@
       "kind": "auto",
       "file": "generated/SC001.test.mjs",
       "checks": [
-        "must not exist: src/tui/**/\\*.js",
-        "must not exist: src/core/**/_.js",
-        "must not exist: src/host/\\**/_.js",
-        "must not exist: src/web/**/\\*.js",
+        "must not exist: src/tui/**/*.js",
+        "must not exist: src/core/**/*.js",
+        "must not exist: src/host/**/*.js",
+        "must not exist: src/web/**/*.js",
         "must not exist: src/runtime/**/*.js",
         "must exist: tsconfig.json"
       ],
