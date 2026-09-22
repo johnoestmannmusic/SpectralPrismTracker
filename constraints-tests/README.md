@@ -38,7 +38,7 @@ maintain.
 
 ## This suite
 
-- 7 constraint(s): 6 machine-checked, 1 needing manual review.
+- 7 constraint(s): 5 machine-checked, 2 needing manual review.
 
 ### Needs manual review
 
@@ -47,6 +47,7 @@ is **skipped** — it cannot pass — and exists to remind you to verify the rul
 hand via the `constraints_validate` tool before marking a KANBAN card Implemented:
 
 - `G001` (info) Create a TUI 4-channel tracker that makes my entire compositional workflow transparent to the end-user, and speeds up my compositional process.
+- `HC005` (blocking) The web-hosted version must be a static client-side webpage. No shared terminal.
 
 ## Writing your own assertions
 
