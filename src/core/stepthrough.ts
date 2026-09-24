@@ -7,7 +7,14 @@ import {
   type ChordSettings,
   type SamplerSettings,
 } from "./sampler";
-import { applyEdit, retime, type SongModel } from "./songModel";
+import {
+  applyEdit,
+  applySnapshot,
+  patternSnapshot,
+  retime,
+  type SongModel,
+} from "./songModel";
+import { channelPatternAt } from "./layout";
 import {
   defaultSpectralSettings,
   spectralModeHasAmount,
@@ -178,18 +185,37 @@ export function blankTargetFrom(target: BuildTarget): BuildTarget {
       value: null,
     })),
   });
-  blank.song.channels.forEach((channel) => {
+  const patternLength = blank.song.meta.patternLength;
+  // Blank every pattern directly. The previous implementation called
+  // `applyEdit` once per cell, and `applyEdit` rebuilds the channel's
+  // instrument timeline on every call — O(cells x song), ~30s on a full-length
+  // project (and the browser froze before it could paint the modal).
+  for (const channel of blank.song.channels) {
+    // Keep a pattern present for every order, as the old applyEdit path did.
     for (let order = 0; order < blank.song.meta.orderLength; order++) {
-      for (let row = 0; row < blank.song.meta.patternLength; row++) {
-        applyEdit(blank.song, {
+      const patternIndex = channelPatternAt(channel, order);
+      if (patternIndex === undefined) continue;
+      if (!channel.patterns.has(patternIndex)) {
+        channel.patterns.set(patternIndex, {
+          subsong: 0,
           channel: channel.index,
-          order,
-          row,
-          cell: emptyCell(),
+          index: patternIndex,
+          name: "",
+          rowLength: patternLength,
+          rows: [],
         });
       }
     }
-  });
+    // Blank every row of every pattern, including patterns no order references.
+    for (const pattern of channel.patterns.values()) {
+      const length = Math.max(pattern.rows.length, patternLength);
+      pattern.rows = Array.from({ length }, () => emptyCell());
+    }
+  }
+  // Rebuild pattern rows, instrument/note timelines and row timing in one pass
+  // rather than once per blanked cell.
+  applySnapshot(blank.song, patternSnapshot(blank.song));
+
   blank.song.instruments.forEach((instrument, index) => {
     instrument.name = `Instrument ${String(index).padStart(2, "0")}`;
   });

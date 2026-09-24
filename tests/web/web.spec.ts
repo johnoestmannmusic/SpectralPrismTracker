@@ -249,3 +249,19 @@ test("restores the visitor's own autosave after a reload", async ({ page }) => {
   // The demo's first pattern note is gone: the cleared project was restored.
   expect(await screenText(page)).not.toContain("C-7 02");
 });
+
+test("starts Stepthrough without freezing the page", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/");
+  await waitForSong(page);
+  await page.getByRole("button", { name: "Stepthrough" }).click();
+
+  // Blanking the project used to take ~30s on the main thread, so the page
+  // appeared to hang before the stepthrough view appeared (BUG-52).
+  await expect
+    .poll(() => screenText(page), { timeout: 10_000 })
+    .toContain("Stepthrough");
+  expect(errors).toEqual([]);
+});

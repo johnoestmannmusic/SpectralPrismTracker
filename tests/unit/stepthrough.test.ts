@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   applyBuildStep,
   blankTargetFrom,
@@ -131,6 +131,81 @@ describe("stepthrough generator", () => {
       step.action.row,
     );
     expect(cell).toEqual(step.action.cell);
+  });
+
+  it("does not audition an OFF pattern step", async () => {
+    const target = session.snapshotTarget();
+    expect(target).not.toBeNull();
+    const steps = buildSteps(target!);
+    // Pick an OFF step that still resolves to a held instrument — the case that
+    // used to fall through to the full-instrument preview.
+    const offStep = steps.find((step) => {
+      if (step.action.kind !== "patternCell") return false;
+      if (step.action.cell.note?.kind !== "off") return false;
+      const action = step.action;
+      const channel = target!.song.channels[action.channel];
+      const resolved =
+        (step as { instrument?: number }).instrument ??
+        action.cell.instrument ??
+        channel?.insTimeline[action.order]?.[action.row] ??
+        null;
+      return resolved !== null;
+    });
+    expect(offStep).toBeDefined();
+
+    const backend = session.backend;
+    expect(backend).not.toBeNull();
+    const previewPattern = vi.spyOn(backend!, "previewPattern");
+    const preview = vi.spyOn(backend!, "preview");
+    // Force the Spectral path to look render-ready so the old fall-through
+    // (the bug) would have called preview() for the held instrument.
+    const fusionReady = vi.spyOn(backend!, "fusionReady").mockReturnValue(true);
+    const fusionRendering = vi
+      .spyOn(backend!, "fusionRendering")
+      .mockReturnValue(false);
+    try {
+      await session.previewBuildStep(target!, offStep!);
+      // Off is silence: neither the row nor the bare instrument may sound.
+      expect(previewPattern).not.toHaveBeenCalled();
+      expect(preview).not.toHaveBeenCalled();
+    } finally {
+      previewPattern.mockRestore();
+      preview.mockRestore();
+      fusionReady.mockRestore();
+      fusionRendering.mockRestore();
+    }
+  });
+
+  it("blanks every pattern cell while keeping the song structure", () => {
+    const target = session.snapshotTarget();
+    expect(target).not.toBeNull();
+    const blank = blankTargetFrom(target!);
+
+    // Structure is preserved, values are reset.
+    expect(blank.song.meta.orderLength).toBe(target!.song.meta.orderLength);
+    expect(blank.song.channels).toHaveLength(target!.song.channels.length);
+    expect(blank.project.songTitle).toBe("");
+    expect(blank.project.bpmOverride).toBeNull();
+    expect(blank.song.instruments[0]!.name).toBe("Instrument 00");
+
+    let cells = 0;
+    for (const channel of blank.song.channels) {
+      for (const pattern of channel.patterns.values()) {
+        for (const row of pattern.rows) {
+          cells += 1;
+          expect(row.note).toBeNull();
+          expect(row.instrument).toBeNull();
+          expect(row.volume).toBeNull();
+          for (const effect of row.effects) {
+            expect(effect.effect).toBeNull();
+            expect(effect.value).toBeNull();
+          }
+        }
+      }
+      // Timelines are rebuilt, not left stale by the faster blanking pass.
+      expect(Array.isArray(channel.insTimeline)).toBe(true);
+    }
+    expect(cells).toBeGreaterThan(0);
   });
 
   it("exports the recipe as JSON", async () => {

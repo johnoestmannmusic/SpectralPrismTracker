@@ -2497,6 +2497,9 @@ export class Session {
     // Pattern steps preview the whole row: held/cell note, volume and the
     // 01/02 pitch-slide effect, through the fused render when Spectral is on.
     if (action.kind === "patternCell") {
+      // An OFF (or empty) cell is silence: stop and never fall through to the
+      // full-instrument preview below (which is what made OFF steps sound).
+      if (!action.cell.note || action.cell.note.kind === "off") return;
       // Always re-render: re-renders are non-destructive, and a stale clip may
       // still be marked ready from before this step.
       if (spectralRenderEnabled(settings.spectral)) {
@@ -2522,8 +2525,10 @@ export class Session {
           Math.max(rowDuration(target.song, absolute) * 2, 0.05),
           notes,
         );
-        return;
       }
+      // A pattern step never auditions the bare instrument, even when the
+      // channel is muted or the note is held from an earlier row.
+      return;
     }
 
     // Spectral/Percussion/MicroTextures parameter steps must be rendered
