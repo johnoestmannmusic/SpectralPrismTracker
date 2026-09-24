@@ -18,12 +18,17 @@ export function fixtureText(rel: string): string {
 }
 
 /**
- * The bundled song, built the same way the app loads it at runtime (from the
- * project snapshot, with no external module parser). Tests that just need a
- * real, populated SongModel should use this.
+ * The stable test song, built the same way the app loads a project at runtime
+ * (from the project snapshot, with no external module parser).
+ *
+ * Deliberately **not** `assets/lmp-default-proj.sptproj`: the bundled demo is
+ * a moving target that product work edits, which previously turned every asset
+ * change into a unit-test failure (BUG-50). Tests that need a real, populated
+ * SongModel should use this; tests that must assert the shipped asset parses
+ * can read `assets/lmp-default-proj.sptproj` explicitly.
  */
 export function fixtureSong(): SongModel {
   return buildSongModelFromProject(
-    projectFromJson(fixtureText("assets/lmp-default-proj.sptproj")),
+    projectFromJson(fixtureText("tests/fixtures/test-song.sptproj")),
   );
 }

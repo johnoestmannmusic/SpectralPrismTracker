@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { fileURLToPath } from "node:url";
 
 const src = fileURLToPath(new URL("./src", import.meta.url));
@@ -12,6 +12,25 @@ const shim = (name: string): string =>
   fileURLToPath(new URL(`./src/web/shims/${name}.ts`, import.meta.url));
 
 /**
+ * chalk's browser colour detector returns level 0 in Firefox/Safari, which
+ * strips every Ink colour from the web TUI. Intercept its internal
+ * `#supports-color` import and swap in a truecolor stub (see
+ * `src/web/shims/chalkColor.ts`).
+ */
+function forceChalkTruecolor(): Plugin {
+  return {
+    name: "force-chalk-truecolor",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (source === "#supports-color" && importer?.includes("chalk")) {
+        return shim("chalkColor");
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
  * Static client for the web deployment (HC005).
  *
  * The TUI runs entirely in the browser: this bundle contains the Ink app, the
@@ -22,6 +41,7 @@ const shim = (name: string): string =>
 export default defineConfig({
   root: webRoot,
   base: "./",
+  plugins: [forceChalkTruecolor()],
   resolve: {
     alias: [
       // Node builtins used by Ink and its transitive dependencies.
@@ -60,5 +80,19 @@ export default defineConfig({
     emptyOutDir: true,
     target: "chrome120",
     sourcemap: true,
+    // The Ink/React app chunk is ~535 kB; third-party code is split out (below).
+    chunkSizeWarningLimit: 600,
+    // Keep Ink + React + their dynamic devtools import in one chunk: splitting
+    // them made Ink's optional `react-devtools-core` import unresolvable at
+    // runtime. Only independent vendor code is split out for caching.
+    rollupOptions: {
+      output: {
+        manualChunks(id: string): string | undefined {
+          if (id.includes("node_modules/@xterm")) return "vendor-xterm";
+          if (id.includes("node_modules/yoga-layout")) return "vendor-yoga";
+          return undefined;
+        },
+      },
+    },
   },
 });

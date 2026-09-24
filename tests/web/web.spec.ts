@@ -95,6 +95,47 @@ test("renders aligned terminal rows with the version header", async ({
   expect(new Set(trackerSeparators).size).toBe(1);
 });
 
+test("renders colour and cell highlighting", async ({ page }) => {
+  // Firefox/Safari expose neither `userAgentData` nor a Chrome UA token, which
+  // made chalk's browser colour detector resolve level 0 and strip every Ink
+  // colour/background (BUG-51). Run under a Safari-like UA so the regression
+  // is actually covered.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgentData", {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+      configurable: true,
+    });
+  });
+  await page.goto("/");
+  await waitForSong(page);
+  await settle(page);
+
+  const palette = await page.evaluate(() => {
+    const spans = [...document.querySelectorAll(".xterm-rows span")];
+    const foreground = new Set<string>();
+    const background = new Set<string>();
+    for (const span of spans) {
+      const style = getComputedStyle(span);
+      if (style.color) foreground.add(style.color);
+      if (
+        style.backgroundColor &&
+        style.backgroundColor !== "rgba(0, 0, 0, 0)"
+      ) {
+        background.add(style.backgroundColor);
+      }
+    }
+    return { foreground: foreground.size, background: background.size };
+  });
+
+  expect(palette.foreground).toBeGreaterThan(3);
+  expect(palette.background).toBeGreaterThan(2);
+});
+
 test("blocks filesystem commands with the web notice", async ({ page }) => {
   await loadAndSettle(page);
   await page.keyboard.type("/open");
@@ -157,6 +198,19 @@ test("serves no shared terminal: each visitor is independent (HC005)", async ({
   }
 });
 
+/** Reads the size of this visitor's OPFS autosave backup (0 when absent). */
+async function backupSize(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    try {
+      const handle = await root.getFileHandle("backup.sptproj");
+      return (await handle.getFile()).size;
+    } catch {
+      return 0;
+    }
+  });
+}
+
 test("persists an OPFS autosave backup in the visitor's browser", async ({
   page,
 }) => {
@@ -171,18 +225,27 @@ test("persists an OPFS autosave backup in the visitor's browser", async ({
   }
 
   await expect
-    .poll(
-      () =>
-        page.evaluate(async () => {
-          const root = await navigator.storage.getDirectory();
-          try {
-            const handle = await root.getFileHandle("backup.sptproj");
-            return (await handle.getFile()).size;
-          } catch {
-            return 0;
-          }
-        }),
-      { timeout: 10_000 },
-    )
+    .poll(() => backupSize(page), { timeout: 10_000 })
     .toBeGreaterThan(0);
+});
+
+test("restores the visitor's own autosave after a reload", async ({ page }) => {
+  await page.goto("/");
+  await waitForSong(page);
+  await page.locator("#terminal").click();
+
+  // 15 `/clearall` mutations fire the autosave hook.
+  for (let i = 0; i < 15; i += 1) {
+    await page.keyboard.type("/clearall");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(40);
+  }
+  await expect
+    .poll(() => backupSize(page), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+
+  await page.reload();
+  await waitForSong(page);
+  // The demo's first pattern note is gone: the cleared project was restored.
+  expect(await screenText(page)).not.toContain("C-7 02");
 });

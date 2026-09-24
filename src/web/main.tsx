@@ -5,8 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { render } from "ink";
 import { setHost } from "@/host";
 import { browserHost } from "@/host/browser";
-import { initPrismWasmBrowser } from "@/host/browser/prism";
-import { saveBackup } from "@/tui/autosave";
+import { saveBackup, restoreBackup } from "@/tui/autosave";
 import { App } from "@/tui/App";
 import { Session } from "@/tui/session";
 import { downloadBlob, installShellButtons, type ShellClient } from "./shell";
@@ -104,12 +103,20 @@ function main(): void {
   // Boot the local session: bundled project + browser host + optional WASM.
   void (async () => {
     try {
+      // Load the Prism WASM glue lazily so it stays out of the initial chunk.
+      const { initPrismWasmBrowser } = await import("@/host/browser/prism");
       if (await initPrismWasmBrowser()) session.markWasmReady();
       session.setWebMode(true);
       session.setAutosaveHook(() => {
         void saveBackup(session);
       });
       await session.init();
+      // Resume the visitor's own browser autosave when one exists — the desktop
+      // reopens the last project the same way. Falls back to the bundled demo.
+      const restored = await restoreBackup(session);
+      if (restored.ok) {
+        session.setStatus(restored.message ?? "Restored your previous session");
+      }
     } catch (error) {
       session.setError(
         `Failed to start: ${error instanceof Error ? error.message : String(error)}`,
