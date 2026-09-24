@@ -4,7 +4,7 @@
 
 --
 
-_A four-channel terminal-based music tracker, bespoke for my workflow. 
+_A four-channel terminal-based music tracker, bespoke for my workflow.
 It plays and edits sample-based instruments with an optional Spectral / Percussion / Chord / MicroTextures chain, a mixer with master delay, reverb and optional GBA-style downsampler. A `/cycles` mode is available for de-synced channels, for polymetric fun!_
 
 --
@@ -43,6 +43,19 @@ npm run build:dist
 Once it is running, press `/` for the command palette, `?` for help, `Space` to
 play, and `/quit` (or `/exit`) to leave.
 
+## Run the web version
+
+Build the static web app and serve it locally:
+
+```bash
+npm run build:web
+npm run serve:web
+```
+
+Then open <http://127.0.0.1:8123>. The web app runs entirely in the browser:
+every visitor gets an independent tracker instance and audio plays in their own
+page, with no shared server session. The `dist/web` folder is static and can be
+hosted on any file host.
 
 ## Changing the Source Sample sounds
 
@@ -50,12 +63,10 @@ Replace the `.ogg` files in `assets/SourceSamples/` with your own (with filename
 
 _The `.oggs` included in this repository are from my Mechsounds sound pack: https://johnoestmannmusic.com/mechsounds/_
 
-
 ## Other Tips
 
 - `/viewsource` inside the app opens the source repository.
 - `/stepthrough` walks through rebuilding the loaded project step by step.
-
 
 ## AI Disclosure
 

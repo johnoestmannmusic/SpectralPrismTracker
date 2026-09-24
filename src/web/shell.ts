@@ -1,9 +1,9 @@
 /**
  * Non-TUI chrome for the web deployment (HC001/HC003).
  *
- * The TUI itself runs in the Node host and is streamed over `/api/stream`; the
- * buttons here post the equivalent slash commands to `/api/input` (or fetch a
- * download), so they share the exact command surface the terminal uses.
+ * The TUI runs entirely in this page (HC005): the buttons here call the
+ * in-process Session/command surface through the same stdin channel the local
+ * terminal uses, so they share the exact command surface the TUI exposes.
  */
 
 import { PROJECT_URL } from "@/shared/links";

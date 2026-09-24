@@ -1,7 +1,7 @@
 {
   "generatorVersion": 1,
   "constraintsFile": "CONSTRAINTS.md",
-  "constraintsHash": "d44233b84ff2afb4f2ce4517f2a605a8b1d47624429d71a53afb341244c42319",
+  "constraintsHash": "98922ca249d65bbd6aa909c65cc5fd1dc8756e5e5d33f91842a8d772e7293c57",
   "testsDir": "constraints-tests",
   "tests": [
     {
@@ -68,9 +68,16 @@
       "title": "The web-hosted version must be a static client-side webpage. No shared terminal.",
       "severity": "blocking",
       "category": "hard",
-      "kind": "manual",
+      "kind": "auto",
       "file": "generated/HC005.test.mjs",
-      "checks": [],
+      "checks": [
+        "must not exist: src/web/server.tsx",
+        "must not contain node:http in src/web/**",
+        "must not contain createServer in src/web/**",
+        "must not contain setHost(nodeHost) in src/web/**",
+        "must contain browserHost in src/web/**",
+        "run `npm run test:web` (must exit 0)"
+      ],
       "rationale": "multiple people need to be able to access the site and experience it individually, and we need to prevent security issues of shared access. Fate is per-visitor: no server process owns a Session, no signal crosses visitors."
     },
     {

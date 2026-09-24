@@ -2,15 +2,24 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import { render } from "ink";
+import { setHost } from "@/host";
+import { browserHost } from "@/host/browser";
+import { initPrismWasmBrowser } from "@/host/browser/prism";
+import { saveBackup } from "@/tui/autosave";
+import { App } from "@/tui/App";
+import { Session } from "@/tui/session";
 import { downloadBlob, installShellButtons, type ShellClient } from "./shell";
+import { setShimSink } from "./shims/sink";
+import { createTerminalStreams } from "./terminalStreams";
 
 /**
- * Web entrypoint (HC003).
+ * Web entrypoint (HC005).
  *
- * Renders the SpectralPrism Tracker TUI, streamed from the local Node host over
- * SSE, inside
- * an xterm.js frame with extra non-TUI buttons. Input is POSTed back to the
- * host, so the browser and the desktop app share one implementation.
+ * The whole tracker runs in this page: the browser Host, the Session, and the
+ * Ink TUI rendered into a local xterm.js terminal. A plain static file host
+ * serves the bundle, so every visitor gets an independent instance — there is
+ * no shared Node terminal, no SSE stream and no server-side session.
  */
 
 function terminalOptions() {
@@ -50,42 +59,36 @@ function main(): void {
   terminal.loadAddon(fit);
   terminal.open(container);
 
-  // Serialise input POSTs: HTTP allows concurrent requests, but terminal input
-  // must arrive in order (and Ink parses one keypress per chunk).
-  let inputChain: Promise<unknown> = Promise.resolve();
-  const enqueue = (body: string, path = "/api/input"): void => {
-    inputChain = inputChain
-      .then(() => fetch(path, { method: "POST", body }))
-      .catch(() => undefined);
-  };
-  /** Sends text one character per request so Ink sees individual keypresses. */
-  const sendInput = (text: string): void => {
-    for (const char of text) enqueue(char);
-  };
+  const streams = createTerminalStreams({
+    columns: terminal.cols,
+    rows: terminal.rows,
+    onOutput: (data) => terminal.write(data),
+  });
+  // Ink and its dependencies also write to `process.stdout` directly; route
+  // those through the same terminal.
+  setShimSink((data) => terminal.write(data));
 
-  const client: ShellClient = {
-    send: sendInput,
-    command: (command) => sendInput(`${command}\r`),
-    downloadWav: () => void downloadWav(),
-    focus: () => terminal.focus(),
-  };
+  setHost(browserHost);
+  const session = new Session();
+  const instance = render(<App session={session} />, {
+    stdout: streams.stdout as unknown as NodeJS.WriteStream,
+    stdin: streams.stdin as unknown as NodeJS.ReadStream,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
 
-  terminal.onData((data) => sendInput(data));
+  // Keyboard input goes straight into the local Ink instance.
+  terminal.onData((data) => streams.stdin.push(data));
+  terminal.onResize(({ cols, rows }) =>
+    streams.stdout.resize(Math.max(cols, 20), Math.max(rows, 8)),
+  );
 
-  // Fit and tell the host our size. Re-fit once the monospace webfont has
-  // loaded and whenever the container's layout changes, otherwise the host
-  // keeps its initial row count and the TUI leaves blank rows (FEAT-161).
-  // De-duplicate so a re-fit that does not change the size is a no-op.
-  let lastSize = "";
+  // Fit and tell Ink the current size. Re-fit once the monospace webfont has
+  // loaded and whenever the container's layout changes, otherwise the TUI
+  // leaves blank rows (FEAT-161).
   const syncSize = (): void => {
     fit.fit();
-    const key = `${terminal.cols}x${terminal.rows}`;
-    if (key === lastSize) return;
-    lastSize = key;
-    enqueue(
-      JSON.stringify({ cols: terminal.cols, rows: terminal.rows }),
-      "/api/resize",
-    );
+    streams.stdout.resize(terminal.cols, terminal.rows);
   };
   syncSize();
   if (typeof document !== "undefined" && document.fonts?.ready) {
@@ -98,18 +101,68 @@ function main(): void {
   requestAnimationFrame(() => syncSize());
   window.addEventListener("resize", () => syncSize());
 
-  // Stream the TUI output from the host.
-  const source = new EventSource("/api/stream");
-  source.onmessage = (event) => {
-    terminal.write(JSON.parse(event.data as string) as string);
-  };
-  source.onerror = () => {
-    terminal.write(
-      "\r\n\x1b[31m[web] Lost connection to the SpectralPrism host.\x1b[0m\r\n",
-    );
-  };
+  // Boot the local session: bundled project + browser host + optional WASM.
+  void (async () => {
+    try {
+      if (await initPrismWasmBrowser()) session.markWasmReady();
+      session.setWebMode(true);
+      session.setAutosaveHook(() => {
+        void saveBackup(session);
+      });
+      await session.init();
+    } catch (error) {
+      session.setError(
+        `Failed to start: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  })();
 
+  // Shell chrome drives the same command surface as the terminal. Ink reads
+  // one chunk per `readable` event, so feed text one character per tick;
+  // synchronous bursts would be dropped.
+  let sendSeq = 0;
+  const sendText = (text: string): void => {
+    for (const char of text) {
+      const delay = sendSeq++ * 5;
+      setTimeout(() => streams.stdin.push(char), delay);
+    }
+  };
+  const client: ShellClient = {
+    send: sendText,
+    command: (command) => sendText(`${command}\r`),
+    downloadWav: () => void downloadWav(),
+    focus: () => terminal.focus(),
+  };
   const shell = installShellButtons(client);
+
+  const statusElement = document.getElementById("shell-status");
+  const licenseElement = document.getElementById("shell-licenses");
+  const updateStatus = (): void => {
+    const state = session.getState();
+    if (statusElement) {
+      const icon = state.playing ? "▶" : "■";
+      const name = state.song?.meta.name ?? "SpectralPrism Tracker";
+      statusElement.textContent = `${icon} ${name} · ${formatClock(state.time)} / ${formatClock(state.duration)}${state.dirty ? " · ●" : ""}`;
+    }
+    shell.setStepthrough(!!state.stepthrough);
+    shell.setPlaying(!!state.playing);
+    if (licenseElement) {
+      const parts: string[] = [];
+      if (state.project?.musicLicense)
+        parts.push(`Music: ${state.project.musicLicense}`);
+      if (state.project?.codeLicense)
+        parts.push(`Code: ${state.project.codeLicense}`);
+      licenseElement.textContent = parts.join(" · ");
+    }
+  };
+  session.subscribe(updateStatus);
+  updateStatus();
+  setInterval(updateStatus, 1000);
+
+  // Audio contexts need a user gesture before they can start.
+  const resumeAudio = (): void => session.resumeAudio();
+  window.addEventListener("pointerdown", resumeAudio, { once: true });
+  window.addEventListener("keydown", resumeAudio, { once: true });
 
   // Test/debug hook: exposes the rendered screen text for E2E assertions.
   (window as unknown as Record<string, unknown>).__lanternScreenText = () => {
@@ -121,50 +174,29 @@ function main(): void {
     return out;
   };
 
-  const statusElement = document.getElementById("shell-status");
-  const licenseElement = document.getElementById("shell-licenses");
-  const poll = async (): Promise<void> => {
-    try {
-      const response = await fetch("/api/status");
-      if (response.ok && statusElement) {
-        const state = (await response.json()) as {
-          playing: boolean;
-          name: string;
-          time: number;
-          duration: number;
-          dirty: boolean;
-          stepthrough?: boolean;
-          musicLicense?: string;
-          codeLicense?: string;
-        };
-        const icon = state.playing ? "▶" : "■";
-        statusElement.textContent = `${icon} ${state.name} · ${formatClock(state.time)} / ${formatClock(state.duration)}${state.dirty ? " · ●" : ""}`;
-        shell.setStepthrough(!!state.stepthrough);
-        shell.setPlaying(!!state.playing);
-        if (licenseElement) {
-          const parts: string[] = [];
-          if (state.musicLicense) parts.push(`Music: ${state.musicLicense}`);
-          if (state.codeLicense) parts.push(`Code: ${state.codeLicense}`);
-          licenseElement.textContent = parts.join(" · ");
-        }
-      }
-    } catch {
-      if (statusElement) statusElement.textContent = "host offline";
-    }
-  };
-  void poll();
-  setInterval(() => void poll(), 1000);
+  window.addEventListener("beforeunload", () => {
+    instance.unmount();
+    session.dispose();
+  });
 
   terminal.focus();
 }
 
-/** Downloads the bundled demo WAV from the host (web has no filesystem). */
+/** Downloads a bundled demo WAV (the web has no filesystem). */
 async function downloadWav(): Promise<void> {
+  const base = import.meta.env?.BASE_URL ?? "/";
+  const root = base.endsWith("/") ? base : `${base}/`;
   try {
-    const response = await fetch("/api/download-wav");
+    let name = "HYPERMART02.wav";
+    const manifest = await fetch(`${root}assets/WAVExport/manifest.json`);
+    if (manifest.ok) {
+      const data = (await manifest.json()) as { files?: string[] };
+      if (data.files?.[0]) name = data.files[0];
+    }
+    const response = await fetch(
+      `${root}assets/WAVExport/${encodeURIComponent(name)}`,
+    );
     if (!response.ok) return;
-    const disposition = response.headers.get("content-disposition") ?? "";
-    const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "demo.wav";
     downloadBlob(await response.blob(), name);
   } catch {
     /* ignore: the status bar keeps working */

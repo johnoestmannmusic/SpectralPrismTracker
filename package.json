@@ -16,7 +16,7 @@
     "build:dist:archive": "node scripts/build-dist.mjs --archive",
     "dev:tui": "node scripts/build-tui.mjs && node dist/tui/main.mjs",
     "start:tui": "node dist/tui/main.mjs",
-    "serve:web": "node dist/web-host/server.mjs",
+    "serve:web": "vite preview --config vite.config.web.mts --port 8123 --strictPort",
     "test:web": "playwright test --config playwright.web.config.ts",
     "run:script": "node dist/tui/run-script.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
