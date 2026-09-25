@@ -43,7 +43,7 @@ npm run build:dist
 Once it is running, press `/` for the command palette, `?` for help, `Space` to
 play, and `/quit` (or `/exit`) to leave.
 
-## Run the web version
+## Run the web version locally
 
 Build the static web app and serve it locally:
 
@@ -52,10 +52,8 @@ npm run build:web
 npm run serve:web
 ```
 
-Then open <http://127.0.0.1:8123>. The web app runs entirely in the browser:
-every visitor gets an independent tracker instance and audio plays in their own
-page, with no shared server session. The `dist/web` folder is static and can be
-hosted on any file host.
+Then open <http://127.0.0.1:8123>.
+
 
 ## Changing the Source Sample sounds
 

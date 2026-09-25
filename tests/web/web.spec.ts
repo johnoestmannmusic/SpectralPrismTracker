@@ -265,3 +265,21 @@ test("starts Stepthrough without freezing the page", async ({ page }) => {
     .toContain("Stepthrough");
   expect(errors).toEqual([]);
 });
+
+test("plays from the Play button on a portrait phone width", async ({
+  page,
+}) => {
+  // A phone is narrower than the tracker, so the narrow-terminal advisory is
+  // shown. It must not swallow the first character of the Play command and
+  // leave `p` to open the Pattern Manager (BUG-55).
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await waitForSong(page);
+
+  await page.getByRole("button", { name: "Play" }).click();
+
+  await expect(page.locator("#shell-status")).toContainText("▶", {
+    timeout: 10_000,
+  });
+  expect(await screenText(page)).not.toContain("Pattern Manager");
+});

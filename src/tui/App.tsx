@@ -1059,7 +1059,6 @@ export function App({ session }: Props) {
         !stepMode &&
         !stepBuilding &&
         !exporting &&
-        !showWidthAdvisory &&
         !actionTarget &&
         !orderPickerOpen &&
         !pending &&

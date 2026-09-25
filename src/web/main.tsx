@@ -126,9 +126,11 @@ function main(): void {
 
   // Shell chrome drives the same command surface as the terminal. Ink reads
   // one chunk per `readable` event, so feed text one character per tick;
-  // synchronous bursts would be dropped.
+  // synchronous bursts would be dropped. Every shell interaction is a user
+  // gesture, so it also resumes the audio context (mobile autoplay policy).
   let sendSeq = 0;
   const sendText = (text: string): void => {
+    session.resumeAudio();
     for (const char of text) {
       const delay = sendSeq++ * 5;
       setTimeout(() => streams.stdin.push(char), delay);
@@ -166,10 +168,12 @@ function main(): void {
   updateStatus();
   setInterval(updateStatus, 1000);
 
-  // Audio contexts need a user gesture before they can start.
+  // Audio contexts need a user gesture before they can start. Resume on every
+  // interaction (cheap and idempotent) so a gesture made before the engine
+  // existed does not leave audio suspended forever.
   const resumeAudio = (): void => session.resumeAudio();
-  window.addEventListener("pointerdown", resumeAudio, { once: true });
-  window.addEventListener("keydown", resumeAudio, { once: true });
+  window.addEventListener("pointerdown", resumeAudio);
+  window.addEventListener("keydown", resumeAudio);
 
   // Test/debug hook: exposes the rendered screen text for E2E assertions.
   (window as unknown as Record<string, unknown>).__lanternScreenText = () => {
